@@ -31,7 +31,9 @@ keeps decimal arithmetic disabled. The console CPU bus now covers CPU RAM
 mirrors, PPU register dispatch, controller serial reads, OAMDMA, PRG RAM, and
 NROM PRG ROM mapping. A basic NTSC timing loop now advances PPU dots from CPU
 cycles, drives vblank/NMI timing, accounts for OAMDMA stalls, and can run a
-synthetic NROM program across one frame.
+synthetic NROM program across one frame. A headless `.nes` runner now loads
+ROM files from disk and reports frame/instruction/cycle progress for NROM boot
+smoke tests.
 
 ## Phase 2: Mario-Correct PPU And Input
 

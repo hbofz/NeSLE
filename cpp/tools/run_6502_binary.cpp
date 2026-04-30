@@ -1,15 +1,14 @@
 #include <cstdint>
 #include <cstdlib>
-#include <fstream>
 #include <iostream>
 #include <span>
 #include <stdexcept>
 #include <string>
-#include <vector>
 
 #include "nesle/bus.hpp"
 #include "nesle/cpu.hpp"
 #include "nesle/cpu_runner.hpp"
+#include "nesle/file.hpp"
 
 namespace {
 
@@ -76,20 +75,12 @@ Config parse_args(int argc, char** argv) {
     return config;
 }
 
-std::vector<std::uint8_t> read_binary(const std::string& path) {
-    std::ifstream input(path, std::ios::binary);
-    if (!input) {
-        throw std::runtime_error("failed to open binary: " + path);
-    }
-    return {std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>()};
-}
-
 }  // namespace
 
 int main(int argc, char** argv) {
     try {
         const auto config = parse_args(argc, argv);
-        const auto bytes = read_binary(config.path);
+        const auto bytes = nesle::read_binary_file(config.path);
 
         nesle::FlatBus bus;
         bus.load(std::span<const std::uint8_t>(bytes.data(), bytes.size()), config.load_address);
