@@ -89,10 +89,27 @@ int main() {
     auto curr = nesle::smb::read_ram(ram);
     auto reward = nesle::smb::compute_reward(prev, curr);
     assert(prev.x_pos == 258);
+    assert(nesle::smb::is_plausible_boot_state(prev));
+    assert(nesle::smb::implausible_boot_state_reason(prev).empty());
+    nesle::smb::validate_plausible_boot_state(prev);
     assert(curr.x_pos == 261);
     assert(reward.x == 3);
     assert(reward.time == -1);
     assert(reward.total == 2);
+
+    {
+        std::vector<std::uint8_t> blank(nesle::smb::kCpuRamBytes, 0);
+        const auto blank_state = nesle::smb::read_ram(blank);
+        assert(!nesle::smb::is_plausible_boot_state(blank_state));
+        assert(!nesle::smb::implausible_boot_state_reason(blank_state).empty());
+        bool boot_threw = false;
+        try {
+            nesle::smb::validate_plausible_boot_state(blank_state);
+        } catch (const std::invalid_argument&) {
+            boot_threw = true;
+        }
+        assert(boot_threw);
+    }
 
     return 0;
 }

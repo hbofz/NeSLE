@@ -18,6 +18,7 @@ struct Config {
     nesle::HeadlessRunConfig run;
     bool print_trace = false;
     bool require_mario_target = false;
+    bool require_mario_boot = false;
 };
 
 std::uint32_t parse_u32(const std::string& value) {
@@ -37,7 +38,7 @@ Config parse_args(int argc, char** argv) {
         throw std::invalid_argument(
             "usage: run_nes_headless <rom.nes> [--frames N] "
             "[--max-instructions N] [--trace N] [--allow-trap] "
-            "[--require-mario-target]");
+            "[--require-mario-target] [--require-mario-boot]");
     }
 
     Config config;
@@ -51,6 +52,10 @@ Config parse_args(int argc, char** argv) {
         }
         if (arg == "--require-mario-target") {
             config.require_mario_target = true;
+            continue;
+        }
+        if (arg == "--require-mario-boot") {
+            config.require_mario_boot = true;
             continue;
         }
 
@@ -89,6 +94,7 @@ int main(int argc, char** argv) {
 
         const auto result = nesle::run_headless(console, state, config.run);
         const auto mario = nesle::smb::read_ram(console.cpu_ram());
+        const auto boot_reason = nesle::smb::implausible_boot_state_reason(mario);
 
         std::cout << nesle::to_string(result.status)
                   << " frames=" << result.frames_completed
@@ -117,7 +123,11 @@ int main(int argc, char** argv) {
                   << " mario_flag_get=" << mario.flag_get
                   << " mario_dying=" << mario.is_dying
                   << " mario_dead=" << mario.is_dead
-                  << " mario_game_over=" << mario.is_game_over;
+                  << " mario_game_over=" << mario.is_game_over
+                  << " mario_boot_plausible=" << boot_reason.empty();
+        if (!boot_reason.empty()) {
+            std::cout << " mario_boot_reason=\"" << boot_reason << "\"";
+        }
         if (!result.message.empty()) {
             std::cout << " message=\"" << result.message << "\"";
         }
@@ -142,6 +152,9 @@ int main(int argc, char** argv) {
             }
         }
 
+        if (config.require_mario_boot && !boot_reason.empty()) {
+            return EXIT_FAILURE;
+        }
         return result.completed() ? EXIT_SUCCESS : EXIT_FAILURE;
     } catch (const std::exception& error) {
         std::cerr << error.what() << '\n';

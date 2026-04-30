@@ -81,4 +81,47 @@ std::string status_name(int status_code) {
     return "fireball";
 }
 
+std::string implausible_boot_state_reason(const MarioRamState& state) {
+    if (state.world < 1 || state.world > 8) {
+        return "Mario world RAM is outside the expected 1..8 range";
+    }
+    if (state.stage < 1 || state.stage > 4) {
+        return "Mario stage RAM is outside the expected 1..4 range";
+    }
+    if (state.area < 1 || state.area > 32) {
+        return "Mario area RAM is outside the expected 1..32 range";
+    }
+    if (state.time < 0 || state.time > 999) {
+        return "Mario timer RAM is outside the expected 0..999 range";
+    }
+    if (state.coins < 0 || state.coins > 99) {
+        return "Mario coin RAM is outside the expected 0..99 range";
+    }
+    if (state.lives > 99 && state.lives != 0xFF) {
+        return "Mario lives RAM is outside the expected range";
+    }
+    if (state.status_code < 0 || state.status_code > 2) {
+        return "Mario power-up status RAM is outside the expected 0..2 range";
+    }
+    if (state.player_state > 0x0D) {
+        return "Mario player-state RAM is outside the expected range";
+    }
+    if (state.x_pos == 0 && state.time == 0 && state.lives == 0 &&
+        state.world == 1 && state.stage == 1 && state.area == 1) {
+        return "Mario RAM still looks like an uninitialized all-zero boot state";
+    }
+    return "";
+}
+
+bool is_plausible_boot_state(const MarioRamState& state) {
+    return implausible_boot_state_reason(state).empty();
+}
+
+void validate_plausible_boot_state(const MarioRamState& state) {
+    const auto reason = implausible_boot_state_reason(state);
+    if (!reason.empty()) {
+        throw std::invalid_argument(reason);
+    }
+}
+
 }  // namespace nesle::smb

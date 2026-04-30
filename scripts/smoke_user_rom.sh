@@ -14,6 +14,7 @@ fi
 c++ -std=c++20 -Icpp/include cpp/src/rom.cpp cpp/src/smb.cpp cpp/tools/run_nes_headless.cpp -o /tmp/nesle_run_nes_headless
 /tmp/nesle_run_nes_headless "$NESLE_ROM_PATH" \
   --require-mario-target \
+  --require-mario-boot \
   --frames "${NESLE_SMOKE_FRAMES:-1}" \
   --max-instructions "${NESLE_SMOKE_MAX_INSTRUCTIONS:-5000000}" \
   --trace "${NESLE_SMOKE_TRACE:-64}"

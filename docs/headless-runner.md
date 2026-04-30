@@ -15,6 +15,7 @@ Run:
 ```sh
 /tmp/nesle_run_nes_headless "Super Mario Bros. (World).nes" \
   --require-mario-target \
+  --require-mario-boot \
   --frames 1 \
   --max-instructions 5000000 \
   --trace 32
@@ -23,9 +24,10 @@ Run:
 The output reports status, completed frames, instruction count, CPU cycles, PC,
 last opcode, PPU position, mapper, PRG/CHR sizes, and decoded Super Mario Bros.
 RAM fields such as position, world/stage, timer, lives, status, death flags, and
-flag-get. With `--trace N`, it also prints the last `N` executed instructions
-with CPU and PPU timing state. This is the Phase 1 bridge from synthetic NROM
-programs to real Super Mario Bros. boot debugging.
+flag-get, plus a conservative Mario boot plausibility check. With `--trace N`,
+it also prints the last `N` executed instructions with CPU and PPU timing state.
+This is the Phase 1 bridge from synthetic NROM programs to real Super Mario
+Bros. boot debugging.
 
 The repo also includes an optional smoke gate that stays skipped unless a local
 ROM path is provided:

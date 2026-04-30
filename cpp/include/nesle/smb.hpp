@@ -56,5 +56,8 @@ struct RewardComponents {
 [[nodiscard]] RewardComponents compute_reward(const MarioRamState& previous,
                                               const MarioRamState& current);
 [[nodiscard]] std::string status_name(int status_code);
+[[nodiscard]] std::string implausible_boot_state_reason(const MarioRamState& state);
+[[nodiscard]] bool is_plausible_boot_state(const MarioRamState& state);
+void validate_plausible_boot_state(const MarioRamState& state);
 
 }  // namespace nesle::smb

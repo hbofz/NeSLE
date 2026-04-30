@@ -116,6 +116,7 @@ int main() {
         assert(mario.stage == 1);
         assert(mario.area == 1);
         assert(nesle::smb::status_name(mario.status_code) == "tall");
+        assert(nesle::smb::is_plausible_boot_state(mario));
         assert(console.read(0x0000) == 1);
         assert(console.read(0x0001) != 0);
     }
