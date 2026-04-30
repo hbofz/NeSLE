@@ -27,7 +27,9 @@ a flat 64 KB test bus, an NROM CPU memory map, smoke tests for CPU execution,
 stack calls, branch timing, arithmetic, and memory mirrors, plus a flat-binary
 runner for Klaus-style functional tests. The stock upstream Klaus binary now
 passes in the MOS 6502 validation profile; the NES 2A03 profile intentionally
-keeps decimal arithmetic disabled.
+keeps decimal arithmetic disabled. The console CPU bus now covers CPU RAM
+mirrors, PPU register dispatch, controller serial reads, OAMDMA, PRG RAM, and
+NROM PRG ROM mapping.
 
 ## Phase 2: Mario-Correct PPU And Input
 

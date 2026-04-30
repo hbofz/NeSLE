@@ -14,7 +14,7 @@ CPU and NROM memory-map core that will later compile into CUDA kernels.
 Phase 1 is the CPU-correct NES core:
 
 - 2A03/6502 state and official-opcode execution core
-- Flat 64 KB test bus and NROM CPU memory map
+- Flat 64 KB test bus, NROM memory-map smoke tests, and NES console CPU bus
 - RAM, PPU register, APU/input, and PRG ROM mirroring behavior
 - C++ tests for CPU execution, stack calls, branches, arithmetic, and NROM reads
 
