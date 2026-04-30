@@ -15,6 +15,7 @@ namespace {
 struct Config {
     std::string path;
     nesle::HeadlessRunConfig run;
+    bool print_trace = false;
 };
 
 std::uint32_t parse_u32(const std::string& value) {
@@ -33,7 +34,7 @@ Config parse_args(int argc, char** argv) {
     if (argc < 2) {
         throw std::invalid_argument(
             "usage: run_nes_headless <rom.nes> [--frames N] "
-            "[--max-instructions N] [--allow-trap]");
+            "[--max-instructions N] [--trace N] [--allow-trap]");
     }
 
     Config config;
@@ -54,6 +55,9 @@ Config parse_args(int argc, char** argv) {
             config.run.frames = parse_u32(value);
         } else if (arg == "--max-instructions") {
             config.run.max_instructions = parse_u64(value);
+        } else if (arg == "--trace") {
+            config.run.trace_capacity = static_cast<std::size_t>(parse_u64(value));
+            config.print_trace = config.run.trace_capacity != 0;
         } else {
             throw std::invalid_argument("unknown argument: " + arg);
         }
@@ -92,6 +96,25 @@ int main(int argc, char** argv) {
             std::cout << " message=\"" << result.message << "\"";
         }
         std::cout << '\n';
+
+        if (config.print_trace) {
+            for (const auto& entry : result.trace) {
+                std::cout << "trace"
+                          << " instruction=" << entry.instruction
+                          << " pc=0x" << std::hex << entry.pc
+                          << " opcode=0x" << static_cast<unsigned>(entry.opcode)
+                          << std::dec
+                          << " cpu_cycles=" << entry.cpu_cycles
+                          << " total_cpu_cycles=" << entry.total_cpu_cycles
+                          << " ppu_frame=" << entry.ppu_frame
+                          << " ppu_scanline=" << entry.ppu_scanline
+                          << " ppu_dot=" << entry.ppu_dot
+                          << " frames_completed=" << entry.frames_completed
+                          << " nmi_serviced=" << entry.nmi_serviced
+                          << " nmi_started=" << entry.nmi_started
+                          << '\n';
+            }
+        }
 
         return result.completed() ? EXIT_SUCCESS : EXIT_FAILURE;
     } catch (const std::exception& error) {

@@ -15,9 +15,12 @@ Run:
 ```sh
 /tmp/nesle_run_nes_headless "Super Mario Bros. (World).nes" \
   --frames 1 \
-  --max-instructions 5000000
+  --max-instructions 5000000 \
+  --trace 32
 ```
 
 The output reports status, completed frames, instruction count, CPU cycles, PC,
-last opcode, PPU position, mapper, and PRG/CHR sizes. This is the Phase 1 bridge
-from synthetic NROM programs to real Super Mario Bros. boot debugging.
+last opcode, PPU position, mapper, and PRG/CHR sizes. With `--trace N`, it also
+prints the last `N` executed instructions with CPU and PPU timing state. This is
+the Phase 1 bridge from synthetic NROM programs to real Super Mario Bros. boot
+debugging.

@@ -65,6 +65,7 @@ int main() {
         nesle::HeadlessRunConfig config;
         config.frames = 1;
         config.max_instructions = 50'000;
+        config.trace_capacity = 4;
         const auto result = nesle::run_headless(console, state, config);
 
         assert(result.completed());
@@ -72,6 +73,10 @@ int main() {
         assert(result.instructions > 0);
         assert(result.cpu_cycles > 0);
         assert(result.ppu_frame == 1);
+        assert(result.trace.size() == 4);
+        assert(result.trace.front().instruction + 3 == result.trace.back().instruction);
+        assert(result.trace.back().instruction == result.instructions);
+        assert(result.trace.back().ppu_frame == result.ppu_frame);
         assert(console.read(0x0000) == 1);
         assert(console.read(0x0001) != 0);
     }
@@ -85,10 +90,13 @@ int main() {
         nesle::HeadlessRunConfig config;
         config.frames = 2;
         config.max_instructions = 1;
+        config.trace_capacity = 8;
         const auto result = nesle::run_headless(console, state, config);
         assert(result.status == nesle::HeadlessRunStatus::Timeout);
         assert(!result.completed());
         assert(result.instructions == 1);
+        assert(result.trace.size() == 1);
+        assert(result.trace.front().pc == 0x8000);
     }
 
     {
