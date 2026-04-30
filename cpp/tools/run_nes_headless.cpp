@@ -16,6 +16,7 @@ struct Config {
     std::string path;
     nesle::HeadlessRunConfig run;
     bool print_trace = false;
+    bool require_mario_target = false;
 };
 
 std::uint32_t parse_u32(const std::string& value) {
@@ -34,7 +35,8 @@ Config parse_args(int argc, char** argv) {
     if (argc < 2) {
         throw std::invalid_argument(
             "usage: run_nes_headless <rom.nes> [--frames N] "
-            "[--max-instructions N] [--trace N] [--allow-trap]");
+            "[--max-instructions N] [--trace N] [--allow-trap] "
+            "[--require-mario-target]");
     }
 
     Config config;
@@ -44,6 +46,10 @@ Config parse_args(int argc, char** argv) {
         const std::string arg = argv[i];
         if (arg == "--allow-trap") {
             config.run.stop_on_trap = false;
+            continue;
+        }
+        if (arg == "--require-mario-target") {
+            config.require_mario_target = true;
             continue;
         }
 
@@ -73,6 +79,9 @@ int main(int argc, char** argv) {
         const auto config = parse_args(argc, argv);
         auto rom = nesle::load_ines_file(config.path);
         const auto metadata = rom.metadata;
+        if (config.require_mario_target) {
+            nesle::validate_supported_mario_target(metadata);
+        }
         nesle::Console console(std::move(rom));
         nesle::cpu::CpuState state;
         console.reset_cpu(state);
@@ -91,7 +100,8 @@ int main(int argc, char** argv) {
                   << " ppu_dot=" << result.ppu_dot
                   << " mapper=" << metadata.mapper
                   << " prg=" << metadata.prg_rom_size
-                  << " chr=" << metadata.chr_rom_size;
+                  << " chr=" << metadata.chr_rom_size
+                  << " mario_target=" << nesle::is_supported_mario_target(metadata);
         if (!result.message.empty()) {
             std::cout << " message=\"" << result.message << "\"";
         }

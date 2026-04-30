@@ -42,7 +42,7 @@ class INESRom:
 
     @property
     def is_supported_mario_target(self) -> bool:
-        return self.is_nrom and self.chr_rom_banks == 1 and not self.has_trainer
+        return self.is_nrom and self.chr_rom_banks == 1 and not self.has_trainer and not self.is_nes2
 
 
 def parse_ines(data: bytes | bytearray | memoryview) -> INESRom:

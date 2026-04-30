@@ -29,7 +29,37 @@ std::string to_string(NametableArrangement arrangement) {
 }
 
 bool is_supported_mario_target(const RomMetadata& metadata) noexcept {
-    return metadata.is_nrom() && metadata.chr_rom_banks == 1 && !metadata.has_trainer;
+    return metadata.mapper == 0 &&
+           (metadata.prg_rom_banks == 1 || metadata.prg_rom_banks == 2) &&
+           metadata.chr_rom_banks == 1 &&
+           !metadata.has_trainer &&
+           !metadata.is_nes2;
+}
+
+std::string unsupported_mario_target_reason(const RomMetadata& metadata) {
+    if (metadata.is_nes2) {
+        return "NES 2.0 ROMs are not supported in the Mario target yet";
+    }
+    if (metadata.mapper != 0) {
+        return "expected mapper 0/NROM for Super Mario Bros.";
+    }
+    if (metadata.prg_rom_banks != 1 && metadata.prg_rom_banks != 2) {
+        return "expected one or two 16 KB PRG ROM banks for NROM";
+    }
+    if (metadata.chr_rom_banks != 1) {
+        return "expected one 8 KB CHR ROM bank for Super Mario Bros.";
+    }
+    if (metadata.has_trainer) {
+        return "ROM trainers are not supported";
+    }
+    return "";
+}
+
+void validate_supported_mario_target(const RomMetadata& metadata) {
+    const auto reason = unsupported_mario_target_reason(metadata);
+    if (!reason.empty()) {
+        throw std::invalid_argument(reason);
+    }
 }
 
 RomImage parse_ines(std::span<const std::uint8_t> bytes) {

@@ -38,5 +38,7 @@ struct RomImage {
 [[nodiscard]] RomImage parse_ines(std::span<const std::uint8_t> bytes);
 [[nodiscard]] std::string to_string(NametableArrangement arrangement);
 [[nodiscard]] bool is_supported_mario_target(const RomMetadata& metadata) noexcept;
+[[nodiscard]] std::string unsupported_mario_target_reason(const RomMetadata& metadata);
+void validate_supported_mario_target(const RomMetadata& metadata);
 
 }  // namespace nesle

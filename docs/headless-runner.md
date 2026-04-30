@@ -14,6 +14,7 @@ Run:
 
 ```sh
 /tmp/nesle_run_nes_headless "Super Mario Bros. (World).nes" \
+  --require-mario-target \
   --frames 1 \
   --max-instructions 5000000 \
   --trace 32
@@ -24,3 +25,10 @@ last opcode, PPU position, mapper, and PRG/CHR sizes. With `--trace N`, it also
 prints the last `N` executed instructions with CPU and PPU timing state. This is
 the Phase 1 bridge from synthetic NROM programs to real Super Mario Bros. boot
 debugging.
+
+The repo also includes an optional smoke gate that stays skipped unless a local
+ROM path is provided:
+
+```sh
+NESLE_ROM_PATH="/path/to/Super Mario Bros. (World).nes" sh scripts/smoke_user_rom.sh
+```

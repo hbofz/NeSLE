@@ -26,6 +26,10 @@ class RomTests(unittest.TestCase):
         self.assertTrue(rom.is_nrom)
         self.assertTrue(rom.is_supported_mario_target)
 
+    def test_nes2_not_supported_mario_target(self):
+        rom = parse_ines(make_rom(flags7=0x08))
+        self.assertFalse(rom.is_supported_mario_target)
+
     def test_parse_trainer_offset(self):
         rom = parse_ines(make_rom(trainer=True))
         self.assertTrue(rom.has_trainer)

@@ -26,6 +26,12 @@ Phase 1 is the CPU-correct NES core:
 sh scripts/verify.sh
 ```
 
+With a local Super Mario Bros. `.nes` file, run the optional real-ROM gate:
+
+```sh
+NESLE_ROM_PATH="/path/to/Super Mario Bros. (World).nes" sh scripts/smoke_user_rom.sh
+```
+
 ## Target API
 
 The end state is:
