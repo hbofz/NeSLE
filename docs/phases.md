@@ -36,7 +36,8 @@ ROM files from disk and reports frame/instruction/cycle progress for NROM boot
 smoke tests. PPU memory now maps CHR ROM, CHR RAM fallback, nametable mirrors,
 and palette mirrors through the same `$2006/$2007` path that games use. The
 remaining Phase 1 gate is the optional user-ROM smoke test against a local Super
-Mario Bros. NROM ROM.
+Mario Bros. NROM ROM. The headless runner now reports decoded Mario RAM state so
+that smoke test can distinguish raw execution from meaningful boot progress.
 
 ## Phase 2: Mario-Correct PPU And Input
 

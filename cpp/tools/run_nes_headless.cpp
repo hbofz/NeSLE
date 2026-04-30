@@ -9,6 +9,7 @@
 #include "nesle/cpu.hpp"
 #include "nesle/file.hpp"
 #include "nesle/headless.hpp"
+#include "nesle/smb.hpp"
 
 namespace {
 
@@ -87,6 +88,7 @@ int main(int argc, char** argv) {
         console.reset_cpu(state);
 
         const auto result = nesle::run_headless(console, state, config.run);
+        const auto mario = nesle::smb::read_ram(console.cpu_ram());
 
         std::cout << nesle::to_string(result.status)
                   << " frames=" << result.frames_completed
@@ -101,7 +103,21 @@ int main(int argc, char** argv) {
                   << " mapper=" << metadata.mapper
                   << " prg=" << metadata.prg_rom_size
                   << " chr=" << metadata.chr_rom_size
-                  << " mario_target=" << nesle::is_supported_mario_target(metadata);
+                  << " mario_target=" << nesle::is_supported_mario_target(metadata)
+                  << " mario_x=" << mario.x_pos
+                  << " mario_y=" << mario.y_pos
+                  << " mario_world=" << mario.world
+                  << " mario_stage=" << mario.stage
+                  << " mario_area=" << mario.area
+                  << " mario_time=" << mario.time
+                  << " mario_coins=" << mario.coins
+                  << " mario_lives=" << mario.lives
+                  << " mario_status=" << nesle::smb::status_name(mario.status_code)
+                  << " mario_player_state=" << mario.player_state
+                  << " mario_flag_get=" << mario.flag_get
+                  << " mario_dying=" << mario.is_dying
+                  << " mario_dead=" << mario.is_dead
+                  << " mario_game_over=" << mario.is_game_over;
         if (!result.message.empty()) {
             std::cout << " message=\"" << result.message << "\"";
         }

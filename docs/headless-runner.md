@@ -21,10 +21,11 @@ Run:
 ```
 
 The output reports status, completed frames, instruction count, CPU cycles, PC,
-last opcode, PPU position, mapper, and PRG/CHR sizes. With `--trace N`, it also
-prints the last `N` executed instructions with CPU and PPU timing state. This is
-the Phase 1 bridge from synthetic NROM programs to real Super Mario Bros. boot
-debugging.
+last opcode, PPU position, mapper, PRG/CHR sizes, and decoded Super Mario Bros.
+RAM fields such as position, world/stage, timer, lives, status, death flags, and
+flag-get. With `--trace N`, it also prints the last `N` executed instructions
+with CPU and PPU timing state. This is the Phase 1 bridge from synthetic NROM
+programs to real Super Mario Bros. boot debugging.
 
 The repo also includes an optional smoke gate that stays skipped unless a local
 ROM path is provided:

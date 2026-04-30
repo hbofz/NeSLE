@@ -11,7 +11,7 @@ if [ ! -f "$NESLE_ROM_PATH" ]; then
   exit 1
 fi
 
-c++ -std=c++20 -Icpp/include cpp/src/rom.cpp cpp/tools/run_nes_headless.cpp -o /tmp/nesle_run_nes_headless
+c++ -std=c++20 -Icpp/include cpp/src/rom.cpp cpp/src/smb.cpp cpp/tools/run_nes_headless.cpp -o /tmp/nesle_run_nes_headless
 /tmp/nesle_run_nes_headless "$NESLE_ROM_PATH" \
   --require-mario-target \
   --frames "${NESLE_SMOKE_FRAMES:-1}" \

@@ -10,6 +10,7 @@
 #include "nesle/file.hpp"
 #include "nesle/headless.hpp"
 #include "nesle/rom.hpp"
+#include "nesle/smb.hpp"
 
 namespace {
 
@@ -20,16 +21,46 @@ std::vector<std::uint8_t> make_nrom_bytes() {
     data.insert(data.end(), 8 * 1024, 0);
 
     constexpr std::size_t kPrgOffset = 16;
-    data[kPrgOffset + 0x0000] = 0xA9;  // LDA #$80
-    data[kPrgOffset + 0x0001] = 0x80;
-    data[kPrgOffset + 0x0002] = 0x8D;  // STA $2000
-    data[kPrgOffset + 0x0003] = 0x00;
-    data[kPrgOffset + 0x0004] = 0x20;
-    data[kPrgOffset + 0x0005] = 0xE6;  // INC $01
-    data[kPrgOffset + 0x0006] = 0x01;
-    data[kPrgOffset + 0x0007] = 0x4C;  // JMP $8005
-    data[kPrgOffset + 0x0008] = 0x05;
-    data[kPrgOffset + 0x0009] = 0x80;
+    std::size_t pc = kPrgOffset;
+    auto emit = [&](std::uint8_t value) {
+        data[pc++] = value;
+    };
+    auto lda_imm = [&](std::uint8_t value) {
+        emit(0xA9);
+        emit(value);
+    };
+    auto sta_abs = [&](std::uint16_t address) {
+        emit(0x8D);
+        emit(static_cast<std::uint8_t>(address & 0x00FF));
+        emit(static_cast<std::uint8_t>(address >> 8));
+    };
+
+    lda_imm(0x80);
+    sta_abs(0x2000);
+    lda_imm(1);
+    sta_abs(nesle::smb::kXPage);
+    lda_imm(2);
+    sta_abs(nesle::smb::kXScreen);
+    lda_imm(4);
+    sta_abs(nesle::smb::kTimeDigits);
+    lda_imm(0);
+    sta_abs(nesle::smb::kTimeDigits + 1);
+    sta_abs(nesle::smb::kTimeDigits + 2);
+    sta_abs(nesle::smb::kWorld);
+    sta_abs(nesle::smb::kStage);
+    sta_abs(nesle::smb::kArea);
+    lda_imm(2);
+    sta_abs(nesle::smb::kLives);
+    lda_imm(1);
+    sta_abs(nesle::smb::kStatus);
+
+    const auto loop_address = static_cast<std::uint16_t>(0x8000 + (pc - kPrgOffset));
+    emit(0xE6);  // INC $01
+    emit(0x01);
+    emit(0x4C);  // JMP loop
+    emit(static_cast<std::uint8_t>(loop_address & 0x00FF));
+    emit(static_cast<std::uint8_t>(loop_address >> 8));
+
     data[kPrgOffset + 0x1000] = 0xE6;  // INC $00
     data[kPrgOffset + 0x1001] = 0x00;
     data[kPrgOffset + 0x1002] = 0x40;  // RTI
@@ -77,6 +108,14 @@ int main() {
         assert(result.trace.front().instruction + 3 == result.trace.back().instruction);
         assert(result.trace.back().instruction == result.instructions);
         assert(result.trace.back().ppu_frame == result.ppu_frame);
+        const auto mario = nesle::smb::read_ram(console.cpu_ram());
+        assert(mario.x_pos == 258);
+        assert(mario.time == 400);
+        assert(mario.lives == 2);
+        assert(mario.world == 1);
+        assert(mario.stage == 1);
+        assert(mario.area == 1);
+        assert(nesle::smb::status_name(mario.status_code) == "tall");
         assert(console.read(0x0000) == 1);
         assert(console.read(0x0001) != 0);
     }
