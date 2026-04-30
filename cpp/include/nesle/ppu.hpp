@@ -3,6 +3,9 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <span>
+
+#include "nesle/rom.hpp"
 
 namespace nesle {
 
@@ -49,6 +52,12 @@ public:
         }
 
         return result;
+    }
+
+    void configure_cartridge(std::span<const std::uint8_t> chr_rom,
+                             NametableArrangement arrangement) noexcept {
+        chr_rom_ = chr_rom;
+        nametable_arrangement_ = arrangement;
     }
 
     [[nodiscard]] std::uint8_t read_register(std::uint16_t index) noexcept {
@@ -161,7 +170,7 @@ public:
     }
 
     [[nodiscard]] std::uint8_t ppu_read(std::uint16_t address) const noexcept {
-        return vram_[mirror_ppu_address(address)];
+        return read_ppu_memory(address);
     }
 
     [[nodiscard]] std::int16_t scanline() const noexcept {
@@ -181,6 +190,62 @@ private:
         return static_cast<std::uint16_t>(address & 0x3FFF);
     }
 
+    [[nodiscard]] static std::uint16_t mirror_palette_address(std::uint16_t address) noexcept {
+        auto index = static_cast<std::uint16_t>(address & 0x001F);
+        if (index == 0x10 || index == 0x14 || index == 0x18 || index == 0x1C) {
+            index = static_cast<std::uint16_t>(index - 0x10);
+        }
+        return index;
+    }
+
+    [[nodiscard]] std::uint16_t mirror_nametable_address(std::uint16_t address) const noexcept {
+        const auto index = static_cast<std::uint16_t>((address - 0x2000) & 0x0FFF);
+        if (nametable_arrangement_ == NametableArrangement::FourScreen) {
+            return index;
+        }
+
+        if (nametable_arrangement_ == NametableArrangement::Vertical) {
+            return static_cast<std::uint16_t>(index & 0x07FF);
+        }
+
+        return static_cast<std::uint16_t>((index & 0x03FF) | ((index & 0x0800) >> 1));
+    }
+
+    [[nodiscard]] std::uint8_t read_ppu_memory(std::uint16_t address) const noexcept {
+        address = mirror_ppu_address(address);
+        if (address < 0x2000) {
+            if (!chr_rom_.empty()) {
+                return chr_rom_[address % chr_rom_.size()];
+            }
+            return chr_ram_[address & 0x1FFF];
+        }
+        if (address < 0x3F00) {
+            if (address >= 0x3000) {
+                address = static_cast<std::uint16_t>(address - 0x1000);
+            }
+            return nametable_ram_[mirror_nametable_address(address)];
+        }
+        return palette_ram_[mirror_palette_address(address)];
+    }
+
+    void write_ppu_memory(std::uint16_t address, std::uint8_t value) noexcept {
+        address = mirror_ppu_address(address);
+        if (address < 0x2000) {
+            if (chr_rom_.empty()) {
+                chr_ram_[address & 0x1FFF] = value;
+            }
+            return;
+        }
+        if (address < 0x3F00) {
+            if (address >= 0x3000) {
+                address = static_cast<std::uint16_t>(address - 0x1000);
+            }
+            nametable_ram_[mirror_nametable_address(address)] = value;
+            return;
+        }
+        palette_ram_[mirror_palette_address(address)] = value;
+    }
+
     [[nodiscard]] std::uint8_t read_status() noexcept {
         const auto value = static_cast<std::uint8_t>((status_ & 0xE0) | (open_bus_ & 0x1F));
         status_ &= 0x7F;
@@ -194,11 +259,11 @@ private:
         const auto address = mirror_ppu_address(v_);
         std::uint8_t value = 0;
         if (address >= 0x3F00) {
-            value = vram_[address];
-            read_buffer_ = vram_[mirror_ppu_address(static_cast<std::uint16_t>(address - 0x1000))];
+            value = read_ppu_memory(address);
+            read_buffer_ = read_ppu_memory(static_cast<std::uint16_t>(address - 0x1000));
         } else {
             value = read_buffer_;
-            read_buffer_ = vram_[address];
+            read_buffer_ = read_ppu_memory(address);
         }
         increment_vram_address();
         open_bus_ = value;
@@ -206,7 +271,7 @@ private:
     }
 
     void write_data(std::uint8_t value) noexcept {
-        vram_[mirror_ppu_address(v_)] = value;
+        write_ppu_memory(v_, value);
         increment_vram_address();
     }
 
@@ -255,8 +320,12 @@ private:
     std::int16_t scanline_ = 0;
     std::uint16_t dot_ = 0;
     std::uint64_t frame_ = 0;
+    NametableArrangement nametable_arrangement_ = NametableArrangement::Vertical;
+    std::span<const std::uint8_t> chr_rom_{};
+    std::array<std::uint8_t, 8 * 1024> chr_ram_{};
+    std::array<std::uint8_t, 4 * 1024> nametable_ram_{};
+    std::array<std::uint8_t, 32> palette_ram_{};
     std::array<std::uint8_t, kOamBytes> oam_{};
-    std::array<std::uint8_t, kPpuAddressSpaceBytes> vram_{};
 };
 
 }  // namespace nesle

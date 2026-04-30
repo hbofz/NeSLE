@@ -33,7 +33,8 @@ NROM PRG ROM mapping. A basic NTSC timing loop now advances PPU dots from CPU
 cycles, drives vblank/NMI timing, accounts for OAMDMA stalls, and can run a
 synthetic NROM program across one frame. A headless `.nes` runner now loads
 ROM files from disk and reports frame/instruction/cycle progress for NROM boot
-smoke tests.
+smoke tests. PPU memory now maps CHR ROM, CHR RAM fallback, nametable mirrors,
+and palette mirrors through the same `$2006/$2007` path that games use.
 
 ## Phase 2: Mario-Correct PPU And Input
 

@@ -26,6 +26,14 @@ nesle::RomImage make_nrom(std::uint8_t prg_banks) {
     return nesle::parse_ines(make_nrom_bytes(prg_banks));
 }
 
+nesle::RomImage make_chr_pattern_rom() {
+    auto bytes = make_nrom_bytes(2);
+    constexpr std::size_t kChrOffset = 16 + 32 * 1024;
+    bytes[kChrOffset + 0x0010] = 0x44;
+    bytes[kChrOffset + 0x1FFF] = 0x55;
+    return nesle::parse_ines(bytes);
+}
+
 nesle::RomImage make_program_rom() {
     auto bytes = make_nrom_bytes(2);
     constexpr std::size_t kPrgOffset = 16;
@@ -126,6 +134,32 @@ int main() {
         console.write(0x2007, 0x55);
         assert(console.ppu().ppu_read(0x2200) == 0x55);
         assert(console.ppu().vram_address() == 0x2220);
+    }
+
+    {
+        nesle::Console console(make_chr_pattern_rom());
+        assert(console.ppu().ppu_read(0x0010) == 0x44);
+        assert(console.ppu().ppu_read(0x1FFF) == 0x55);
+        console.write(0x2006, 0x00);
+        console.write(0x2006, 0x10);
+        console.write(0x2007, 0x99);
+        assert(console.ppu().ppu_read(0x0010) == 0x44);
+    }
+
+    {
+        nesle::Console console(make_nrom(2));
+        console.write(0x2006, 0x20);
+        console.write(0x2006, 0x00);
+        console.write(0x2007, 0x12);
+        assert(console.ppu().ppu_read(0x2000) == 0x12);
+        assert(console.ppu().ppu_read(0x2800) == 0x12);
+        assert(console.ppu().ppu_read(0x3000) == 0x12);
+
+        console.write(0x2006, 0x3F);
+        console.write(0x2006, 0x10);
+        console.write(0x2007, 0x2A);
+        assert(console.ppu().ppu_read(0x3F00) == 0x2A);
+        assert(console.ppu().ppu_read(0x3F10) == 0x2A);
     }
 
     {

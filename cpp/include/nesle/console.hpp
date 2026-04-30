@@ -43,6 +43,7 @@ public:
         if (rom_.prg_rom.empty()) {
             throw std::invalid_argument("Console requires PRG ROM bytes");
         }
+        ppu_.configure_cartridge(rom_.chr_rom, rom_.metadata.nametable_arrangement);
     }
 
     [[nodiscard]] std::uint8_t read(std::uint16_t address) noexcept {
