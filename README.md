@@ -16,6 +16,7 @@ Phase 1 is the CPU-correct NES core:
 - 2A03/6502 state and official-opcode execution core
 - Flat 64 KB test bus, NROM memory-map smoke tests, and NES console CPU bus
 - RAM, PPU register, APU/input, and PRG ROM mirroring behavior
+- Basic NTSC PPU timing, vblank/NMI delivery, OAMDMA stalls, and frame stepping
 - C++ tests for CPU execution, stack calls, branches, arithmetic, and NROM reads
 
 ## Quick Verification

@@ -18,6 +18,22 @@ public:
     static constexpr std::size_t kCpuRamBytes = 2048;
     static constexpr std::size_t kPrgRamBytes = 8 * 1024;
     static constexpr std::size_t kApuIoBytes = 0x18;
+    static constexpr std::uint32_t kPpuCyclesPerCpuCycle = 3;
+
+    struct StepResult {
+        cpu::StepResult cpu;
+        std::uint32_t cpu_cycles = 0;
+        std::uint32_t ppu_cycles = 0;
+        std::uint32_t frames_completed = 0;
+        bool nmi_serviced = false;
+        bool nmi_started = false;
+    };
+
+    struct FrameResult {
+        std::uint64_t instructions = 0;
+        std::uint64_t cpu_cycles = 0;
+        std::uint32_t frames_completed = 0;
+    };
 
     explicit Console(RomImage rom)
         : rom_(std::move(rom)) {
@@ -88,6 +104,50 @@ public:
         cpu::reset(state, *this);
     }
 
+    [[nodiscard]] StepResult step_cpu_instruction(cpu::CpuState& state) {
+        const auto cycles_before = state.cycles;
+        bool nmi_serviced = false;
+        if (ppu_.nmi_pending()) {
+            ppu_.clear_nmi_pending();
+            cpu::nmi(state, *this);
+            nmi_serviced = true;
+        }
+
+        auto cpu_step = cpu::step(state, *this);
+        if (pending_dma_cycles_ != 0) {
+            state.cycles += pending_dma_cycles_;
+            pending_dma_cycles_ = 0;
+        }
+
+        const auto cpu_cycles = static_cast<std::uint32_t>(state.cycles - cycles_before);
+        const auto ppu_cycles = cpu_cycles * kPpuCyclesPerCpuCycle;
+        const auto ppu_step = ppu_.step(ppu_cycles);
+
+        return StepResult{
+            cpu_step,
+            cpu_cycles,
+            ppu_cycles,
+            ppu_step.frames_completed,
+            nmi_serviced,
+            ppu_step.nmi_started,
+        };
+    }
+
+    [[nodiscard]] FrameResult step_frame(cpu::CpuState& state, std::uint64_t max_instructions) {
+        FrameResult result;
+        const auto cycles_before = state.cycles;
+        while (result.instructions < max_instructions) {
+            const auto step = step_cpu_instruction(state);
+            ++result.instructions;
+            result.frames_completed += step.frames_completed;
+            if (result.frames_completed != 0) {
+                break;
+            }
+        }
+        result.cpu_cycles = state.cycles - cycles_before;
+        return result;
+    }
+
     [[nodiscard]] const RomImage& rom() const noexcept {
         return rom_;
     }
@@ -132,6 +192,7 @@ private:
         for (std::uint16_t i = 0; i < 256; ++i) {
             ppu_.write_oam_dma(read(static_cast<std::uint16_t>(base + i)));
         }
+        pending_dma_cycles_ += 513;
     }
 
     RomImage rom_;
@@ -141,6 +202,7 @@ private:
     Ppu ppu_;
     StandardController controller1_;
     StandardController controller2_;
+    std::uint32_t pending_dma_cycles_ = 0;
 };
 
 }  // namespace nesle

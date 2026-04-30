@@ -44,12 +44,23 @@ Core hardware needed for Mario:
 - Standard controller serial protocol through `$4016/$4017`.
 - NROM mapper 0 with 16 KB or 32 KB PRG ROM and 8 KB CHR ROM.
 
+Timing checkpoints for the initial NTSC model:
+
+- NTSC PPU advances 3 dots per CPU cycle.
+- Each scanline has 341 PPU dots and each no-rendering frame has 262 scanlines.
+- Vblank flag is set at scanline 241, dot 1.
+- Vblank flag is cleared at scanline 261, dot 1.
+- The odd-frame skipped PPU dot and `$2002` vblank race behavior are deferred
+  until the boot path needs that precision.
+
 Sources:
 
 - NESdev CPU memory map: https://www.nesdev.org/wiki/CPU_memory_map
 - NESdev PPU registers: https://www.nesdev.org/wiki/PPU_registers
 - NESdev PPU rendering: https://www.nesdev.org/wiki/PPU_rendering
+- NESdev PPU frame timing: https://www.nesdev.org/wiki/PPU_frame_timing
 - NESdev cycle reference: https://www.nesdev.org/wiki/Cycle_reference_chart
+- NESdev NMI: https://www.nesdev.org/wiki/NMI
 - NESdev controller reading: https://www.nesdev.org/wiki/Controller_reading
 - NESdev iNES format: https://www.nesdev.org/wiki/INES
 - NESdev NROM: https://www.nesdev.org/wiki/NROM

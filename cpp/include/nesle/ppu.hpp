@@ -10,6 +10,46 @@ class Ppu {
 public:
     static constexpr std::size_t kOamBytes = 256;
     static constexpr std::size_t kPpuAddressSpaceBytes = 16 * 1024;
+    static constexpr std::uint16_t kDotsPerScanline = 341;
+    static constexpr std::uint16_t kScanlinesPerFrame = 262;
+    static constexpr std::int16_t kVblankStartScanline = 241;
+    static constexpr std::int16_t kPreRenderScanline = 261;
+    static constexpr std::uint16_t kVblankFlagDot = 1;
+
+    struct StepResult {
+        std::uint32_t cycles = 0;
+        std::uint32_t frames_completed = 0;
+        bool nmi_started = false;
+    };
+
+    [[nodiscard]] StepResult step(std::uint32_t ppu_cycles) noexcept {
+        StepResult result;
+        result.cycles = ppu_cycles;
+
+        for (std::uint32_t i = 0; i < ppu_cycles; ++i) {
+            ++dot_;
+            if (dot_ >= kDotsPerScanline) {
+                dot_ = 0;
+                ++scanline_;
+                if (scanline_ >= kScanlinesPerFrame) {
+                    scanline_ = 0;
+                    ++frame_;
+                    ++result.frames_completed;
+                }
+            }
+
+            if (scanline_ == kVblankStartScanline && dot_ == kVblankFlagDot) {
+                const bool had_nmi = nmi_pending_;
+                set_vblank(true);
+                result.nmi_started = result.nmi_started || (!had_nmi && nmi_pending_);
+            } else if (scanline_ == kPreRenderScanline && dot_ == kVblankFlagDot) {
+                set_vblank(false);
+                status_ &= 0x1F;
+            }
+        }
+
+        return result;
+    }
 
     [[nodiscard]] std::uint8_t read_register(std::uint16_t index) noexcept {
         switch (index & 0x0007) {
@@ -124,6 +164,18 @@ public:
         return vram_[mirror_ppu_address(address)];
     }
 
+    [[nodiscard]] std::int16_t scanline() const noexcept {
+        return scanline_;
+    }
+
+    [[nodiscard]] std::uint16_t dot() const noexcept {
+        return dot_;
+    }
+
+    [[nodiscard]] std::uint64_t frame() const noexcept {
+        return frame_;
+    }
+
 private:
     [[nodiscard]] static std::uint16_t mirror_ppu_address(std::uint16_t address) noexcept {
         return static_cast<std::uint16_t>(address & 0x3FFF);
@@ -200,6 +252,9 @@ private:
     bool nmi_pending_ = false;
     std::uint8_t scroll_x_ = 0;
     std::uint8_t scroll_y_ = 0;
+    std::int16_t scanline_ = 0;
+    std::uint16_t dot_ = 0;
+    std::uint64_t frame_ = 0;
     std::array<std::uint8_t, kOamBytes> oam_{};
     std::array<std::uint8_t, kPpuAddressSpaceBytes> vram_{};
 };

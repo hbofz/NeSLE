@@ -29,7 +29,9 @@ runner for Klaus-style functional tests. The stock upstream Klaus binary now
 passes in the MOS 6502 validation profile; the NES 2A03 profile intentionally
 keeps decimal arithmetic disabled. The console CPU bus now covers CPU RAM
 mirrors, PPU register dispatch, controller serial reads, OAMDMA, PRG RAM, and
-NROM PRG ROM mapping.
+NROM PRG ROM mapping. A basic NTSC timing loop now advances PPU dots from CPU
+cycles, drives vblank/NMI timing, accounts for OAMDMA stalls, and can run a
+synthetic NROM program across one frame.
 
 ## Phase 2: Mario-Correct PPU And Input
 
