@@ -22,6 +22,10 @@ Success criteria:
 
 Gate: no CUDA work beyond single-thread mirrors until the CPU core is testable.
 
+Status: in progress. The first slice adds a portable official-opcode CPU core,
+a flat 64 KB test bus, an NROM CPU memory map, and smoke tests for CPU execution,
+stack calls, branch timing, arithmetic, and memory mirrors.
+
 ## Phase 2: Mario-Correct PPU And Input
 
 Success criteria:

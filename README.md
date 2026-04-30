@@ -4,26 +4,24 @@ NeSLE is a GPU-native NES learning environment aimed at running thousands of
 Super Mario Bros. instances on NVIDIA GPUs behind a Gymnasium/SB3-compatible
 Python API.
 
-The repository is intentionally staged. The first checked-in slice establishes
-the target architecture, project layout, NROM/iNES parsing, Mario RAM decoding,
-reward extraction, action mappings, and tests. CUDA emulation kernels are
-scaffolded but not yet implemented.
+The repository is intentionally staged. Phase 0 established the target
+architecture, project layout, NROM/iNES parsing, Mario RAM decoding, reward
+extraction, action mappings, and tests. Phase 1 is now building the portable NES
+CPU and NROM memory-map core that will later compile into CUDA kernels.
 
 ## Current Phase
 
-Phase 0 is the executable project skeleton:
+Phase 1 is the CPU-correct NES core:
 
-- C++ core metadata parser for `.nes` iNES ROMs
-- Super Mario Bros. RAM interpretation and reward components
-- Python mirrors for action, ROM, and RAM utilities
-- CUDA-facing state layout headers for the GPU emulator
-- Research notes, architecture plan, and phase gates
-- Python and C++ smoke tests
+- 2A03/6502 state and official-opcode execution core
+- Flat 64 KB test bus and NROM CPU memory map
+- RAM, PPU register, APU/input, and PRG ROM mirroring behavior
+- C++ tests for CPU execution, stack calls, branches, arithmetic, and NROM reads
 
 ## Quick Verification
 
 ```sh
-sh scripts/verify_phase0.sh
+sh scripts/verify.sh
 ```
 
 ## Target API
