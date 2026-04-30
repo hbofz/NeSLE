@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=69", "wheel", "pybind11>=2.12"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "nesle"
+version = "0.0.1"
+description = "GPU-native NES learning environment for reinforcement learning"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "NeSLE contributors" }]
+dependencies = ["numpy>=1.26"]
+
+[project.optional-dependencies]
+rl = [
+  "gymnasium>=1.0",
+  "stable-baselines3>=2.0",
+  "nes-py>=8.2",
+  "gym-super-mario-bros>=7.4",
+]
+dev = ["pytest>=8"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
