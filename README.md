@@ -50,3 +50,4 @@ environment wrapper will follow the maintained Gymnasium step/reset API.
 - [Research notes](docs/research-notes.md)
 - [Architecture](docs/architecture.md)
 - [Phases](docs/phases.md)
+- [CPU validation](docs/cpu-validation.md)

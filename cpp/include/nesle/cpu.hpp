@@ -6,6 +6,11 @@
 
 namespace nesle::cpu {
 
+enum class CpuVariant {
+    Ricoh2A03,
+    Mos6502,
+};
+
 enum StatusFlag : std::uint8_t {
     Carry = 1u << 0,
     Zero = 1u << 1,
@@ -25,6 +30,7 @@ struct CpuState {
     std::uint8_t sp = 0xFD;
     std::uint8_t p = Unused | InterruptDisable;
     std::uint64_t cycles = 0;
+    CpuVariant variant = CpuVariant::Ricoh2A03;
 };
 
 struct StepResult {
@@ -203,16 +209,46 @@ StepResult step(CpuState& state, Bus& bus) {
 
     auto adc = [&](std::uint8_t value) {
         const auto carry = get_flag(state, Carry) ? 1u : 0u;
-        const auto sum = static_cast<unsigned>(state.a) + static_cast<unsigned>(value) + carry;
+        auto sum = static_cast<unsigned>(state.a) + static_cast<unsigned>(value) + carry;
+        const auto binary_result = static_cast<std::uint8_t>(sum);
+        set_flag(state, Overflow, ((~(state.a ^ value) & (state.a ^ binary_result)) & 0x80) != 0);
+        if (state.variant == CpuVariant::Mos6502 && get_flag(state, Decimal)) {
+            if (((state.a & 0x0F) + (value & 0x0F) + carry) > 9) {
+                sum += 0x06;
+            }
+            if (sum > 0x99) {
+                sum += 0x60;
+            }
+        }
         const auto result = static_cast<std::uint8_t>(sum);
         set_flag(state, Carry, sum > 0xFF);
-        set_flag(state, Overflow, ((~(state.a ^ value) & (state.a ^ result)) & 0x80) != 0);
         state.a = result;
-        set_zn(state, state.a);
+        set_zn(state, state.variant == CpuVariant::Mos6502 && get_flag(state, Decimal) ? binary_result : state.a);
     };
 
     auto sbc = [&](std::uint8_t value) {
-        adc(static_cast<std::uint8_t>(value ^ 0xFF));
+        if (state.variant != CpuVariant::Mos6502 || !get_flag(state, Decimal)) {
+            adc(static_cast<std::uint8_t>(value ^ 0xFF));
+            return;
+        }
+
+        const auto borrow = get_flag(state, Carry) ? 0 : 1;
+        const auto binary_diff = static_cast<int>(state.a) - static_cast<int>(value) - borrow;
+        const auto binary_result = static_cast<std::uint8_t>(binary_diff);
+        int low = static_cast<int>(state.a & 0x0F) - static_cast<int>(value & 0x0F) - borrow;
+        int high = static_cast<int>(state.a >> 4) - static_cast<int>(value >> 4);
+        if (low < 0) {
+            low -= 6;
+            --high;
+        }
+        if (high < 0) {
+            high -= 6;
+        }
+
+        set_flag(state, Carry, binary_diff >= 0);
+        set_flag(state, Overflow, ((state.a ^ value) & (state.a ^ binary_result) & 0x80) != 0);
+        state.a = static_cast<std::uint8_t>(((high << 4) & 0xF0) | (low & 0x0F));
+        set_zn(state, binary_result);
     };
 
     auto logical = [&](std::uint8_t value, char op) {

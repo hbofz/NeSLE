@@ -14,6 +14,16 @@ class FlatBus {
 public:
     std::array<std::uint8_t, 65536> memory{};
 
+    void load(std::span<const std::uint8_t> bytes, std::uint16_t start_address) {
+        const auto start = static_cast<std::size_t>(start_address);
+        if (bytes.size() > memory.size() - start) {
+            throw std::invalid_argument("binary does not fit in flat 64 KB CPU address space");
+        }
+        for (std::size_t i = 0; i < bytes.size(); ++i) {
+            memory[start + i] = bytes[i];
+        }
+    }
+
     [[nodiscard]] std::uint8_t read(std::uint16_t address) const noexcept {
         return memory[address];
     }
