@@ -26,10 +26,17 @@ __all__ = [
     "SIMPLE_MOVEMENT_MASKS",
     "compute_reward",
     "encode_action",
+    "make",
     "make_vec",
     "parse_ines",
     "read_ram",
 ]
+
+
+def make(*args, **kwargs):
+    from .env import NesleEnv
+
+    return NesleEnv(*args, **kwargs)
 
 
 def make_vec(*args, **kwargs):

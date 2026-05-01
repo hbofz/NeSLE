@@ -7,13 +7,14 @@ Python API.
 The repository is intentionally staged. Phase 0 established the target
 architecture, project layout, NROM/iNES parsing, Mario RAM decoding, reward
 extraction, action mappings, and tests. Phases 1 and 2 built the portable CPU,
-PPU, input, rendering, and OpenEmu reference gates. Phase 3 is now moving that
-contract into CUDA batch execution.
+PPU, input, rendering, and OpenEmu reference gates. Phase 3 moved the emulator
+correctness contract into CUDA batch execution. Phase 4 is now adding the
+Gymnasium/SB3 Python API.
 
 ## Current Phase
 
-The current path covers the Phase 1/2 CPU emulator and the active Phase 3 CUDA
-batch contract:
+The current path covers the Phase 1/2 CPU emulator, the Phase 3 CUDA batch
+contract, and the first Phase 4 Python API:
 
 - 2A03/6502 state and official-opcode execution core
 - Flat 64 KB test bus, NROM memory-map smoke tests, and NES console CPU bus
@@ -30,6 +31,10 @@ batch contract:
 - CUDA device smoke for the shared CPU core, batch console stepping, OAM DMA,
   PPU timing, PPU register-fed RGB rendering, and device-side reset snapshot
   restore
+- `NesleEnv` and `NesleVecEnv` Python wrappers with Gymnasium-style single-env
+  reset/step and SB3-style vector reset/step/auto-reset semantics
+- Native C++ console binding hook plus deterministic Python compatibility
+  backend for API development without a packaged native runtime
 
 ## Quick Verification
 
@@ -76,8 +81,9 @@ obs = env.reset()
 obs, rewards, dones, infos = env.step(actions)
 ```
 
-SB3 compatibility is planned around SB3's `VecEnv` contract, while the single
-environment wrapper will follow the maintained Gymnasium step/reset API.
+The vector wrapper follows SB3's `VecEnv` reset/step shape and auto-reset
+contract, including `terminal_observation`. The single environment wrapper uses
+Gymnasium's reset/step return convention when Gymnasium is installed.
 
 ## Documents
 

@@ -131,6 +131,16 @@ Success criteria:
 
 Gate: keep a NumPy compatibility path even if the fast path returns GPU tensors.
 
+Status: started. `NesleEnv` now exposes a Gymnasium-style single-env API and
+`NesleVecEnv` exposes the SB3-style vector contract with `reset`, `step`,
+`step_async`, `step_wait`, `render`, auto-reset, `reset_infos`, and
+`terminal_observation`. The wrappers validate ROM paths, support the existing
+right-only/simple/complex/raw action spaces, and return NumPy RGB observations,
+float rewards, done flags, and Mario RAM info dictionaries. A native C++ console
+binding hook is available for packaged CPU execution, while a deterministic
+Python compatibility backend keeps API tests and downstream integration code
+runnable before the CUDA runtime is packaged into Python.
+
 ## Phase 5: Throughput Benchmark
 
 Success criteria:

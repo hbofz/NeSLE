@@ -5,6 +5,8 @@
 #include <string>
 #include <vector>
 
+#include "nesle/console.hpp"
+#include "nesle/cpu.hpp"
 #include "nesle/rom.hpp"
 #include "nesle/smb.hpp"
 
@@ -55,6 +57,55 @@ py::dict mario_state_to_dict(const nesle::smb::MarioRamState& state) {
     return out;
 }
 
+class NativeConsoleBinding {
+public:
+    explicit NativeConsoleBinding(const py::bytes& bytes)
+        : console_(nesle::parse_ines(bytes_to_vector(bytes))) {
+        reset();
+    }
+
+    void reset() {
+        state_ = nesle::cpu::CpuState{};
+        console_.reset_cpu(state_);
+    }
+
+    py::dict step(std::uint8_t action_mask,
+                  std::uint32_t frameskip,
+                  std::uint64_t max_instructions_per_frame) {
+        console_.controller1().set_buttons(action_mask);
+        std::uint64_t instructions = 0;
+        std::uint64_t cpu_cycles = 0;
+        std::uint32_t frames_completed = 0;
+        for (std::uint32_t frame = 0; frame < frameskip; ++frame) {
+            const auto result = console_.step_frame(state_, max_instructions_per_frame);
+            instructions += result.instructions;
+            cpu_cycles += result.cpu_cycles;
+            frames_completed += result.frames_completed;
+        }
+
+        py::dict out;
+        out["instructions"] = instructions;
+        out["cpu_cycles"] = cpu_cycles;
+        out["frames_completed"] = frames_completed;
+        out["pc"] = state_.pc;
+        return out;
+    }
+
+    py::bytes ram() const {
+        const auto& ram = console_.cpu_ram();
+        return py::bytes(reinterpret_cast<const char*>(ram.data()), ram.size());
+    }
+
+    py::bytes frame() const {
+        const auto frame = console_.ppu().render_rgb_frame();
+        return py::bytes(reinterpret_cast<const char*>(frame.data()), frame.size());
+    }
+
+private:
+    nesle::Console console_;
+    nesle::cpu::CpuState state_;
+};
+
 }  // namespace
 
 PYBIND11_MODULE(_core, m) {
@@ -69,4 +120,11 @@ PYBIND11_MODULE(_core, m) {
         const auto data = bytes_to_vector(bytes);
         return mario_state_to_dict(nesle::smb::read_ram(data));
     });
+
+    py::class_<NativeConsoleBinding>(m, "NativeConsole")
+        .def(py::init<const py::bytes&>())
+        .def("reset", &NativeConsoleBinding::reset)
+        .def("step", &NativeConsoleBinding::step)
+        .def("ram", &NativeConsoleBinding::ram)
+        .def("frame", &NativeConsoleBinding::frame);
 }
