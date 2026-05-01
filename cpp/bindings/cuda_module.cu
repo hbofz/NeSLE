@@ -145,7 +145,9 @@ public:
         return render();
     }
 
-    py::dict step(py::array_t<std::uint8_t, py::array::c_style | py::array::forcecast> actions) {
+    py::dict step(py::array_t<std::uint8_t, py::array::c_style | py::array::forcecast> actions,
+                  bool render_frame = true,
+                  bool copy_obs = true) {
         const auto view = actions.request();
         if (view.ndim != 1 || static_cast<std::uint32_t>(view.shape[0]) != num_env_) {
             throw std::invalid_argument("actions must have shape (num_envs,)");
@@ -162,7 +164,9 @@ public:
         check_cuda(cudaGetLastError(), "apply_actions_kernel");
         nesle::cuda::launch_step_kernel(buffers_, nesle::cuda::StepConfig{num_env_, frameskip_, false}, nullptr);
         check_cuda(cudaGetLastError(), "launch_step_kernel");
-        render_device();
+        if (render_frame || copy_obs) {
+            render_device();
+        }
         check_cuda(cudaDeviceSynchronize(), "cuda step synchronize");
 
         py::array_t<float> rewards(static_cast<py::ssize_t>(num_env_));
@@ -179,7 +183,9 @@ public:
                    "copy dones");
 
         py::dict out;
-        out["obs"] = render();
+        if (copy_obs) {
+            out["obs"] = render();
+        }
         out["rewards"] = rewards;
         out["dones"] = dones;
         return out;
@@ -282,7 +288,11 @@ PYBIND11_MODULE(_cuda_core, m) {
     py::class_<CudaBatchBinding>(m, "CudaBatch")
         .def(py::init<std::uint32_t, std::uint32_t>())
         .def("reset", &CudaBatchBinding::reset)
-        .def("step", &CudaBatchBinding::step)
+        .def("step",
+             &CudaBatchBinding::step,
+             py::arg("actions"),
+             py::arg("render_frame") = true,
+             py::arg("copy_obs") = true)
         .def("render", &CudaBatchBinding::render)
         .def_property_readonly("name", &CudaBatchBinding::name);
 }

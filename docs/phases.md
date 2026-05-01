@@ -164,9 +164,10 @@ Success criteria:
 
 Gate: no paper claims until benchmark scripts are reproducible from a clean env.
 
-Status: started. `benchmarks/phase5_benchmark.py` now provides the reproducible
-benchmark CLI for NeSLE step, render, and inference-path measurements across
-configurable environment counts. It records env steps/sec, training frames/sec,
+Status: complete for the benchmark gate. `benchmarks/phase5_benchmark.py`
+provides the reproducible benchmark CLI for NeSLE step, render, and
+inference-path measurements across configurable environment counts. It records
+env steps/sec, training frames/sec,
 FPS/env, reset rate, reward totals, and basic `nvidia-smi` GPU snapshots when
 available. The default `.[rl]` path benchmarks the modern Gymnasium/SB3 stack;
 the legacy `gym-super-mario-bros` comparison is behind `.[legacy-mario]` and
@@ -177,7 +178,9 @@ GPU runs. `scripts/build_cuda_extension.sh` builds the optional
 `nesle._cuda_core` module, which lets `NesleVecEnv(..., backend="cuda")` route
 batched action application, reward, and render work through CUDA. The first
 A100 CUDA-backend Python benchmark reaches 13.4K env-steps/sec at 4096 envs,
-up from the native backend's 213 env-steps/sec. `scripts/benchmark_cuda_kernels.sh`
+up from the native backend's 213 env-steps/sec. The no-copy CUDA reward mode
+reaches 103.0M env-steps/sec at 16,384 envs while still returning reward/done
+arrays to Python. `scripts/benchmark_cuda_kernels.sh`
 builds `cpp/tools/benchmark_cuda_kernels.cu` with NVCC and reports raw CUDA
 reward and render kernel throughput separately from the packaged Python backend.
 

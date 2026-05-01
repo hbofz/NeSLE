@@ -90,6 +90,52 @@ native CPU backend, but it is still below raw kernel capacity because every step
 copies full RGB observations back to host memory and does not yet run the full
 CUDA CPU/PPU console loop per action.
 
+## CUDA Reward No-Copy Mode
+
+Command:
+
+```sh
+PYTHONPATH=src python3 benchmarks/phase5_benchmark.py \
+  "Super Mario Bros. (World).nes" \
+  --env-counts 128,512,2048,4096,8192,16384 \
+  --steps 500 \
+  --warmup-steps 50 \
+  --modes reward \
+  --backend cuda
+```
+
+| Mode | Envs | Env steps/sec | Training frames/sec | Peak GPU util | Peak GPU memory |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| reward | 128 | 1,649,929.4 | 6,599,717.7 | 3% | 911 MiB |
+| reward | 512 | 6,110,703.3 | 24,442,813.1 | 40% | 1001 MiB |
+| reward | 2048 | 22,600,223.2 | 90,400,892.9 | 41% | 1275 MiB |
+| reward | 4096 | 40,810,137.0 | 163,240,548.1 | 22% | 1639 MiB |
+| reward | 8192 | 68,550,659.5 | 274,202,637.9 | 19% | 2367 MiB |
+| reward | 16384 | 102,991,288.4 | 411,965,153.7 | 13% | 3823 MiB |
+
+Interpretation: the benchmark can now separate training-style reward/done
+throughput from full RGB observation throughput. This path skips per-step RGB
+render and host observation copy, while still copying rewards and done flags
+back to Python for accounting.
+
+## Legacy Comparison
+
+The legacy comparison was run with `gym-super-mario-bros==7.4.0`,
+`nes-py==8.2.1`, `gym==0.25.2`, and `numpy==1.26.4`. Newer Colab images ship
+NumPy 2.x and Gym 0.26+, which are incompatible with this older stack unless
+the legacy dependencies are pinned in an isolated install.
+
+| Runner | Envs | Env steps/sec | Training frames/sec |
+| --- | ---: | ---: | ---: |
+| gym-super-mario-bros | 1 | 432.9 | 1,731.5 |
+| gym-super-mario-bros | 8 | 423.3 | 1,693.3 |
+
+Interpretation: the legacy CPU emulator saturates around 423 env-steps/sec on
+the Colab A100 host CPU for this simple sequential comparison. The packaged
+CUDA backend is roughly 31.8x faster at 4096 envs when returning RGB
+observations, and the no-copy reward mode is roughly 243,300x faster at 16,384
+envs for reward/done accounting.
+
 ## Raw CUDA Kernel Benchmark
 
 Command:

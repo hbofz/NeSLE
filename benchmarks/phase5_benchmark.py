@@ -29,6 +29,7 @@ except ImportError as exc:  # pragma: no cover - this is a command-line guard
 
 DEFAULT_ENV_COUNTS = (1, 8, 32, 128, 512, 1024, 2048, 4096)
 DEFAULT_MODES = ("step", "render", "inference")
+VALID_MODES = DEFAULT_MODES + ("reward",)
 
 
 @dataclass(frozen=True)
@@ -61,7 +62,7 @@ def _parse_csv_strings(value: str) -> tuple[str, ...]:
     items = tuple(item.strip().lower() for item in value.split(",") if item.strip())
     if not items:
         raise argparse.ArgumentTypeError("expected at least one mode")
-    unknown = sorted(set(items) - set(DEFAULT_MODES))
+    unknown = sorted(set(items) - set(VALID_MODES))
     if unknown:
         raise argparse.ArgumentTypeError(f"unknown benchmark modes: {', '.join(unknown)}")
     return items
@@ -160,6 +161,11 @@ def _benchmark_nesle(
     action_space: str,
     seed: int,
 ) -> BenchmarkResult:
+    if mode == "reward":
+        if backend != "cuda":
+            raise SystemExit("reward mode requires --backend cuda")
+        return _benchmark_cuda_reward(num_envs, steps, warmup_steps, frameskip, action_space, seed)
+
     env = nesle.make_vec(
         rom_path,
         num_envs=num_envs,
@@ -304,6 +310,63 @@ def _benchmark_legacy(
         duration_sec=duration,
         env_steps_per_sec=(num_envs * steps) / duration,
         training_frames_per_sec=(num_envs * steps * 4) / duration,
+        fps_per_env=steps / duration,
+        reset_rate=done_count / max(num_envs * steps, 1),
+        reward_sum=reward_sum,
+        gpu={"before": gpu_before, "after": _gpu_snapshot(), "peak": gpu_sampler.peak(), "torch_device": None},
+    )
+
+
+class _ActionCount:
+    def __init__(self, n: int) -> None:
+        self.n = n
+
+
+def _benchmark_cuda_reward(
+    num_envs: int,
+    steps: int,
+    warmup_steps: int,
+    frameskip: int,
+    action_space: str,
+    seed: int,
+) -> BenchmarkResult:
+    try:
+        from nesle import _cuda_core  # type: ignore[attr-defined]
+        from nesle.env import _action_masks
+    except ImportError as exc:  # pragma: no cover - optional CUDA extension path
+        raise SystemExit("Build the CUDA extension to run reward mode: sh scripts/build_cuda_extension.sh") from exc
+
+    action_masks = np.asarray(_action_masks(action_space), dtype=np.uint8)
+    batch = _cuda_core.CudaBatch(num_envs, frameskip)
+    rng = np.random.default_rng(seed)
+    action_count = _ActionCount(len(action_masks))
+    batch.reset()
+    for actions in _make_actions(action_count, rng, warmup_steps, num_envs):
+        batch.step(action_masks[actions], render_frame=False, copy_obs=False)
+
+    reward_sum = 0.0
+    done_count = 0
+    gpu_before = _gpu_snapshot()
+    actions_batch = _make_actions(action_count, rng, steps, num_envs)
+    with _GpuSampler() as gpu_sampler:
+        started = time.perf_counter()
+        for actions in actions_batch:
+            result = batch.step(action_masks[actions], render_frame=False, copy_obs=False)
+            rewards = np.asarray(result["rewards"], dtype=np.float32)
+            dones = np.asarray(result["dones"], dtype=bool)
+            reward_sum += float(np.sum(rewards))
+            done_count += int(np.sum(dones))
+        duration = max(time.perf_counter() - started, 1e-12)
+    return BenchmarkResult(
+        runner="nesle",
+        mode="reward",
+        backend="cuda",
+        num_envs=num_envs,
+        steps=steps,
+        frameskip=frameskip,
+        duration_sec=duration,
+        env_steps_per_sec=(num_envs * steps) / duration,
+        training_frames_per_sec=(num_envs * steps * frameskip) / duration,
         fps_per_env=steps / duration,
         reset_rate=done_count / max(num_envs * steps, 1),
         reward_sum=reward_sum,

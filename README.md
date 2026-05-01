@@ -95,8 +95,8 @@ PYTHONPATH=src python benchmarks/phase5_benchmark.py \
 ```
 
 Install `.[legacy-mario]` and add `--include-legacy` only for the slower
-`gym-super-mario-bros` comparison rows, which use registered legacy env IDs
-such as `SuperMarioBros-v0`.
+`gym-super-mario-bros` comparison rows. The legacy extra pins NumPy and Gym to
+the old API versions required by `nes-py`.
 
 To separate raw CUDA kernel throughput from the current Python backend, run:
 
@@ -118,6 +118,17 @@ PYTHONPATH=src python benchmarks/phase5_benchmark.py \
   "Super Mario Bros. (World).nes" \
   --backend cuda \
   --env-counts 128,512,2048,4096
+```
+
+To measure reward/done throughput without copying RGB observations back to the
+host on every step:
+
+```sh
+PYTHONPATH=src python benchmarks/phase5_benchmark.py \
+  "Super Mario Bros. (World).nes" \
+  --backend cuda \
+  --modes reward \
+  --env-counts 128,512,2048,4096,8192,16384
 ```
 
 Current A100 calibration notes are tracked in
