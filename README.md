@@ -85,6 +85,12 @@ The vector wrapper follows SB3's `VecEnv` reset/step shape and auto-reset
 contract, including `terminal_observation`. The single environment wrapper uses
 Gymnasium's reset/step return convention when Gymnasium is installed.
 
+An SB3 PPO starter is available at [examples/sb3_train.py](examples/sb3_train.py):
+
+```sh
+python examples/sb3_train.py "Super Mario Bros. (World).nes" --num-envs 8
+```
+
 ## Documents
 
 - [Research notes](docs/research-notes.md)

@@ -67,11 +67,36 @@ class EnvTests(unittest.TestCase):
         self.assertEqual(dones.shape, (1,))
         self.assertEqual(len(infos), 1)
 
+    def test_vec_helpers_and_options(self):
+        env = NesleVecEnv(str(self.rom_path), num_envs=2, backend="synthetic", action_space=[0, 0x80])
+        self.assertEqual(env.action_space.n, 2)
+        self.assertEqual(env.seed(10), [10, 11])
+        env.set_options([{"level": 1}, {"level": 2}])
+        obs = env.reset()
+        self.assertEqual(obs.shape, (2, 240, 256, 3))
+        self.assertEqual(env.reset_infos[0]["reset_options"], {"level": 1})
+        self.assertEqual(env.reset_infos[1]["reset_options"], {"level": 2})
+        self.assertEqual(len(env.get_images()), 2)
+        self.assertEqual(env.get_attr("name"), ["synthetic", "synthetic"])
+        env.set_attr("max_episode_steps", 3, indices=0)
+        self.assertEqual(env.get_attr("max_episode_steps", indices=[0, 1]), [3, 0])
+        rendered = env.env_method("render", indices=1)
+        self.assertEqual(rendered[0].shape, (240, 256, 3))
+        self.assertEqual(env.env_is_wrapped(object), [False, False])
+
+    def test_raw_action_space(self):
+        env = NesleVecEnv(str(self.rom_path), num_envs=1, backend="synthetic", action_space="raw")
+        self.assertEqual(env.action_space.n, 256)
+        env.reset()
+        _, rewards, _, _ = env.step([255])
+        self.assertEqual(rewards.shape, (1,))
+
     def test_single_env_gymnasium_style_api_without_optional_gym(self):
         env = NesleEnv(str(self.rom_path), backend="synthetic")
-        obs, info = env.reset(seed=123)
+        obs, info = env.reset(seed=123, options={"world": 1})
         self.assertEqual(obs.shape, (240, 256, 3))
         self.assertEqual(info["backend"], "synthetic")
+        self.assertEqual(info["reset_options"], {"world": 1})
         obs, reward, terminated, truncated, info = env.step(1)
         self.assertEqual(obs.shape, (240, 256, 3))
         self.assertIsInstance(reward, float)

@@ -28,6 +28,11 @@ except ImportError:  # pragma: no cover - exercised when optional deps are absen
     gym = None
     spaces = None
 
+try:
+    from stable_baselines3.common.vec_env import VecEnv as _StableBaselinesVecEnv
+except ImportError:  # pragma: no cover - exercised when optional deps are absent
+    _StableBaselinesVecEnv = None
+
 
 FRAME_SHAPE = (240, 256, 3)
 FRAME_DTYPE = np.uint8 if np is not None else None
@@ -274,7 +279,10 @@ def _make_backend(
     return _SyntheticBackend(rom, seed=seed, max_episode_steps=max_episode_steps)
 
 
-class NesleVecEnv:
+_VecEnvBase = _StableBaselinesVecEnv if _StableBaselinesVecEnv is not None else object
+
+
+class NesleVecEnv(_VecEnvBase):
     """SB3-style vector API for NeSLE environments.
 
     The current Phase 4 surface supports SB3's ``reset``/``step`` vector
@@ -321,9 +329,13 @@ class NesleVecEnv:
         self.action_masks = _action_masks(action_space)
         self.action_space = _discrete(len(self.action_masks))
         self.observation_space = _box(0, 255, FRAME_SHAPE, numpy.uint8)
+        if _StableBaselinesVecEnv is not None:
+            _StableBaselinesVecEnv.__init__(self, num_envs, self.observation_space, self.action_space)
         self.reset_infos: list[dict[str, Any]] = [{} for _ in range(num_envs)]
         self.buf_infos: list[dict[str, Any]] = [{} for _ in range(num_envs)]
         self._pending_actions: np.ndarray | None = None
+        self._seeds: list[int | None] = [None for _ in range(num_envs)]
+        self._options: list[dict[str, Any]] = [{} for _ in range(num_envs)]
         self._closed = False
         self._backends = [
             _make_backend(
@@ -341,11 +353,15 @@ class NesleVecEnv:
         numpy = _require_numpy()
         observations = []
         infos = []
-        for backend in self._backends:
-            obs, info = backend.reset()
+        for env, backend in enumerate(self._backends):
+            obs, info = backend.reset(self._seeds[env])
+            if self._options[env]:
+                info["reset_options"] = dict(self._options[env])
             observations.append(obs)
             infos.append(info)
         self.reset_infos = infos
+        self._seeds = [None for _ in range(self.num_envs)]
+        self._options = [{} for _ in range(self.num_envs)]
         return numpy.stack(observations, axis=0)
 
     def step_async(self, actions: Iterable[int]) -> None:
@@ -394,16 +410,26 @@ class NesleVecEnv:
             raise ValueError("only rgb_array rendering is supported")
         return _require_numpy().stack([backend.render() for backend in self._backends], axis=0)
 
+    def get_images(self) -> list[np.ndarray]:
+        return [backend.render() for backend in self._backends]
+
     def close(self) -> None:
         self._closed = True
 
     def seed(self, seed: int | None = None) -> list[int | None]:
-        seeds = []
-        for env, backend in enumerate(self._backends):
-            env_seed = None if seed is None else seed + env
-            backend.reset(env_seed)
-            seeds.append(env_seed)
-        return seeds
+        self._seeds = [None if seed is None else seed + env for env in range(self.num_envs)]
+        return list(self._seeds)
+
+    def set_options(self, options: dict[str, Any] | Sequence[dict[str, Any]] | None = None) -> None:
+        if options is None:
+            self._options = [{} for _ in range(self.num_envs)]
+            return
+        if isinstance(options, dict):
+            self._options = [dict(options) for _ in range(self.num_envs)]
+            return
+        if len(options) != self.num_envs:
+            raise ValueError(f"expected {self.num_envs} option dictionaries, got {len(options)}")
+        self._options = [dict(item) for item in options]
 
     def get_attr(self, attr_name: str, indices: Sequence[int] | int | None = None) -> list[Any]:
         return [getattr(self._backends[i], attr_name) for i in self._resolve_indices(indices)]
@@ -472,9 +498,10 @@ class NesleEnv(_EnvBase):
         self.action_space = self.vector_env.action_space
 
     def reset(self, *, seed: int | None = None, options: dict[str, Any] | None = None) -> tuple[np.ndarray, dict[str, Any]]:
-        del options
         if seed is not None:
             self.vector_env.seed(seed)
+        if options is not None:
+            self.vector_env.set_options(options)
         observations = self.vector_env.reset()
         return observations[0], self.vector_env.reset_infos[0]
 

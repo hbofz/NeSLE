@@ -133,13 +133,16 @@ Gate: keep a NumPy compatibility path even if the fast path returns GPU tensors.
 
 Status: started. `NesleEnv` now exposes a Gymnasium-style single-env API and
 `NesleVecEnv` exposes the SB3-style vector contract with `reset`, `step`,
-`step_async`, `step_wait`, `render`, auto-reset, `reset_infos`, and
-`terminal_observation`. The wrappers validate ROM paths, support the existing
-right-only/simple/complex/raw action spaces, and return NumPy RGB observations,
-float rewards, done flags, and Mario RAM info dictionaries. A native C++ console
-binding hook is available for packaged CPU execution, while a deterministic
-Python compatibility backend keeps API tests and downstream integration code
-runnable before the CUDA runtime is packaged into Python.
+`step_async`, `step_wait`, `render`, `get_images`, auto-reset, `reset_infos`,
+seed/options plumbing, and `terminal_observation`. When SB3 is installed the
+vector wrapper inherits from SB3's `VecEnv`; without SB3 it keeps the same
+runtime method surface. The wrappers validate ROM paths, support the existing
+right-only/simple/complex/raw/custom action spaces, and return NumPy RGB
+observations, float rewards, done flags, and Mario RAM info dictionaries. A
+native C++ console binding hook is available for packaged CPU execution, while
+a deterministic Python compatibility backend keeps API tests and downstream
+integration code runnable before the CUDA runtime is packaged into Python. The
+`examples/sb3_train.py` script shows the intended PPO training entrypoint.
 
 ## Phase 5: Throughput Benchmark
 
