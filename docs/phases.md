@@ -147,6 +147,9 @@ integration code runnable before the CUDA runtime is packaged into Python. The
 when those packages are installed; `scripts/verify_native_binding.sh` compiles
 and imports the pybind console hook when pybind11 headers are available, then
 exercises `NativeConsole` and the native Python backend when NumPy is complete.
+`scripts/smoke_phase4_user_rom.sh` exercises the Python vector API against a
+local Super Mario Bros. ROM and reports observation/render shapes, reward total,
+done flags, and selected backend.
 
 ## Phase 5: Throughput Benchmark
 

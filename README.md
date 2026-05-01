@@ -58,6 +58,7 @@ With a local Super Mario Bros. `.nes` file, run the optional real-ROM gate:
 ```sh
 NESLE_ROM_PATH="/path/to/Super Mario Bros. (World).nes" sh scripts/smoke_user_rom.sh
 NESLE_ROM_PATH="/path/to/Super Mario Bros. (World).nes" sh scripts/smoke_phase2_user_rom.sh
+NESLE_ROM_PATH="/path/to/Super Mario Bros. (World).nes" sh scripts/smoke_phase4_user_rom.sh
 NESLE_ROM_PATH="/path/to/Super Mario Bros. (World).nes" sh scripts/render_openemu_state.sh
 NESLE_ROM_PATH="/path/to/Super Mario Bros. (World).nes" sh scripts/compare_openemu_state.sh
 ```
