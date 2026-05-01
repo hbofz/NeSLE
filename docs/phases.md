@@ -50,7 +50,8 @@ Success criteria:
 
 Gate: record deterministic action traces and compare RAM/frame hashes.
 
-Status: local CPU gate implemented. The PPU can render RGB frames from
+Status: local CPU gate implemented, with an OpenEmu reference-state visual gate.
+The PPU can render RGB frames from
 background and sprite pattern data, the headless runner accepts deterministic
 per-frame controller masks, and the runner reports Mario RAM, accumulated reward
 components, CPU RAM hashes, and RGB frame hashes. The optional Phase 2 user-ROM
@@ -58,9 +59,12 @@ smoke script compares a neutral trace against a Start, Right+B trace and asserts
 that controller input changes Mario position, reward, RAM hash, and rendered
 frame hash. The OpenEmu/Nestopia bridge parses local Nestopia save-state PPU
 chunks and renders them through NeSLE, giving the project a reference-state path
-for visual parity work. External known-good emulator parity is not vendored; the
-emitted hashes and OpenEmu state renderer are the comparison surface for
-reference captures.
+for visual parity work. The optional OpenEmu comparison script normalizes the
+OpenEmu save-state screenshot to native NES resolution, compares it with the
+NeSLE render, and fails on excessive RGB drift or weak channel correlation.
+External known-good emulator parity is not vendored; the emitted hashes,
+OpenEmu state renderer, and screenshot comparison script are the comparison
+surface for reference captures.
 
 ## Phase 3: CUDA Batched Emulator
 

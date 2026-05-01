@@ -22,6 +22,7 @@ PPU/input gate:
 - CPU RGB frame rendering for background and sprite tiles
 - Deterministic action traces with Mario RAM, reward, RAM hash, and frame hash
 - OpenEmu/Nestopia save-state rendering bridge for reference-frame debugging
+- OpenEmu screenshot comparison gate for local Nestopia reference captures
 - Headless `.nes` boot runner for NROM smoke tests
 - C++ tests for CPU execution, stack calls, branches, arithmetic, and NROM reads
 
@@ -37,6 +38,7 @@ With a local Super Mario Bros. `.nes` file, run the optional real-ROM gate:
 NESLE_ROM_PATH="/path/to/Super Mario Bros. (World).nes" sh scripts/smoke_user_rom.sh
 NESLE_ROM_PATH="/path/to/Super Mario Bros. (World).nes" sh scripts/smoke_phase2_user_rom.sh
 NESLE_ROM_PATH="/path/to/Super Mario Bros. (World).nes" sh scripts/render_openemu_state.sh
+NESLE_ROM_PATH="/path/to/Super Mario Bros. (World).nes" sh scripts/compare_openemu_state.sh
 ```
 
 ## Target API
