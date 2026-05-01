@@ -173,10 +173,13 @@ the legacy `gym-super-mario-bros` comparison is behind `.[legacy-mario]` and
 `--include-legacy`, using registered legacy env IDs such as
 `SuperMarioBros-v0`, so normal RL installs stay clean.
 `scripts/verify_phase5.sh` runs a tiny local-ROM benchmark smoke before larger
-GPU runs. `scripts/benchmark_cuda_kernels.sh` builds
-`cpp/tools/benchmark_cuda_kernels.cu` with NVCC and reports raw CUDA reward and
-render kernel throughput separately from the packaged Python backend, making the
-current CPU-native Python bottleneck explicit.
+GPU runs. `scripts/build_cuda_extension.sh` builds the optional
+`nesle._cuda_core` module, which lets `NesleVecEnv(..., backend="cuda")` route
+batched action application, reward, and render work through CUDA. The first
+A100 CUDA-backend Python benchmark reaches 13.4K env-steps/sec at 4096 envs,
+up from the native backend's 213 env-steps/sec. `scripts/benchmark_cuda_kernels.sh`
+builds `cpp/tools/benchmark_cuda_kernels.cu` with NVCC and reports raw CUDA
+reward and render kernel throughput separately from the packaged Python backend.
 
 ## Phase 6: Research Package
 

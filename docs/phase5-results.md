@@ -52,6 +52,44 @@ Throughput is flat across environment counts, so Phase 5 cannot claim GPU-scale
 environment stepping until a packaged CUDA backend is wired into `NesleVecEnv`.
 The inference path uses CUDA, but the GPU waits on CPU env stepping.
 
+## CUDA Python Backend
+
+Command:
+
+```sh
+NESLE_CUDA_ARCH=sm_80 PYTHON=python3 sh scripts/build_cuda_extension.sh
+PYTHONPATH=src python3 benchmarks/phase5_benchmark.py \
+  "Super Mario Bros. (World).nes" \
+  --env-counts 128,512,2048,4096 \
+  --steps 100 \
+  --warmup-steps 20 \
+  --modes step,render,inference \
+  --backend cuda
+```
+
+| Mode | Envs | Env steps/sec | Training frames/sec | Peak GPU util | Peak GPU memory |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| step | 128 | 3,652.9 | 14,611.7 | 91% | 911 MiB |
+| render | 128 | 3,187.0 | 12,747.8 | 83% | 911 MiB |
+| inference | 128 | 1,714.7 | 6,858.8 | 59% | 1301 MiB |
+| step | 512 | 8,051.8 | 32,207.4 | 61% | 1367 MiB |
+| render | 512 | 5,328.4 | 21,313.4 | 49% | 1367 MiB |
+| inference | 512 | 2,426.5 | 9,706.1 | 56% | 2207 MiB |
+| step | 2048 | 12,487.3 | 49,949.1 | 45% | 2481 MiB |
+| render | 2048 | 6,719.8 | 26,879.3 | 36% | 2481 MiB |
+| inference | 2048 | 2,790.8 | 11,163.2 | 40% | 5829 MiB |
+| step | 4096 | 13,446.5 | 53,786.0 | 36% | 6193 MiB |
+| render | 4096 | 7,177.6 | 28,710.6 | 36% | 6193 MiB |
+| inference | 4096 | 2,871.5 | 11,486.0 | 46% | 11955 MiB |
+
+Interpretation: `backend="cuda"` now exercises a packaged CUDA vector backend
+through the public Python API. This first backend moves batched action
+application, reward, and RGB render kernels onto the GPU, while still returning
+NumPy observations/rewards/dones each step. It is a large improvement over the
+native CPU backend, but it is still below raw kernel capacity because every step
+copies full RGB observations back to host memory and does not yet run the full
+CUDA CPU/PPU console loop per action.
+
 ## Raw CUDA Kernel Benchmark
 
 Command:
@@ -72,6 +110,7 @@ NESLE_CUDA_ARCH=sm_80 sh scripts/benchmark_cuda_kernels.sh \
 | 16384 | 2,633,530,000 | 166,120 |
 
 Interpretation: the lower-level CUDA reward and render kernels scale on A100.
-The next implementation step is a packaged CUDA environment backend that owns
-device buffers, resets from snapshots, steps batched actions, and exposes NumPy
-observations/rewards/dones to the Python vector API.
+The CUDA Python backend now owns device buffers and exposes NumPy
+observations/rewards/dones to the Python vector API. The next implementation
+step is replacing its synthetic action-application kernel with the full CUDA
+CPU/PPU console loop and adding render-cadence/no-copy modes for training.

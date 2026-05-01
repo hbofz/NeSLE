@@ -333,7 +333,7 @@ def main() -> None:
     parser.add_argument("--steps", type=int, default=200)
     parser.add_argument("--warmup-steps", type=int, default=20)
     parser.add_argument("--frameskip", type=int, default=4)
-    parser.add_argument("--backend", choices=("auto", "native", "synthetic"), default="auto")
+    parser.add_argument("--backend", choices=("auto", "native", "synthetic", "cuda"), default="auto")
     parser.add_argument("--action-space", default="simple")
     parser.add_argument("--modes", type=_parse_csv_strings, default=DEFAULT_MODES)
     parser.add_argument("--seed", type=int, default=123)

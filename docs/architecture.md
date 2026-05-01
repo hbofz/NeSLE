@@ -147,3 +147,6 @@ comparison rows using registered legacy env IDs such as `SuperMarioBros-v0`.
 Use `scripts/benchmark_cuda_kernels.sh` for raw CUDA kernel scaling so benchmark
 reports distinguish packaged Python backend throughput from lower-level GPU
 reward/render capacity.
+Use `scripts/build_cuda_extension.sh` to build the optional `nesle._cuda_core`
+module; once present, `NesleVecEnv(..., backend="cuda")` runs the Phase 5 CUDA
+backend through the public Python vector API.

@@ -109,6 +109,17 @@ The Python API benchmark currently reports the packaged native backend. The
 CUDA kernel benchmark reports the lower-level GPU reward/render kernels that
 will feed the future packaged CUDA environment backend.
 
+To build the optional CUDA Python backend on an NVIDIA machine:
+
+```sh
+python -m pip install -e '.[dev,rl]'
+NESLE_CUDA_ARCH=sm_80 sh scripts/build_cuda_extension.sh
+PYTHONPATH=src python benchmarks/phase5_benchmark.py \
+  "Super Mario Bros. (World).nes" \
+  --backend cuda \
+  --env-counts 128,512,2048,4096
+```
+
 Current A100 calibration notes are tracked in
 [docs/phase5-results.md](docs/phase5-results.md).
 
@@ -123,6 +134,7 @@ env = nesle.make_vec(
     rom_path="Super Mario Bros. (World).nes",
     num_envs=4096,
     action_space="simple",
+    backend="cuda",
     render_mode="rgb_array",
 )
 

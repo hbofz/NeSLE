@@ -279,6 +279,14 @@ def _make_backend(
     return _SyntheticBackend(rom, seed=seed, max_episode_steps=max_episode_steps)
 
 
+def _make_cuda_batch(num_envs: int, frameskip: int) -> Any:
+    from . import _cuda_core  # type: ignore[attr-defined]
+
+    if not hasattr(_cuda_core, "CudaBatch"):
+        raise RuntimeError("installed nesle._cuda_core does not expose CudaBatch")
+    return _cuda_core.CudaBatch(num_envs, frameskip)
+
+
 _VecEnvBase = _StableBaselinesVecEnv if _StableBaselinesVecEnv is not None else object
 
 
@@ -337,7 +345,17 @@ class NesleVecEnv(_VecEnvBase):
         self._seeds: list[int | None] = [None for _ in range(num_envs)]
         self._options: list[dict[str, Any]] = [{} for _ in range(num_envs)]
         self._closed = False
-        self._backends = [
+        cuda_requested = backend.lower() == "cuda" or (
+            backend.lower() == "auto" and device.lower() == "cuda"
+        )
+        self._cuda_batch = None
+        if cuda_requested:
+            try:
+                self._cuda_batch = _make_cuda_batch(num_envs, frameskip)
+            except Exception:
+                if backend.lower() == "cuda":
+                    raise
+        self._backends = [] if self._cuda_batch is not None else [
             _make_backend(
                 backend,
                 device,
@@ -351,6 +369,17 @@ class NesleVecEnv(_VecEnvBase):
 
     def reset(self) -> np.ndarray:
         numpy = _require_numpy()
+        if self._cuda_batch is not None:
+            observations = numpy.asarray(self._cuda_batch.reset(), dtype=numpy.uint8)
+            infos = [{"backend": "cuda"} for _ in range(self.num_envs)]
+            for env in range(self.num_envs):
+                if self._options[env]:
+                    infos[env]["reset_options"] = dict(self._options[env])
+            self.reset_infos = infos
+            self._seeds = [None for _ in range(self.num_envs)]
+            self._options = [{} for _ in range(self.num_envs)]
+            return observations
+
         observations = []
         infos = []
         for env, backend in enumerate(self._backends):
@@ -382,6 +411,22 @@ class NesleVecEnv(_VecEnvBase):
         if action_array.shape != (self.num_envs,):
             raise ValueError(f"expected actions with shape ({self.num_envs},), got {action_array.shape}")
 
+        if self._cuda_batch is not None:
+            if numpy.any(action_array < 0) or numpy.any(action_array >= len(self.action_masks)):
+                raise ValueError("action index out of range")
+            action_masks = numpy.asarray(
+                [self.action_masks[int(action)] for action in action_array],
+                dtype=numpy.uint8,
+            )
+            result = self._cuda_batch.step(action_masks)
+            observations = numpy.asarray(result["obs"], dtype=numpy.uint8)
+            rewards = numpy.asarray(result["rewards"], dtype=numpy.float32)
+            dones = numpy.asarray(result["dones"], dtype=bool)
+            infos = [{"backend": "cuda"} for _ in range(self.num_envs)]
+            self._pending_actions = None
+            self.buf_infos = infos
+            return observations, rewards, dones, infos
+
         observations = []
         rewards = numpy.zeros(self.num_envs, dtype=numpy.float32)
         dones = numpy.zeros(self.num_envs, dtype=bool)
@@ -408,9 +453,14 @@ class NesleVecEnv(_VecEnvBase):
             return None
         if mode != "rgb_array":
             raise ValueError("only rgb_array rendering is supported")
+        if self._cuda_batch is not None:
+            return _require_numpy().asarray(self._cuda_batch.render(), dtype=FRAME_DTYPE)
         return _require_numpy().stack([backend.render() for backend in self._backends], axis=0)
 
     def get_images(self) -> list[np.ndarray]:
+        if self._cuda_batch is not None:
+            rendered = self.render()
+            return [rendered[env].copy() for env in range(self.num_envs)] if rendered is not None else []
         return [backend.render() for backend in self._backends]
 
     def close(self) -> None:
@@ -434,6 +484,8 @@ class NesleVecEnv(_VecEnvBase):
     def get_attr(self, attr_name: str, indices: Sequence[int] | int | None = None) -> list[Any]:
         if attr_name == "render_mode":
             return [self.render_mode for _ in self._resolve_indices(indices)]
+        if self._cuda_batch is not None and attr_name == "name":
+            return ["cuda" for _ in self._resolve_indices(indices)]
         return [getattr(self._backends[i], attr_name) for i in self._resolve_indices(indices)]
 
     def set_attr(self, attr_name: str, value: Any, indices: Sequence[int] | int | None = None) -> None:
@@ -447,6 +499,9 @@ class NesleVecEnv(_VecEnvBase):
         indices: Sequence[int] | int | None = None,
         **method_kwargs: Any,
     ) -> list[Any]:
+        if self._cuda_batch is not None and method_name == "render":
+            rendered = self.render()
+            return [rendered[i].copy() for i in self._resolve_indices(indices)] if rendered is not None else []
         return [
             getattr(self._backends[i], method_name)(*method_args, **method_kwargs)
             for i in self._resolve_indices(indices)

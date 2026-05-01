@@ -36,3 +36,4 @@ c++ -std=c++20 -Icpp/include cpp/src/rom.cpp cpp/src/smb.cpp cpp/tools/run_nes_h
 c++ -std=c++20 -Icpp/include cpp/src/rom.cpp cpp/tools/render_nestopia_state.cpp -o /tmp/nesle_render_nestopia_state
 c++ -std=c++20 -Icpp/include cpp/tools/compare_rgb_frame.cpp -o /tmp/nesle_compare_rgb_frame
 sh scripts/verify_native_binding.sh
+sh scripts/build_cuda_extension.sh
