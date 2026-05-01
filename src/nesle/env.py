@@ -451,6 +451,36 @@ class NesleVecEnv(_VecEnvBase):
         self.buf_infos = infos
         return numpy.stack(observations, axis=0), rewards, dones, infos
 
+    def step_reward(self, actions: Iterable[int]) -> tuple[np.ndarray, np.ndarray, list[dict[str, Any]]]:
+        """Step the CUDA backend without rendering or copying RGB observations.
+
+        This is intended for high-throughput training loops that consume rewards,
+        done flags, and occasional explicit renders instead of full RGB frames on
+        every environment step.
+        """
+
+        numpy = _require_numpy()
+        if self._cuda_batch is None:
+            raise RuntimeError("step_reward requires backend='cuda'")
+        action_array = numpy.asarray(list(actions), dtype=numpy.int64)
+        if action_array.shape != (self.num_envs,):
+            raise ValueError(f"expected actions with shape ({self.num_envs},), got {action_array.shape}")
+        if numpy.any(action_array < 0) or numpy.any(action_array >= len(self.action_masks)):
+            raise ValueError("action index out of range")
+
+        action_masks = numpy.asarray(
+            [self.action_masks[int(action)] for action in action_array],
+            dtype=numpy.uint8,
+        )
+        result = self._cuda_batch.step(action_masks, render_frame=False, copy_obs=False)
+        rewards = numpy.asarray(result["rewards"], dtype=numpy.float32)
+        dones = numpy.asarray(result["dones"], dtype=bool)
+        backend_name = str(self._cuda_batch.name)
+        infos = [{"backend": backend_name, "observations_copied": False} for _ in range(self.num_envs)]
+        self._pending_actions = None
+        self.buf_infos = infos
+        return rewards, dones, infos
+
     def render(self, mode: str | None = None) -> np.ndarray | None:
         mode = self.render_mode if mode is None else mode
         if mode is None:

@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="520" viewBox="0 0 960 520">
+<rect width="100%" height="100%" fill="#ffffff"/>
+<text x="96" y="38" font-family="Arial, sans-serif" font-size="24" font-weight="700" fill="#202020">Phase 6 Frameskip Ablation</text>
+<line x1="96" y1="436" x2="924" y2="436" stroke="#333" stroke-width="1"/>
+<line x1="96" y1="72" x2="96" y2="436" stroke="#333" stroke-width="1"/>
+<line x1="90" y1="436.0" x2="924" y2="436.0" stroke="#e5e5e5" stroke-width="1"/>
+<text x="84" y="440.0" font-family="Arial, sans-serif" font-size="12" text-anchor="end" fill="#555">0</text>
+<line x1="90" y1="345.0" x2="924" y2="345.0" stroke="#e5e5e5" stroke-width="1"/>
+<text x="84" y="349.0" font-family="Arial, sans-serif" font-size="12" text-anchor="end" fill="#555">68.3K</text>
+<line x1="90" y1="254.0" x2="924" y2="254.0" stroke="#e5e5e5" stroke-width="1"/>
+<text x="84" y="258.0" font-family="Arial, sans-serif" font-size="12" text-anchor="end" fill="#555">136.6K</text>
+<line x1="90" y1="163.0" x2="924" y2="163.0" stroke="#e5e5e5" stroke-width="1"/>
+<text x="84" y="167.0" font-family="Arial, sans-serif" font-size="12" text-anchor="end" fill="#555">204.9K</text>
+<line x1="90" y1="72.0" x2="924" y2="72.0" stroke="#e5e5e5" stroke-width="1"/>
+<text x="84" y="76.0" font-family="Arial, sans-serif" font-size="12" text-anchor="end" fill="#555">273.2K</text>
+<rect x="96.0" y="422.0" width="198.0" height="14.0" rx="3" fill="#3f8f5f"/>
+<text x="195.0" y="414.0" font-family="Arial, sans-serif" font-size="12" text-anchor="middle" fill="#222">10.5K</text>
+<text x="195.0" y="454" font-family="Arial, sans-serif" font-size="11" text-anchor="end" transform="rotate(-35 195.0 454)" fill="#333">no_copy @ 32</text>
+<rect x="302.0" y="72.0" width="198.0" height="364.0" rx="3" fill="#3f8f5f"/>
+<text x="401.0" y="64.0" font-family="Arial, sans-serif" font-size="12" text-anchor="middle" fill="#222">273.2K</text>
+<text x="401.0" y="454" font-family="Arial, sans-serif" font-size="11" text-anchor="end" transform="rotate(-35 401.0 454)" fill="#333">no_copy @ 32</text>
+<rect x="508.0" y="104.5" width="198.0" height="331.5" rx="3" fill="#3f8f5f"/>
+<text x="607.0" y="96.5" font-family="Arial, sans-serif" font-size="12" text-anchor="middle" fill="#222">248.8K</text>
+<text x="607.0" y="454" font-family="Arial, sans-serif" font-size="11" text-anchor="end" transform="rotate(-35 607.0 454)" fill="#333">no_copy @ 32</text>
+<rect x="714.0" y="136.8" width="198.0" height="299.2" rx="3" fill="#3f8f5f"/>
+<text x="813.0" y="128.8" font-family="Arial, sans-serif" font-size="12" text-anchor="middle" fill="#222">224.6K</text>
+<text x="813.0" y="454" font-family="Arial, sans-serif" font-size="11" text-anchor="end" transform="rotate(-35 813.0 454)" fill="#333">no_copy @ 32</text>
+<text x="504.0" y="504" font-family="Arial, sans-serif" font-size="13" text-anchor="middle" fill="#444">CUDA-console env-steps/sec, A100</text>
+</svg>

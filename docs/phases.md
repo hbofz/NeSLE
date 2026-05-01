@@ -192,3 +192,14 @@ Success criteria:
 - Ablations for reset cache, render cadence, env count, and frame-skip.
 - Public artifact can build in an NVIDIA CUDA container.
 - Limitations are explicit: initial mapper support is NROM/Super Mario Bros.
+
+Status: complete. Phase 6 adds `benchmarks/phase6_console_ablation.py` for
+CUDA-console ablations across env count, frame-skip, RGB-copy, render-only, and
+no-copy modes; `benchmarks/plot_phase6.py` for dependency-light SVG plots;
+`scripts/reproduce_phase6.sh` for one-command reproduction; and
+`docker/cuda.Dockerfile` for NVIDIA CUDA builds. The A100 data and plots are
+tracked under `docs/data` and `docs/assets`, and
+`docs/phase6-report.md` records the methodology, results, API surface, and
+limitations. The public vector API retains SB3-compatible RGB stepping and adds
+`NesleVecEnv.step_reward(actions)` for CUDA-only no-observation-copy training
+loops.

@@ -160,6 +160,14 @@ obs = env.reset()
 obs, rewards, dones, infos = env.step(actions)
 ```
 
+For high-throughput CUDA training loops that do not need RGB observations on
+every step:
+
+```python
+rewards, dones, infos = env.step_reward(actions)
+frames = env.render()
+```
+
 The vector wrapper follows SB3's `VecEnv` reset/step shape and auto-reset
 contract, including `terminal_observation`. The single environment wrapper uses
 Gymnasium's reset/step return convention when Gymnasium is installed.
@@ -180,6 +188,7 @@ the `legacy-mario` extra for benchmark work.
 - [Architecture](docs/architecture.md)
 - [Phases](docs/phases.md)
 - [Phase 6 readiness](docs/phase6-readiness.md)
+- [Phase 6 report](docs/phase6-report.md)
 - [CPU validation](docs/cpu-validation.md)
 - [Headless runner](docs/headless-runner.md)
 - [Phase 5 results](docs/phase5-results.md)
