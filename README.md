@@ -49,6 +49,10 @@ sh scripts/verify_phase4.sh
 sh scripts/verify_native_binding.sh
 ```
 
+`verify_native_binding.sh` compiles and imports the pybind extension, exercises
+`NativeConsole`, and runs the native Python backend when the selected Python has
+a complete NumPy install.
+
 With a local Super Mario Bros. `.nes` file, run the optional real-ROM gate:
 
 ```sh

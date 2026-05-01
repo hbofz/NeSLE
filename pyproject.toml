@@ -19,7 +19,12 @@ rl = [
   "nes-py>=8.2",
   "gym-super-mario-bros>=7.4",
 ]
-dev = ["pytest>=8"]
+dev = [
+  "pytest>=8",
+  "setuptools>=69",
+  "wheel",
+  "pybind11>=2.12",
+]
 
 [tool.setuptools.packages.find]
 where = ["src"]

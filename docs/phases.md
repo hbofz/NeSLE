@@ -145,7 +145,8 @@ integration code runnable before the CUDA runtime is packaged into Python. The
 `examples/sb3_train.py` script shows the intended PPO training entrypoint.
 `scripts/verify_phase4.sh` runs the API smoke and optional Gymnasium/SB3 checks
 when those packages are installed; `scripts/verify_native_binding.sh` compiles
-the pybind console hook when pybind11 headers are available.
+and imports the pybind console hook when pybind11 headers are available, then
+exercises `NativeConsole` and the native Python backend when NumPy is complete.
 
 ## Phase 5: Throughput Benchmark
 
