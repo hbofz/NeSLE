@@ -97,9 +97,11 @@ scanline/dot/frame state, vblank/NMI start, pre-render status clearing, and the
 coarse sprite-0 signal, with parity tests against the CPU `Ppu`. The batch
 console step now combines CPU stepping, pre-instruction NMI service, PPU timing,
 and OAM DMA stalls/copies, with parity tests against `Console` for NMI frame
-service and DMA behavior. Full device compilation of the CPU core, full PPU
-register/render parity, reset cache, and high-count batched execution remain
-Phase 3 work.
+service and DMA behavior. A host reset-cache contract now captures/restores
+CPU, CPU RAM, PRG RAM, PPU timing/register memory, OAM, reward baselines, and
+done/reward slots, with deterministic rerun coverage after restore. Full device
+compilation of the CPU core, full PPU register/render parity, CUDA-side reset
+restore, and high-count batched execution remain Phase 3 work.
 
 ## Phase 4: Gymnasium And SB3 API
 
