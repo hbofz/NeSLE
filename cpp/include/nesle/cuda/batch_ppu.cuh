@@ -58,34 +58,57 @@ NESLE_CUDA_HD inline BatchPpuStepResult batch_ppu_step_env(BatchBuffers& buffers
     BatchPpuStepResult result;
     result.cycles = ppu_cycles;
 
-    for (std::uint32_t i = 0; i < ppu_cycles; ++i) {
-        ++buffers.ppu.dot[env];
-        if (buffers.ppu.dot[env] >= kPpuDotsPerScanline) {
-            buffers.ppu.dot[env] = 0;
-            ++buffers.ppu.scanline[env];
-            if (buffers.ppu.scanline[env] >= kPpuScanlinesPerFrame) {
-                buffers.ppu.scanline[env] = 0;
-                ++buffers.ppu.frame[env];
-                ++result.frames_completed;
-            }
-        }
+    constexpr std::uint32_t kFrameDots =
+        static_cast<std::uint32_t>(kPpuDotsPerScanline) *
+        static_cast<std::uint32_t>(kPpuScanlinesPerFrame);
+    constexpr std::uint32_t kSpriteZeroHitDot =
+        static_cast<std::uint32_t>(kPpuCoarseSpriteZeroHitScanline) *
+            static_cast<std::uint32_t>(kPpuDotsPerScanline) +
+        static_cast<std::uint32_t>(kPpuCoarseSpriteZeroHitDot);
+    constexpr std::uint32_t kVblankDot =
+        static_cast<std::uint32_t>(kPpuVblankStartScanline) *
+            static_cast<std::uint32_t>(kPpuDotsPerScanline) +
+        static_cast<std::uint32_t>(kPpuVblankFlagDot);
+    constexpr std::uint32_t kPreRenderDot =
+        static_cast<std::uint32_t>(kPpuPreRenderScanline) *
+            static_cast<std::uint32_t>(kPpuDotsPerScanline) +
+        static_cast<std::uint32_t>(kPpuVblankFlagDot);
 
-        if (buffers.ppu.scanline[env] == kPpuVblankStartScanline &&
-            buffers.ppu.dot[env] == kPpuVblankFlagDot) {
+    const auto start_dot =
+        static_cast<std::uint32_t>(buffers.ppu.scanline[env]) *
+            static_cast<std::uint32_t>(kPpuDotsPerScanline) +
+        static_cast<std::uint32_t>(buffers.ppu.dot[env]);
+    const auto end_dot = start_dot + ppu_cycles;
+    result.frames_completed = end_dot / kFrameDots;
+
+    auto crossed = [&](std::uint32_t frame_offset, std::uint32_t event_dot) {
+        const auto absolute_dot = frame_offset * kFrameDots + event_dot;
+        return absolute_dot > start_dot && absolute_dot <= end_dot;
+    };
+
+    for (std::uint32_t frame_offset = 0; frame_offset <= result.frames_completed; ++frame_offset) {
+        if (crossed(frame_offset, kSpriteZeroHitDot) &&
+            batch_ppu_rendering_enabled(buffers, env)) {
+            buffers.ppu.status[env] = static_cast<std::uint8_t>(buffers.ppu.status[env] | 0x40);
+        }
+        if (crossed(frame_offset, kVblankDot)) {
             const auto had_nmi = buffers.ppu.nmi_pending[env] != 0;
             batch_ppu_set_vblank(buffers, env, true);
             result.nmi_started = result.nmi_started ||
                                  (!had_nmi && buffers.ppu.nmi_pending[env] != 0);
-        } else if (buffers.ppu.scanline[env] == kPpuCoarseSpriteZeroHitScanline &&
-                   buffers.ppu.dot[env] == kPpuCoarseSpriteZeroHitDot &&
-                   batch_ppu_rendering_enabled(buffers, env)) {
-            buffers.ppu.status[env] = static_cast<std::uint8_t>(buffers.ppu.status[env] | 0x40);
-        } else if (buffers.ppu.scanline[env] == kPpuPreRenderScanline &&
-                   buffers.ppu.dot[env] == kPpuVblankFlagDot) {
+        }
+        if (crossed(frame_offset, kPreRenderDot)) {
             batch_ppu_set_vblank(buffers, env, false);
             buffers.ppu.status[env] = static_cast<std::uint8_t>(buffers.ppu.status[env] & 0x1F);
         }
     }
+
+    const auto next_dot = end_dot % kFrameDots;
+    buffers.ppu.scanline[env] =
+        static_cast<std::int16_t>(next_dot / kPpuDotsPerScanline);
+    buffers.ppu.dot[env] =
+        static_cast<std::uint16_t>(next_dot % kPpuDotsPerScanline);
+    buffers.ppu.frame[env] += result.frames_completed;
 
     return result;
 }
