@@ -6,13 +6,14 @@ Python API.
 
 The repository is intentionally staged. Phase 0 established the target
 architecture, project layout, NROM/iNES parsing, Mario RAM decoding, reward
-extraction, action mappings, and tests. Phase 1 is now building the portable NES
-CPU and NROM memory-map core that will later compile into CUDA kernels.
+extraction, action mappings, and tests. Phases 1 and 2 built the portable CPU,
+PPU, input, rendering, and OpenEmu reference gates. Phase 3 is now moving that
+contract into CUDA batch execution.
 
 ## Current Phase
 
-The current CPU path covers the Phase 1 core and the first Phase 2 Mario
-PPU/input gate:
+The current path covers the Phase 1/2 CPU emulator and the active Phase 3 CUDA
+batch contract:
 
 - 2A03/6502 state and official-opcode execution core
 - Flat 64 KB test bus, NROM memory-map smoke tests, and NES console CPU bus
@@ -25,6 +26,9 @@ PPU/input gate:
 - OpenEmu screenshot comparison gate for local Nestopia reference captures
 - Headless `.nes` boot runner for NROM smoke tests
 - C++ tests for CPU execution, stack calls, branches, arithmetic, and NROM reads
+- CUDA smoke for 4096-env reward/done batches
+- CUDA device smoke for the shared CPU core, batch console stepping, OAM DMA,
+  PPU timing, and device-side reset snapshot restore
 
 ## Quick Verification
 
@@ -48,7 +52,9 @@ sh scripts/verify_cuda.sh
 ```
 
 That smoke compiles the CUDA kernels, launches a 4096-env reward/done batch,
-and runs a tiny on-device NROM CPU trace through the batch CPU bus.
+runs a tiny on-device NROM CPU trace through the batch CPU bus, steps an
+integrated CPU/PPU console path through OAM DMA, and verifies device-side reset
+snapshot restore.
 
 ## Target API
 

@@ -92,21 +92,26 @@ strobe/shift reads, and a minimal PPU register surface, with host-side tests
 comparing the memory-map behavior against the CPU console/controller path. The
 same CPU core now compiles for device execution and the CUDA smoke runs an
 on-device synthetic NROM CPU trace through reset, RAM writes, controller reads,
-PRG RAM writes, and a loop PC check. A host-side batch CPU step adapter now runs the
-existing CPU core over the batch bus and checks instruction, register, cycle,
-RAM, PRG RAM, and controller parity against `Console` on a synthetic NROM trace.
-A host batch runner now steps multiple envs independently through that adapter
-and verifies per-env controller divergence and RAM/PRG RAM isolation against
-independent `Console` instances. Batch PPU timing now tracks per-env
-scanline/dot/frame state, vblank/NMI start, pre-render status clearing, and the
-coarse sprite-0 signal, with parity tests against the CPU `Ppu`. The batch
-console step now combines CPU stepping, pre-instruction NMI service, PPU timing,
-and OAM DMA stalls/copies, with parity tests against `Console` for NMI frame
-service and DMA behavior. A host reset-cache contract now captures/restores
-CPU, CPU RAM, PRG RAM, PPU timing/register memory, OAM, reward baselines, and
-done/reward slots, with deterministic rerun coverage after restore. Full device
-compilation of the CPU core, full PPU register/render parity, CUDA-side reset
-restore, and high-count batched execution remain Phase 3 work.
+PRG RAM writes, and a loop PC check. The smoke also runs an integrated
+device-side batch console trace through CPU execution, `$4014` OAM DMA,
+513-cycle DMA stall accounting, and PPU scanline/dot advancement. A host-side
+batch CPU step adapter now runs the existing CPU core over the batch bus and
+checks instruction, register, cycle, RAM, PRG RAM, and controller parity against
+`Console` on a synthetic NROM trace. A host batch runner now steps multiple envs
+independently through that adapter and verifies per-env controller divergence
+and RAM/PRG RAM isolation against independent `Console` instances. Batch PPU
+timing now tracks per-env scanline/dot/frame state, vblank/NMI start,
+pre-render status clearing, and the coarse sprite-0 signal, with parity tests
+against the CPU `Ppu`. The batch console step now combines CPU stepping,
+pre-instruction NMI service, PPU timing, and OAM DMA stalls/copies, with parity
+tests against `Console` for NMI frame service and DMA behavior. A host reset-cache
+contract now captures/restores CPU, CPU RAM, PRG RAM, PPU timing/register
+memory, OAM, reward baselines, and done/reward slots, with deterministic rerun
+coverage after restore. A device reset snapshot view now restores CPU state,
+CPU RAM, PRG RAM, PPU timing/register state, and OAM inside a CUDA kernel, and
+the CUDA smoke validates the restored console/DMA trace on NVIDIA hardware.
+Full PPU register/render parity and true frame-hash parity on device remain
+Phase 3 work.
 
 ## Phase 4: Gymnasium And SB3 API
 

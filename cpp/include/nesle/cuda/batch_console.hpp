@@ -6,6 +6,12 @@
 #include "nesle/cuda/batch_cpu.hpp"
 #include "nesle/cuda/batch_ppu.cuh"
 
+#ifdef __CUDACC__
+#define NESLE_CUDA_BATCH_CONSOLE_HD __host__ __device__
+#else
+#define NESLE_CUDA_BATCH_CONSOLE_HD
+#endif
+
 namespace nesle::cuda {
 
 constexpr std::uint32_t kPpuCyclesPerCpuCycle = 3;
@@ -19,12 +25,13 @@ struct BatchConsoleStepResult {
     bool nmi_started = false;
 };
 
-inline void clear_batch_ppu_nmi_pending(BatchBuffers& buffers, std::uint32_t env) noexcept {
+NESLE_CUDA_BATCH_CONSOLE_HD inline void clear_batch_ppu_nmi_pending(BatchBuffers& buffers,
+                                                                    std::uint32_t env) noexcept {
     buffers.ppu.nmi_pending[env] = 0;
 }
 
-[[nodiscard]] inline BatchConsoleStepResult step_batch_console_instruction(BatchBuffers& buffers,
-                                                                           std::uint32_t env) {
+[[nodiscard]] NESLE_CUDA_BATCH_CONSOLE_HD inline BatchConsoleStepResult
+step_batch_console_instruction(BatchBuffers& buffers, std::uint32_t env) {
     auto state = load_cpu_state(buffers, env);
     const auto cycles_before = state.cycles;
     bool nmi_serviced = false;
@@ -58,3 +65,5 @@ inline void clear_batch_ppu_nmi_pending(BatchBuffers& buffers, std::uint32_t env
 }
 
 }  // namespace nesle::cuda
+
+#undef NESLE_CUDA_BATCH_CONSOLE_HD
