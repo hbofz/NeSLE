@@ -94,9 +94,12 @@ A host batch runner now steps multiple envs independently through that adapter
 and verifies per-env controller divergence and RAM/PRG RAM isolation against
 independent `Console` instances. Batch PPU timing now tracks per-env
 scanline/dot/frame state, vblank/NMI start, pre-render status clearing, and the
-coarse sprite-0 signal, with parity tests against the CPU `Ppu`. Full device
-compilation of the CPU core, full PPU register/render parity, reset cache, and
-high-count batched execution remain Phase 3 work.
+coarse sprite-0 signal, with parity tests against the CPU `Ppu`. The batch
+console step now combines CPU stepping, pre-instruction NMI service, PPU timing,
+and OAM DMA stalls/copies, with parity tests against `Console` for NMI frame
+service and DMA behavior. Full device compilation of the CPU core, full PPU
+register/render parity, reset cache, and high-count batched execution remain
+Phase 3 work.
 
 ## Phase 4: Gymnasium And SB3 API
 

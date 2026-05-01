@@ -62,6 +62,20 @@ NESLE_CUDA_HD inline void write_controller_strobe(BatchBuffers& buffers,
     buffers.cpu.controller1_strobe[env] = next_strobe;
 }
 
+NESLE_CUDA_HD inline void batch_oam_dma(BatchBuffers& buffers,
+                                        std::uint32_t env,
+                                        std::uint8_t page) {
+    const auto base = static_cast<std::uint16_t>(page << 8);
+    auto* oam = env_oam(buffers, env);
+    for (std::uint16_t i = 0; i < kOamBytes; ++i) {
+        oam[static_cast<std::uint8_t>(buffers.ppu.oam_addr[env] + i)] =
+            env_cpu_ram(buffers, env)[(base + i) & 0x07FF];
+    }
+    if (buffers.cpu.pending_dma_cycles != nullptr) {
+        buffers.cpu.pending_dma_cycles[env] += 513;
+    }
+}
+
 NESLE_CUDA_HD inline std::uint8_t batch_cpu_read(BatchBuffers& buffers,
                                                  std::uint32_t env,
                                                  std::uint16_t address) {
@@ -71,7 +85,18 @@ NESLE_CUDA_HD inline std::uint8_t batch_cpu_read(BatchBuffers& buffers,
     if (address < 0x4000) {
         const auto reg = static_cast<std::uint16_t>((address - 0x2000) & 0x0007);
         if (reg == 2) {
-            return buffers.ppu.status[env];
+            const auto value = buffers.ppu.status[env];
+            buffers.ppu.status[env] = static_cast<std::uint8_t>(buffers.ppu.status[env] & 0x7F);
+            if (buffers.ppu.nmi_pending != nullptr) {
+                buffers.ppu.nmi_pending[env] = 0;
+            }
+            if (buffers.ppu.w != nullptr) {
+                buffers.ppu.w[env] = 0;
+            }
+            return value;
+        }
+        if (reg == 4) {
+            return env_oam(buffers, env)[buffers.ppu.oam_addr[env]];
         }
         return 0;
     }
@@ -101,12 +126,25 @@ NESLE_CUDA_HD inline void batch_cpu_write(BatchBuffers& buffers,
     if (address < 0x4000) {
         const auto reg = static_cast<std::uint16_t>((address - 0x2000) & 0x0007);
         if (reg == 0) {
+            if ((value & 0x80) != 0 && (buffers.ppu.ctrl[env] & 0x80) == 0 &&
+                (buffers.ppu.status[env] & 0x80) != 0) {
+                if (buffers.ppu.nmi_pending != nullptr) {
+                    buffers.ppu.nmi_pending[env] = 1;
+                }
+            }
             buffers.ppu.ctrl[env] = value;
         } else if (reg == 1) {
             buffers.ppu.mask[env] = value;
         } else if (reg == 3) {
             buffers.ppu.oam_addr[env] = value;
+        } else if (reg == 4) {
+            env_oam(buffers, env)[buffers.ppu.oam_addr[env]] = value;
+            ++buffers.ppu.oam_addr[env];
         }
+        return;
+    }
+    if (address == 0x4014) {
+        batch_oam_dma(buffers, env, value);
         return;
     }
     if (address == 0x4016) {

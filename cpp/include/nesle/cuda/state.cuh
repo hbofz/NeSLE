@@ -34,6 +34,7 @@ struct CpuStateSoA {
     std::uint8_t* controller1_shift;
     std::uint8_t* controller1_shift_count;
     std::uint8_t* controller1_strobe;
+    std::uint32_t* pending_dma_cycles;
 };
 
 struct PpuStateSoA {
@@ -82,6 +83,15 @@ NESLE_CUDA_STATE_HD inline const std::uint8_t* env_cpu_ram(const BatchBuffers& b
 
 NESLE_CUDA_STATE_HD inline std::uint8_t* env_cpu_ram(BatchBuffers& buffers, std::uint32_t env) {
     return buffers.cpu.ram + static_cast<std::uint64_t>(env) * kCpuRamBytes;
+}
+
+NESLE_CUDA_STATE_HD inline const std::uint8_t* env_oam(const BatchBuffers& buffers,
+                                                       std::uint32_t env) {
+    return buffers.ppu.oam + static_cast<std::uint64_t>(env) * kOamBytes;
+}
+
+NESLE_CUDA_STATE_HD inline std::uint8_t* env_oam(BatchBuffers& buffers, std::uint32_t env) {
+    return buffers.ppu.oam + static_cast<std::uint64_t>(env) * kOamBytes;
 }
 
 }  // namespace nesle::cuda
