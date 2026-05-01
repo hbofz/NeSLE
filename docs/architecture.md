@@ -144,3 +144,6 @@ The reproducible entrypoint is `benchmarks/phase5_benchmark.py`. Use the
 `step`, `render`, and `inference` modes for NeSLE scaling runs, then rerun with
 `--include-legacy` after installing `.[legacy-mario]` for CPU emulator
 comparison rows using registered legacy env IDs such as `SuperMarioBros-v0`.
+Use `scripts/benchmark_cuda_kernels.sh` for raw CUDA kernel scaling so benchmark
+reports distinguish packaged Python backend throughput from lower-level GPU
+reward/render capacity.

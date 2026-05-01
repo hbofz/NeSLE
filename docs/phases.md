@@ -173,7 +173,10 @@ the legacy `gym-super-mario-bros` comparison is behind `.[legacy-mario]` and
 `--include-legacy`, using registered legacy env IDs such as
 `SuperMarioBros-v0`, so normal RL installs stay clean.
 `scripts/verify_phase5.sh` runs a tiny local-ROM benchmark smoke before larger
-GPU runs.
+GPU runs. `scripts/benchmark_cuda_kernels.sh` builds
+`cpp/tools/benchmark_cuda_kernels.cu` with NVCC and reports raw CUDA reward and
+render kernel throughput separately from the packaged Python backend, making the
+current CPU-native Python bottleneck explicit.
 
 ## Phase 6: Research Package
 

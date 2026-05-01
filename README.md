@@ -98,6 +98,20 @@ Install `.[legacy-mario]` and add `--include-legacy` only for the slower
 `gym-super-mario-bros` comparison rows, which use registered legacy env IDs
 such as `SuperMarioBros-v0`.
 
+To separate raw CUDA kernel throughput from the current Python backend, run:
+
+```sh
+NESLE_CUDA_ARCH=sm_80 sh scripts/benchmark_cuda_kernels.sh \
+  --env-counts 1024,4096,8192,16384
+```
+
+The Python API benchmark currently reports the packaged native backend. The
+CUDA kernel benchmark reports the lower-level GPU reward/render kernels that
+will feed the future packaged CUDA environment backend.
+
+Current A100 calibration notes are tracked in
+[docs/phase5-results.md](docs/phase5-results.md).
+
 ## Target API
 
 The end state is:
@@ -137,3 +151,4 @@ the `legacy-mario` extra for benchmark work.
 - [Phases](docs/phases.md)
 - [CPU validation](docs/cpu-validation.md)
 - [Headless runner](docs/headless-runner.md)
+- [Phase 5 results](docs/phase5-results.md)
