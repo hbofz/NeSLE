@@ -87,8 +87,11 @@ test compares the GPU-ready helper against the CPU reward implementation across
 multiple environments. The GPU-ready batch CPU bus now covers CPU RAM mirrors,
 PRG RAM, NROM PRG ROM mapping, controller strobe/shift reads, and a minimal PPU
 register surface, with host-side tests comparing the memory-map behavior against
-the CPU console/controller path. Full device CPU execution, PPU state parity,
-reset cache, and high-count batched execution remain Phase 3 work.
+the CPU console/controller path. A host-side batch CPU step adapter now runs the
+existing CPU core over the batch bus and checks instruction, register, cycle,
+RAM, PRG RAM, and controller parity against `Console` on a synthetic NROM trace.
+Full device compilation of the CPU core, PPU state parity, reset cache, and
+high-count batched execution remain Phase 3 work.
 
 ## Phase 4: Gymnasium And SB3 API
 
