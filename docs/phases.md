@@ -78,6 +78,15 @@ Success criteria:
 
 Gate: correctness before throughput claims.
 
+Status: first CUDA contract slice started. Batch buffers now carry the Mario
+reward baseline needed by GPU stepping, and a host/device batch helper reads
+per-env CPU RAM, computes SMB-style reward/done values, and advances the reward
+baseline with the same semantics as the CPU `smb` module. The CUDA step kernel
+uses that helper as its current per-env work item, and a host-side C++ parity
+test compares the GPU-ready helper against the CPU reward implementation across
+multiple environments. Full device CPU execution, PPU state parity, reset cache,
+and high-count batched execution remain Phase 3 work.
+
 ## Phase 4: Gymnasium And SB3 API
 
 Success criteria:

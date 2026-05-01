@@ -54,6 +54,9 @@ struct BatchBuffers {
     std::uint8_t* action_masks;
     std::uint8_t* done;
     float* rewards;
+    int* previous_mario_x;
+    int* previous_mario_time;
+    std::uint8_t* previous_mario_dying;
     std::uint8_t* frames_rgb;
 };
 
