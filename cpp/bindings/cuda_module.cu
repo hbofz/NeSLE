@@ -274,6 +274,19 @@ public:
         return out;
     }
 
+    py::array_t<std::uint8_t> ram() const {
+        py::array_t<std::uint8_t> out(std::vector<py::ssize_t>{
+            static_cast<py::ssize_t>(num_env_),
+            nesle::cuda::kCpuRamBytes,
+        });
+        check_cuda(cudaMemcpy(out.mutable_data(),
+                              device_ram_,
+                              static_cast<std::size_t>(num_env_) * nesle::cuda::kCpuRamBytes,
+                              cudaMemcpyDeviceToHost),
+                   "copy ram");
+        return out;
+    }
+
     std::string name() const {
         return use_console_ ? "cuda-console" : "cuda";
     }
@@ -584,5 +597,6 @@ PYBIND11_MODULE(_cuda_core, m) {
              py::arg("render_frame") = true,
              py::arg("copy_obs") = true)
         .def("render", &CudaBatchBinding::render)
+        .def("ram", &CudaBatchBinding::ram)
         .def_property_readonly("name", &CudaBatchBinding::name);
 }

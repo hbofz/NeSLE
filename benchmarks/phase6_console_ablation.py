@@ -16,7 +16,7 @@ except ImportError as exc:  # pragma: no cover - command-line guard
 
 DEFAULT_ENV_COUNTS = (1, 2, 8, 32, 64, 128)
 DEFAULT_FRAMESKIPS = (1, 2, 4, 8)
-DEFAULT_MODES = ("rgb", "render_only", "no_copy")
+DEFAULT_MODES = ("rgb", "ram_obs", "render_only", "no_copy")
 
 
 def _parse_csv_strings(value: str) -> tuple[str, ...]:
@@ -36,6 +36,8 @@ def _make_actions(action_masks: np.ndarray, rng: np.random.Generator, num_envs: 
 def _copy_flags(mode: str) -> tuple[bool, bool]:
     if mode == "rgb":
         return True, True
+    if mode == "ram_obs":
+        return False, False
     if mode == "render_only":
         return True, False
     if mode == "no_copy":
@@ -69,6 +71,8 @@ def _run_case(
     batch.reset()
     for _ in range(warmup_steps):
         batch.step(_make_actions(action_masks, rng, num_envs), render_frame=render_frame, copy_obs=copy_obs)
+        if mode == "ram_obs":
+            batch.ram()
 
     reward_sum = 0.0
     done_count = 0
@@ -81,6 +85,8 @@ def _run_case(
                 render_frame=render_frame,
                 copy_obs=copy_obs,
             )
+            if mode == "ram_obs":
+                batch.ram()
             reward_sum += float(np.asarray(result["rewards"], dtype=np.float32).sum())
             done_count += int(np.asarray(result["dones"], dtype=bool).sum())
         duration = max(time.perf_counter() - started, 1e-12)

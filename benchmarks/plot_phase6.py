@@ -8,6 +8,7 @@ from typing import Any
 
 PALETTE = {
     "rgb": "#2f6f9f",
+    "ram_obs": "#7952b3",
     "render_only": "#d8842f",
     "no_copy": "#3f8f5f",
 }
@@ -82,7 +83,7 @@ def main() -> None:
 
     rows = _load_rows(args.input)
     fs4 = [row for row in rows if row["frameskip"] == 4 and row["num_envs"] in {1, 8, 32, 128}]
-    copy_gap = [row for row in fs4 if row["mode"] in {"rgb", "no_copy"}]
+    copy_gap = [row for row in fs4 if row["mode"] in {"rgb", "ram_obs", "no_copy"}]
     _svg_bar_chart(copy_gap, "Phase 6 CUDA-Console Copy Gap", args.output_dir / "phase6-copy-gap.svg")
 
     frameskip_rows = [
@@ -90,7 +91,8 @@ def main() -> None:
         for row in rows
         if row["num_envs"] == 32 and row["mode"] == "no_copy" and row["frameskip"] in {1, 2, 4, 8}
     ]
-    _svg_bar_chart(frameskip_rows, "Phase 6 Frameskip Ablation", args.output_dir / "phase6-frameskip.svg")
+    if len(frameskip_rows) == 4:
+        _svg_bar_chart(frameskip_rows, "Phase 6 Frameskip Ablation", args.output_dir / "phase6-frameskip.svg")
     print(f"wrote SVG plots to {args.output_dir}")
 
 

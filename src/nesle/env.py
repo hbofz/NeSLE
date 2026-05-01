@@ -35,6 +35,7 @@ except ImportError:  # pragma: no cover - exercised when optional deps are absen
 
 
 FRAME_SHAPE = (240, 256, 3)
+RAM_SHAPE = (CPU_RAM_BYTES,)
 FRAME_DTYPE = np.uint8 if np is not None else None
 
 
@@ -151,6 +152,15 @@ def _info_from_state(state: MarioRamState, reward_components: Any | None, backen
     return info
 
 
+def _normalize_observation_mode(observation_mode: str) -> str:
+    key = observation_mode.lower().replace("-", "_")
+    if key in {"rgb", "rgb_array", "frame"}:
+        return "rgb_array"
+    if key in {"ram", "cpu_ram"}:
+        return "ram"
+    raise ValueError("observation_mode must be 'rgb_array' or 'ram'")
+
+
 @dataclass(frozen=True)
 class BackendConfig:
     rom_path: str
@@ -159,6 +169,8 @@ class BackendConfig:
     action_space: str | Sequence[int] = "simple"
     device: str = "auto"
     backend: str = "auto"
+    observation_mode: str = "rgb_array"
+    observation_cadence: int = 1
     max_episode_steps: int = 0
 
 
@@ -215,6 +227,10 @@ class _SyntheticBackend:
     def render(self) -> np.ndarray:
         return self.frame.copy()
 
+    def ram_observation(self) -> np.ndarray:
+        numpy = _require_numpy()
+        return numpy.frombuffer(bytes(self.ram), dtype=numpy.uint8).copy()
+
 
 class _NativeBackend:
     name = "native"
@@ -257,6 +273,10 @@ class _NativeBackend:
     def render(self) -> np.ndarray:
         numpy = _require_numpy()
         return numpy.frombuffer(self.console.frame(), dtype=numpy.uint8).reshape(FRAME_SHAPE).copy()
+
+    def ram_observation(self) -> np.ndarray:
+        numpy = _require_numpy()
+        return numpy.frombuffer(self.console.ram(), dtype=numpy.uint8).copy()
 
 
 def _make_backend(
@@ -312,7 +332,9 @@ class NesleVecEnv(_VecEnvBase):
         device: str = "auto",
         backend: str = "auto",
         render_mode: str | None = "rgb_array",
+        observation_mode: str = "rgb_array",
         seed: int | None = None,
+        observation_cadence: int = 1,
         max_episode_steps: int = 0,
     ) -> None:
         numpy = _require_numpy()
@@ -320,8 +342,11 @@ class NesleVecEnv(_VecEnvBase):
             raise ValueError("num_envs must be positive")
         if frameskip <= 0:
             raise ValueError("frameskip must be positive")
+        if observation_cadence <= 0:
+            raise ValueError("observation_cadence must be positive")
         if render_mode not in (None, "rgb_array"):
             raise ValueError("render_mode must be None or 'rgb_array'")
+        observation_mode = _normalize_observation_mode(observation_mode)
         rom_bytes, rom = _load_rom(rom_path)
         self.config = BackendConfig(
             rom_path=str(rom_path),
@@ -330,15 +355,20 @@ class NesleVecEnv(_VecEnvBase):
             action_space=action_space,
             device=device,
             backend=backend,
+            observation_mode=observation_mode,
+            observation_cadence=observation_cadence,
             max_episode_steps=max_episode_steps,
         )
         self.rom = rom
         self.render_mode = render_mode
+        self.observation_mode = observation_mode
         self.num_envs = num_envs
         self.frameskip = frameskip
+        self.observation_cadence = observation_cadence
         self.action_masks = _action_masks(action_space)
         self.action_space = _discrete(len(self.action_masks))
-        self.observation_space = _box(0, 255, FRAME_SHAPE, numpy.uint8)
+        observation_shape = RAM_SHAPE if observation_mode == "ram" else FRAME_SHAPE
+        self.observation_space = _box(0, 255, observation_shape, numpy.uint8)
         if _StableBaselinesVecEnv is not None:
             _StableBaselinesVecEnv.__init__(self, num_envs, self.observation_space, self.action_space)
         self.reset_infos: list[dict[str, Any]] = [{} for _ in range(num_envs)]
@@ -347,6 +377,8 @@ class NesleVecEnv(_VecEnvBase):
         self._seeds: list[int | None] = [None for _ in range(num_envs)]
         self._options: list[dict[str, Any]] = [{} for _ in range(num_envs)]
         self._closed = False
+        self._cuda_observations: np.ndarray | None = None
+        self._cuda_step_count = 0
         cuda_requested = backend.lower() == "cuda" or (
             backend.lower() == "auto" and device.lower() == "cuda"
         )
@@ -372,9 +404,22 @@ class NesleVecEnv(_VecEnvBase):
     def reset(self) -> np.ndarray:
         numpy = _require_numpy()
         if self._cuda_batch is not None:
-            observations = numpy.asarray(self._cuda_batch.reset(), dtype=numpy.uint8)
+            reset_frame = numpy.asarray(self._cuda_batch.reset(), dtype=numpy.uint8)
+            if self.observation_mode == "ram":
+                observations = numpy.asarray(self._cuda_batch.ram(), dtype=numpy.uint8)
+                self._cuda_observations = reset_frame
+            else:
+                observations = reset_frame
+                self._cuda_observations = observations
+            self._cuda_step_count = 0
             backend_name = str(self._cuda_batch.name)
-            infos = [{"backend": backend_name} for _ in range(self.num_envs)]
+            infos = [
+                {
+                    "backend": backend_name,
+                    "observation_mode": self.observation_mode,
+                }
+                for _ in range(self.num_envs)
+            ]
             for env in range(self.num_envs):
                 if self._options[env]:
                     infos[env]["reset_options"] = dict(self._options[env])
@@ -387,6 +432,9 @@ class NesleVecEnv(_VecEnvBase):
         infos = []
         for env, backend in enumerate(self._backends):
             obs, info = backend.reset(self._seeds[env])
+            if self.observation_mode == "ram":
+                obs = backend.ram_observation()
+                info["observation_mode"] = "ram"
             if self._options[env]:
                 info["reset_options"] = dict(self._options[env])
             observations.append(obs)
@@ -421,12 +469,47 @@ class NesleVecEnv(_VecEnvBase):
                 [self.action_masks[int(action)] for action in action_array],
                 dtype=numpy.uint8,
             )
-            result = self._cuda_batch.step(action_masks)
-            observations = numpy.asarray(result["obs"], dtype=numpy.uint8)
+            self._cuda_step_count += 1
+            if self.observation_mode == "ram":
+                result = self._cuda_batch.step(action_masks, render_frame=False, copy_obs=False)
+                observations = numpy.asarray(self._cuda_batch.ram(), dtype=numpy.uint8)
+                observations_copied = True
+                observations_stale = False
+                rgb_observations_copied = False
+            else:
+                copy_observations = self.observation_cadence <= 1 or (
+                    self._cuda_step_count % self.observation_cadence == 0
+                )
+                result = self._cuda_batch.step(
+                    action_masks,
+                    render_frame=copy_observations,
+                    copy_obs=copy_observations,
+                )
+                if copy_observations:
+                    observations = numpy.asarray(result["obs"], dtype=numpy.uint8)
+                    self._cuda_observations = observations
+                elif self._cuda_observations is not None:
+                    observations = self._cuda_observations
+                else:
+                    observations = numpy.asarray(self._cuda_batch.render(), dtype=numpy.uint8)
+                    self._cuda_observations = observations
+                observations_copied = copy_observations
+                observations_stale = not copy_observations
+                rgb_observations_copied = copy_observations
             rewards = numpy.asarray(result["rewards"], dtype=numpy.float32)
             dones = numpy.asarray(result["dones"], dtype=bool)
             backend_name = str(self._cuda_batch.name)
-            infos = [{"backend": backend_name} for _ in range(self.num_envs)]
+            infos = [
+                {
+                    "backend": backend_name,
+                    "observation_mode": self.observation_mode,
+                    "observation_cadence": self.observation_cadence,
+                    "observations_copied": observations_copied,
+                    "observations_stale": observations_stale,
+                    "rgb_observations_copied": rgb_observations_copied,
+                }
+                for _ in range(self.num_envs)
+            ]
             self._pending_actions = None
             self.buf_infos = infos
             return observations, rewards, dones, infos
@@ -439,11 +522,17 @@ class NesleVecEnv(_VecEnvBase):
             if action_index < 0 or action_index >= len(self.action_masks):
                 raise ValueError(f"action index out of range for env {env}: {action_index}")
             obs, reward, done, info = backend.step(self.action_masks[int(action_index)], self.frameskip)
+            if self.observation_mode == "ram":
+                obs = backend.ram_observation()
+                info["observation_mode"] = "ram"
             rewards[env] = reward
             dones[env] = done
             if done:
                 info["terminal_observation"] = obs.copy()
                 obs, reset_info = backend.reset()
+                if self.observation_mode == "ram":
+                    obs = backend.ram_observation()
+                    reset_info["observation_mode"] = "ram"
                 self.reset_infos[env] = reset_info
             observations.append(obs)
             infos.append(info)
@@ -570,6 +659,8 @@ class NesleEnv(_EnvBase):
         device: str = "auto",
         backend: str = "auto",
         render_mode: str | None = "rgb_array",
+        observation_mode: str = "rgb_array",
+        observation_cadence: int = 1,
         max_episode_steps: int = 0,
     ) -> None:
         if gym is not None:
@@ -582,6 +673,8 @@ class NesleEnv(_EnvBase):
             device=device,
             backend=backend,
             render_mode=render_mode,
+            observation_mode=observation_mode,
+            observation_cadence=observation_cadence,
             max_episode_steps=max_episode_steps,
         )
         self.render_mode = render_mode

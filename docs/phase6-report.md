@@ -15,9 +15,11 @@ contains:
 - explicit limitations and next optimization targets.
 
 The central result is that the full ROM-backed CUDA CPU/PPU console loop works
-through the Python vector API. The main remaining performance bottleneck is not
-getting the NES loop onto CUDA; it is copying full RGB observations back to host
-memory on every step.
+through the Python vector API. The performance bottleneck was not getting the
+NES loop onto CUDA; it was copying full RGB observations back to host memory on
+every step. The project now exposes `observation_mode="ram"`, which keeps the
+normal vector `reset()`/`step()` API while returning compact 2 KB CPU RAM
+observations instead of 184 KB RGB frames.
 
 ## Reproduction
 
@@ -45,13 +47,17 @@ Bros. iNES file.
 
 The Phase 6 ablation uses `benchmarks/phase6_console_ablation.py`, which
 constructs `nesle._cuda_core.CudaBatch(num_envs, frameskip, rom_bytes)` and
-steps the real CUDA CPU/PPU console loop. It compares three modes:
+steps the real CUDA CPU/PPU console loop. It compares four modes:
 
 - `rgb`: step, render, and copy RGB observations to host.
+- `ram_obs`: step the real console loop and copy CPU RAM observations to host.
 - `render_only`: step and render on device, but do not copy RGB observations.
 - `no_copy`: step the real console loop and copy only rewards/done flags.
 
-All rows below were collected on a Colab A100-SXM4-80GB with CUDA 12.8.
+All rows below were collected on a Colab A100-SXM4-80GB with CUDA 12.8. The
+original comprehensive run is tracked in `docs/data/phase6-a100-summary.json`;
+the RAM-observation follow-up is tracked in
+`docs/data/phase6-ram-obs-a100.json`.
 
 ## Main Result
 
@@ -63,6 +69,10 @@ All rows below were collected on a Colab A100-SXM4-80GB with CUDA 12.8.
 | RGB obs copy | 8 | 825.3 | 3,301.3 | 87% | 5009 MiB |
 | RGB obs copy | 32 | 1,671.7 | 6,686.7 | 88% | 5015 MiB |
 | RGB obs copy | 128 | 3,598.8 | 14,395.0 | 83% | 5033 MiB |
+| RAM obs copy | 1 | 7,317.3 | 29,269.1 | 86% | 5009 MiB |
+| RAM obs copy | 8 | 54,278.4 | 217,113.6 | 86% | 5009 MiB |
+| RAM obs copy | 32 | 196,187.9 | 784,751.5 | 84% | 5015 MiB |
+| RAM obs copy | 128 | 560,370.6 | 2,241,482.5 | 75% | 5033 MiB |
 | render only | 1 | 137.7 | 550.9 | 88% | 5009 MiB |
 | render only | 8 | 865.4 | 3,461.7 | 86% | 5009 MiB |
 | render only | 32 | 1,797.7 | 7,190.9 | 86% | 5015 MiB |
@@ -72,9 +82,11 @@ All rows below were collected on a Colab A100-SXM4-80GB with CUDA 12.8.
 | no obs copy | 32 | 248,793.3 | 995,173.2 | 81% | 5015 MiB |
 | no obs copy | 128 | 1,008,196.2 | 4,032,784.8 | 96% | 5033 MiB |
 
-At 128 environments and frame-skip 4, the no-copy `cuda-console` path is about
-280x faster than the RGB-copy Python vector path. This is the immediate Phase 6
-optimization target.
+At 128 environments and frame-skip 4, RAM observations are about 155x faster
+than the RGB-copy path while still returning observations through the normal
+step API. A direct public `nesle.make_vec(..., observation_mode="ram")` smoke on
+the same A100 measured 428,105.6 env-steps/sec at 128 envs, versus 3,638.8
+env-steps/sec for RGB observations.
 
 ## Frame-Skip Ablation
 
@@ -94,18 +106,31 @@ often in this short benchmark.
 
 ## API Surface
 
-`NesleVecEnv.step(...)` keeps the SB3-compatible RGB observation contract.
-Phase 6 adds `NesleVecEnv.step_reward(actions)` for CUDA-only high-throughput
-loops that need rewards and done flags without copying RGB observations every
-step. Evaluation and debugging can still call `render()`.
+`NesleVecEnv.step(...)` now supports both RGB and RAM observations:
+
+```python
+env = nesle.make_vec(
+    "Super Mario Bros. (World).nes",
+    num_envs=128,
+    backend="cuda",
+    observation_mode="ram",
+)
+obs = env.reset()  # shape: (128, 2048)
+obs, rewards, dones, infos = env.step(actions)
+frames = env.render()  # shape: (128, 240, 256, 3)
+```
+
+`NesleVecEnv.step_reward(actions)` remains available for custom CUDA-only loops
+that need rewards and done flags without any observation copy.
 
 ## Limitations
 
 - Mapper support is limited to NROM/Super Mario Bros.
 - The PPU is sufficient for current gates, but it is not a full cycle-perfect
   NES renderer.
-- `step_reward` is not an SB3 `VecEnv` method; SB3 training still uses the RGB
-  observation path unless a custom training loop or wrapper is added.
+- RAM observations are not visually equivalent to RGB observations; image-based
+  policies still need RGB, frame cadence, feature extraction, or a device-side
+  observation path.
 - The CUDA-console implementation currently maps one environment to one CUDA
   thread for the serial CPU/PPU loop. This proves the GPU path but leaves
   scheduling and memory-layout optimization on the table.
@@ -116,8 +141,9 @@ step. Evaluation and debugging can still call `render()`.
 
 ## Phase 6 Conclusion
 
-Phase 6 is complete as a research package. NeSLE now has a reproducible CUDA
-artifact, public benchmark scripts, tracked A100 data, generated plots, a
-documented no-copy training path, and explicit limitations. Future work should
-turn `step_reward` into an SB3-friendly training wrapper, add GPU-resident
-observation tensors, and optimize the per-environment serial console loop.
+Phase 6 is complete as a research package and a usable CUDA training API.
+NeSLE now has a reproducible CUDA artifact, public benchmark scripts, tracked
+A100 data, generated plots, a documented no-copy reward path, and a normal
+`reset()`/`step()` RAM-observation mode that removes the full-frame copy
+bottleneck. Future work should add GPU-resident feature tensors for visual
+policies and optimize the per-environment serial console loop.

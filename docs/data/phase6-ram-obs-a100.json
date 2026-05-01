@@ -1,0 +1,638 @@
+[
+  {
+    "backend": "cuda-console",
+    "duration_sec": 0.14930843300135166,
+    "env_steps_per_sec": 133.95090684408257,
+    "fps_per_env": 133.95090684408257,
+    "frameskip": 4,
+    "gpu": {
+      "after": {
+        "available": true,
+        "gpus": [
+          {
+            "memory_total_mib": 81920,
+            "memory_used_mib": 5009,
+            "name": "NVIDIA A100-SXM4-80GB",
+            "utilization_percent": 87
+          }
+        ]
+      },
+      "before": {
+        "available": true,
+        "gpus": [
+          {
+            "memory_total_mib": 81920,
+            "memory_used_mib": 5009,
+            "name": "NVIDIA A100-SXM4-80GB",
+            "utilization_percent": 45
+          }
+        ]
+      },
+      "peak": {
+        "available": true,
+        "gpus": [
+          {
+            "memory_total_mib": 81920,
+            "name": "NVIDIA A100-SXM4-80GB",
+            "peak_memory_used_mib": 5009,
+            "peak_utilization_percent": 45
+          }
+        ],
+        "sample_count": 1
+      },
+      "peak_memory_used_mib": 5009,
+      "peak_utilization_percent": 45
+    },
+    "mode": "rgb",
+    "num_envs": 1,
+    "reset_rate": 0.0,
+    "reward_sum": 0.0,
+    "runner": "nesle",
+    "steps": 20,
+    "training_frames_per_sec": 535.8036273763303,
+    "warmup_steps": 3
+  },
+  {
+    "backend": "cuda-console",
+    "duration_sec": 0.0027332590016158065,
+    "env_steps_per_sec": 7317.272160514867,
+    "fps_per_env": 7317.272160514867,
+    "frameskip": 4,
+    "gpu": {
+      "after": {
+        "available": true,
+        "gpus": [
+          {
+            "memory_total_mib": 81920,
+            "memory_used_mib": 5009,
+            "name": "NVIDIA A100-SXM4-80GB",
+            "utilization_percent": 86
+          }
+        ]
+      },
+      "before": {
+        "available": true,
+        "gpus": [
+          {
+            "memory_total_mib": 81920,
+            "memory_used_mib": 5009,
+            "name": "NVIDIA A100-SXM4-80GB",
+            "utilization_percent": 86
+          }
+        ]
+      },
+      "peak": {
+        "available": true,
+        "gpus": [
+          {
+            "memory_total_mib": 81920,
+            "name": "NVIDIA A100-SXM4-80GB",
+            "peak_memory_used_mib": 5009,
+            "peak_utilization_percent": 86
+          }
+        ],
+        "sample_count": 1
+      },
+      "peak_memory_used_mib": 5009,
+      "peak_utilization_percent": 86
+    },
+    "mode": "ram_obs",
+    "num_envs": 1,
+    "reset_rate": 0.0,
+    "reward_sum": 0.0,
+    "runner": "nesle",
+    "steps": 20,
+    "training_frames_per_sec": 29269.08864205947,
+    "warmup_steps": 3
+  },
+  {
+    "backend": "cuda-console",
+    "duration_sec": 0.0027266420001978986,
+    "env_steps_per_sec": 7335.029680665231,
+    "fps_per_env": 7335.029680665231,
+    "frameskip": 4,
+    "gpu": {
+      "after": {
+        "available": true,
+        "gpus": [
+          {
+            "memory_total_mib": 81920,
+            "memory_used_mib": 5009,
+            "name": "NVIDIA A100-SXM4-80GB",
+            "utilization_percent": 76
+          }
+        ]
+      },
+      "before": {
+        "available": true,
+        "gpus": [
+          {
+            "memory_total_mib": 81920,
+            "memory_used_mib": 5009,
+            "name": "NVIDIA A100-SXM4-80GB",
+            "utilization_percent": 64
+          }
+        ]
+      },
+      "peak": {
+        "available": true,
+        "gpus": [
+          {
+            "memory_total_mib": 81920,
+            "name": "NVIDIA A100-SXM4-80GB",
+            "peak_memory_used_mib": 5009,
+            "peak_utilization_percent": 64
+          }
+        ],
+        "sample_count": 1
+      },
+      "peak_memory_used_mib": 5009,
+      "peak_utilization_percent": 64
+    },
+    "mode": "no_copy",
+    "num_envs": 1,
+    "reset_rate": 0.0,
+    "reward_sum": 0.0,
+    "runner": "nesle",
+    "steps": 20,
+    "training_frames_per_sec": 29340.118722660925,
+    "warmup_steps": 3
+  },
+  {
+    "backend": "cuda-console",
+    "duration_sec": 0.194682956998804,
+    "env_steps_per_sec": 821.8490332514465,
+    "fps_per_env": 102.73112915643081,
+    "frameskip": 4,
+    "gpu": {
+      "after": {
+        "available": true,
+        "gpus": [
+          {
+            "memory_total_mib": 81920,
+            "memory_used_mib": 5009,
+            "name": "NVIDIA A100-SXM4-80GB",
+            "utilization_percent": 83
+          }
+        ]
+      },
+      "before": {
+        "available": true,
+        "gpus": [
+          {
+            "memory_total_mib": 81920,
+            "memory_used_mib": 5009,
+            "name": "NVIDIA A100-SXM4-80GB",
+            "utilization_percent": 87
+          }
+        ]
+      },
+      "peak": {
+        "available": true,
+        "gpus": [
+          {
+            "memory_total_mib": 81920,
+            "name": "NVIDIA A100-SXM4-80GB",
+            "peak_memory_used_mib": 5009,
+            "peak_utilization_percent": 87
+          }
+        ],
+        "sample_count": 1
+      },
+      "peak_memory_used_mib": 5009,
+      "peak_utilization_percent": 87
+    },
+    "mode": "rgb",
+    "num_envs": 8,
+    "reset_rate": 0.0,
+    "reward_sum": 0.0,
+    "runner": "nesle",
+    "steps": 20,
+    "training_frames_per_sec": 3287.396133005786,
+    "warmup_steps": 3
+  },
+  {
+    "backend": "cuda-console",
+    "duration_sec": 0.0029477649986802135,
+    "env_steps_per_sec": 54278.41095597373,
+    "fps_per_env": 6784.801369496717,
+    "frameskip": 4,
+    "gpu": {
+      "after": {
+        "available": true,
+        "gpus": [
+          {
+            "memory_total_mib": 81920,
+            "memory_used_mib": 5009,
+            "name": "NVIDIA A100-SXM4-80GB",
+            "utilization_percent": 86
+          }
+        ]
+      },
+      "before": {
+        "available": true,
+        "gpus": [
+          {
+            "memory_total_mib": 81920,
+            "memory_used_mib": 5009,
+            "name": "NVIDIA A100-SXM4-80GB",
+            "utilization_percent": 86
+          }
+        ]
+      },
+      "peak": {
+        "available": true,
+        "gpus": [
+          {
+            "memory_total_mib": 81920,
+            "name": "NVIDIA A100-SXM4-80GB",
+            "peak_memory_used_mib": 5009,
+            "peak_utilization_percent": 86
+          }
+        ],
+        "sample_count": 1
+      },
+      "peak_memory_used_mib": 5009,
+      "peak_utilization_percent": 86
+    },
+    "mode": "ram_obs",
+    "num_envs": 8,
+    "reset_rate": 0.0,
+    "reward_sum": 0.0,
+    "runner": "nesle",
+    "steps": 20,
+    "training_frames_per_sec": 217113.64382389493,
+    "warmup_steps": 3
+  },
+  {
+    "backend": "cuda-console",
+    "duration_sec": 0.0024391329989157384,
+    "env_steps_per_sec": 65597.07899123352,
+    "fps_per_env": 8199.63487390419,
+    "frameskip": 4,
+    "gpu": {
+      "after": {
+        "available": true,
+        "gpus": [
+          {
+            "memory_total_mib": 81920,
+            "memory_used_mib": 5009,
+            "name": "NVIDIA A100-SXM4-80GB",
+            "utilization_percent": 65
+          }
+        ]
+      },
+      "before": {
+        "available": true,
+        "gpus": [
+          {
+            "memory_total_mib": 81920,
+            "memory_used_mib": 5009,
+            "name": "NVIDIA A100-SXM4-80GB",
+            "utilization_percent": 65
+          }
+        ]
+      },
+      "peak": {
+        "available": true,
+        "gpus": [
+          {
+            "memory_total_mib": 81920,
+            "name": "NVIDIA A100-SXM4-80GB",
+            "peak_memory_used_mib": 5009,
+            "peak_utilization_percent": 65
+          }
+        ],
+        "sample_count": 1
+      },
+      "peak_memory_used_mib": 5009,
+      "peak_utilization_percent": 65
+    },
+    "mode": "no_copy",
+    "num_envs": 8,
+    "reset_rate": 0.0,
+    "reward_sum": 0.0,
+    "runner": "nesle",
+    "steps": 20,
+    "training_frames_per_sec": 262388.31596493407,
+    "warmup_steps": 3
+  },
+  {
+    "backend": "cuda-console",
+    "duration_sec": 0.3859668650002277,
+    "env_steps_per_sec": 1658.1734289538622,
+    "fps_per_env": 51.81791965480819,
+    "frameskip": 4,
+    "gpu": {
+      "after": {
+        "available": true,
+        "gpus": [
+          {
+            "memory_total_mib": 81920,
+            "memory_used_mib": 5015,
+            "name": "NVIDIA A100-SXM4-80GB",
+            "utilization_percent": 94
+          }
+        ]
+      },
+      "before": {
+        "available": true,
+        "gpus": [
+          {
+            "memory_total_mib": 81920,
+            "memory_used_mib": 5015,
+            "name": "NVIDIA A100-SXM4-80GB",
+            "utilization_percent": 99
+          }
+        ]
+      },
+      "peak": {
+        "available": true,
+        "gpus": [
+          {
+            "memory_total_mib": 81920,
+            "name": "NVIDIA A100-SXM4-80GB",
+            "peak_memory_used_mib": 5015,
+            "peak_utilization_percent": 99
+          }
+        ],
+        "sample_count": 1
+      },
+      "peak_memory_used_mib": 5015,
+      "peak_utilization_percent": 99
+    },
+    "mode": "rgb",
+    "num_envs": 32,
+    "reset_rate": 0.0,
+    "reward_sum": 0.0,
+    "runner": "nesle",
+    "steps": 20,
+    "training_frames_per_sec": 6632.693715815449,
+    "warmup_steps": 3
+  },
+  {
+    "backend": "cuda-console",
+    "duration_sec": 0.003262178999648313,
+    "env_steps_per_sec": 196187.8854805321,
+    "fps_per_env": 6130.871421266628,
+    "frameskip": 4,
+    "gpu": {
+      "after": {
+        "available": true,
+        "gpus": [
+          {
+            "memory_total_mib": 81920,
+            "memory_used_mib": 5015,
+            "name": "NVIDIA A100-SXM4-80GB",
+            "utilization_percent": 84
+          }
+        ]
+      },
+      "before": {
+        "available": true,
+        "gpus": [
+          {
+            "memory_total_mib": 81920,
+            "memory_used_mib": 5015,
+            "name": "NVIDIA A100-SXM4-80GB",
+            "utilization_percent": 84
+          }
+        ]
+      },
+      "peak": {
+        "available": true,
+        "gpus": [
+          {
+            "memory_total_mib": 81920,
+            "name": "NVIDIA A100-SXM4-80GB",
+            "peak_memory_used_mib": 5015,
+            "peak_utilization_percent": 84
+          }
+        ],
+        "sample_count": 1
+      },
+      "peak_memory_used_mib": 5015,
+      "peak_utilization_percent": 84
+    },
+    "mode": "ram_obs",
+    "num_envs": 32,
+    "reset_rate": 0.0,
+    "reward_sum": 0.0,
+    "runner": "nesle",
+    "steps": 20,
+    "training_frames_per_sec": 784751.5419221284,
+    "warmup_steps": 3
+  },
+  {
+    "backend": "cuda-console",
+    "duration_sec": 0.0025168169995595235,
+    "env_steps_per_sec": 254289.44580079065,
+    "fps_per_env": 7946.545181274708,
+    "frameskip": 4,
+    "gpu": {
+      "after": {
+        "available": true,
+        "gpus": [
+          {
+            "memory_total_mib": 81920,
+            "memory_used_mib": 5015,
+            "name": "NVIDIA A100-SXM4-80GB",
+            "utilization_percent": 61
+          }
+        ]
+      },
+      "before": {
+        "available": true,
+        "gpus": [
+          {
+            "memory_total_mib": 81920,
+            "memory_used_mib": 5015,
+            "name": "NVIDIA A100-SXM4-80GB",
+            "utilization_percent": 61
+          }
+        ]
+      },
+      "peak": {
+        "available": true,
+        "gpus": [
+          {
+            "memory_total_mib": 81920,
+            "name": "NVIDIA A100-SXM4-80GB",
+            "peak_memory_used_mib": 5015,
+            "peak_utilization_percent": 61
+          }
+        ],
+        "sample_count": 1
+      },
+      "peak_memory_used_mib": 5015,
+      "peak_utilization_percent": 61
+    },
+    "mode": "no_copy",
+    "num_envs": 32,
+    "reset_rate": 0.0,
+    "reward_sum": 0.0,
+    "runner": "nesle",
+    "steps": 20,
+    "training_frames_per_sec": 1017157.7832031626,
+    "warmup_steps": 3
+  },
+  {
+    "backend": "cuda-console",
+    "duration_sec": 0.7095031070002733,
+    "env_steps_per_sec": 3608.158970329941,
+    "fps_per_env": 28.188741955702664,
+    "frameskip": 4,
+    "gpu": {
+      "after": {
+        "available": true,
+        "gpus": [
+          {
+            "memory_total_mib": 81920,
+            "memory_used_mib": 5033,
+            "name": "NVIDIA A100-SXM4-80GB",
+            "utilization_percent": 91
+          }
+        ]
+      },
+      "before": {
+        "available": true,
+        "gpus": [
+          {
+            "memory_total_mib": 81920,
+            "memory_used_mib": 5033,
+            "name": "NVIDIA A100-SXM4-80GB",
+            "utilization_percent": 90
+          }
+        ]
+      },
+      "peak": {
+        "available": true,
+        "gpus": [
+          {
+            "memory_total_mib": 81920,
+            "name": "NVIDIA A100-SXM4-80GB",
+            "peak_memory_used_mib": 5033,
+            "peak_utilization_percent": 83
+          }
+        ],
+        "sample_count": 1
+      },
+      "peak_memory_used_mib": 5033,
+      "peak_utilization_percent": 83
+    },
+    "mode": "rgb",
+    "num_envs": 128,
+    "reset_rate": 0.0,
+    "reward_sum": 0.0,
+    "runner": "nesle",
+    "steps": 20,
+    "training_frames_per_sec": 14432.635881319764,
+    "warmup_steps": 3
+  },
+  {
+    "backend": "cuda-console",
+    "duration_sec": 0.004568405000100029,
+    "env_steps_per_sec": 560370.632626474,
+    "fps_per_env": 4377.895567394328,
+    "frameskip": 4,
+    "gpu": {
+      "after": {
+        "available": true,
+        "gpus": [
+          {
+            "memory_total_mib": 81920,
+            "memory_used_mib": 5033,
+            "name": "NVIDIA A100-SXM4-80GB",
+            "utilization_percent": 73
+          }
+        ]
+      },
+      "before": {
+        "available": true,
+        "gpus": [
+          {
+            "memory_total_mib": 81920,
+            "memory_used_mib": 5033,
+            "name": "NVIDIA A100-SXM4-80GB",
+            "utilization_percent": 75
+          }
+        ]
+      },
+      "peak": {
+        "available": true,
+        "gpus": [
+          {
+            "memory_total_mib": 81920,
+            "name": "NVIDIA A100-SXM4-80GB",
+            "peak_memory_used_mib": 5033,
+            "peak_utilization_percent": 75
+          }
+        ],
+        "sample_count": 1
+      },
+      "peak_memory_used_mib": 5033,
+      "peak_utilization_percent": 75
+    },
+    "mode": "ram_obs",
+    "num_envs": 128,
+    "reset_rate": 0.0,
+    "reward_sum": 0.0,
+    "runner": "nesle",
+    "steps": 20,
+    "training_frames_per_sec": 2241482.530505896,
+    "warmup_steps": 3
+  },
+  {
+    "backend": "cuda-console",
+    "duration_sec": 0.0024251830000139307,
+    "env_steps_per_sec": 1055590.4440965052,
+    "fps_per_env": 8246.800344503947,
+    "frameskip": 4,
+    "gpu": {
+      "after": {
+        "available": true,
+        "gpus": [
+          {
+            "memory_total_mib": 81920,
+            "memory_used_mib": 5033,
+            "name": "NVIDIA A100-SXM4-80GB",
+            "utilization_percent": 86
+          }
+        ]
+      },
+      "before": {
+        "available": true,
+        "gpus": [
+          {
+            "memory_total_mib": 81920,
+            "memory_used_mib": 5033,
+            "name": "NVIDIA A100-SXM4-80GB",
+            "utilization_percent": 86
+          }
+        ]
+      },
+      "peak": {
+        "available": true,
+        "gpus": [
+          {
+            "memory_total_mib": 81920,
+            "name": "NVIDIA A100-SXM4-80GB",
+            "peak_memory_used_mib": 5033,
+            "peak_utilization_percent": 86
+          }
+        ],
+        "sample_count": 1
+      },
+      "peak_memory_used_mib": 5033,
+      "peak_utilization_percent": 86
+    },
+    "mode": "no_copy",
+    "num_envs": 128,
+    "reset_rate": 0.0,
+    "reward_sum": 0.0,
+    "runner": "nesle",
+    "steps": 20,
+    "training_frames_per_sec": 4222361.776386021,
+    "warmup_steps": 3
+  }
+]

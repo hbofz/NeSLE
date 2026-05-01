@@ -8,6 +8,7 @@ import nesle
 from nesle.actions import SIMPLE_MOVEMENT_MASKS
 from nesle.env import NesleEnv, NesleVecEnv
 from nesle.rom import CHR_BANK_SIZE, PRG_BANK_SIZE
+from nesle.smb import CPU_RAM_BYTES
 
 if not hasattr(np, "uint8"):
     raise unittest.SkipTest("complete numpy package is not available")
@@ -67,6 +68,33 @@ class EnvTests(unittest.TestCase):
         self.assertEqual(dones.shape, (1,))
         self.assertEqual(len(infos), 1)
 
+    def test_ram_observation_mode_keeps_render_available(self):
+        env = NesleVecEnv(
+            str(self.rom_path),
+            num_envs=2,
+            backend="synthetic",
+            observation_mode="ram",
+            max_episode_steps=2,
+        )
+        self.assertEqual(env.observation_space.shape, (CPU_RAM_BYTES,))
+
+        obs = env.reset()
+        self.assertEqual(obs.shape, (2, CPU_RAM_BYTES))
+        self.assertEqual(obs.dtype, np.uint8)
+        self.assertEqual(env.reset_infos[0]["observation_mode"], "ram")
+
+        obs, rewards, dones, infos = env.step([1, 4])
+        self.assertEqual(obs.shape, (2, CPU_RAM_BYTES))
+        self.assertEqual(rewards.dtype, np.float32)
+        self.assertEqual(dones.shape, (2,))
+        self.assertEqual(infos[0]["observation_mode"], "ram")
+        self.assertEqual(env.render().shape, (2, 240, 256, 3))
+
+        _, _, dones, infos = env.step([1, 1])
+        self.assertTrue(dones.all())
+        self.assertEqual(infos[0]["terminal_observation"].shape, (CPU_RAM_BYTES,))
+        self.assertEqual(env.reset_infos[0]["observation_mode"], "ram")
+
     def test_vec_helpers_and_options(self):
         env = NesleVecEnv(str(self.rom_path), num_envs=2, backend="synthetic", action_space=[0, 0x80])
         self.assertEqual(env.action_space.n, 2)
@@ -103,6 +131,19 @@ class EnvTests(unittest.TestCase):
         self.assertFalse(terminated)
         self.assertFalse(truncated)
         self.assertIn("x_pos", info)
+
+    def test_single_env_ram_observation_mode(self):
+        env = NesleEnv(str(self.rom_path), backend="synthetic", observation_mode="ram")
+        obs, info = env.reset()
+        self.assertEqual(obs.shape, (CPU_RAM_BYTES,))
+        self.assertEqual(info["observation_mode"], "ram")
+        obs, reward, terminated, truncated, info = env.step(1)
+        self.assertEqual(obs.shape, (CPU_RAM_BYTES,))
+        self.assertIsInstance(reward, float)
+        self.assertFalse(terminated)
+        self.assertFalse(truncated)
+        self.assertEqual(info["observation_mode"], "ram")
+        self.assertEqual(env.render().shape, (240, 256, 3))
 
     def test_invalid_action_shape_fails(self):
         env = NesleVecEnv(str(self.rom_path), num_envs=2, backend="synthetic")

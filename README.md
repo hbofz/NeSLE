@@ -154,14 +154,20 @@ env = nesle.make_vec(
     action_space="simple",
     backend="cuda",
     render_mode="rgb_array",
+    observation_mode="ram",
 )
 
 obs = env.reset()
 obs, rewards, dones, infos = env.step(actions)
+frames = env.render()
 ```
 
-For high-throughput CUDA training loops that do not need RGB observations on
-every step:
+`observation_mode="ram"` keeps the normal vector `reset()`/`step()` contract
+while returning compact 2 KB CPU RAM observations instead of copying full RGB
+frames every step. RGB frames remain available through `render()` for debugging,
+evaluation, and video capture.
+
+For custom CUDA loops that only need rewards and done flags:
 
 ```python
 rewards, dones, infos = env.step_reward(actions)

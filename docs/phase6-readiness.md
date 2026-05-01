@@ -66,7 +66,7 @@ ROM-backed CUDA-console rows.
 
 ## Bottom Line
 
-The project is ready to enter Phase 6. The biggest remaining optimization is not
-getting the NES loop onto CUDA; that is done. The biggest remaining optimization
-is avoiding full RGB host observation copies on every training step and turning
-the no-copy `cuda-console` path into a first-class training API.
+The project entered Phase 6 with the CUDA loop working and full RGB host
+observation copies identified as the dominant bottleneck. Phase 6 now addresses
+that path with `observation_mode="ram"`, which keeps normal vector stepping
+while copying compact CPU RAM observations instead of full RGB frames.
