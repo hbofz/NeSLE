@@ -76,6 +76,28 @@ integrated CPU/PPU console path through OAM DMA, and verifies device-side reset
 snapshot restore and byte-for-byte CPU/GPU RGB frame parity for a synthetic
 background+sprite scene.
 
+Phase 5 throughput smoke:
+
+```sh
+python -m pip install -e '.[dev,rl]'
+NESLE_ROM_PATH="/path/to/Super Mario Bros. (World).nes" sh scripts/verify_phase5.sh
+```
+
+Full Phase 5 benchmark runs write JSON or CSV rows under `benchmarks/results/`:
+
+```sh
+PYTHONPATH=src python benchmarks/phase5_benchmark.py \
+  "Super Mario Bros. (World).nes" \
+  --env-counts 1,8,32,128,512,1024,2048,4096 \
+  --steps 200 \
+  --modes step,render,inference \
+  --output benchmarks/results/phase5.json
+```
+
+Install `.[legacy-mario]` and add `--include-legacy` only for the slower
+`gym-super-mario-bros` comparison rows, which use registered legacy env IDs
+such as `SuperMarioBros-v0`.
+
 ## Target API
 
 The end state is:

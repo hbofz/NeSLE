@@ -164,6 +164,17 @@ Success criteria:
 
 Gate: no paper claims until benchmark scripts are reproducible from a clean env.
 
+Status: started. `benchmarks/phase5_benchmark.py` now provides the reproducible
+benchmark CLI for NeSLE step, render, and inference-path measurements across
+configurable environment counts. It records env steps/sec, training frames/sec,
+FPS/env, reset rate, reward totals, and basic `nvidia-smi` GPU snapshots when
+available. The default `.[rl]` path benchmarks the modern Gymnasium/SB3 stack;
+the legacy `gym-super-mario-bros` comparison is behind `.[legacy-mario]` and
+`--include-legacy`, using registered legacy env IDs such as
+`SuperMarioBros-v0`, so normal RL installs stay clean.
+`scripts/verify_phase5.sh` runs a tiny local-ROM benchmark smoke before larger
+GPU runs.
+
 ## Phase 6: Research Package
 
 Success criteria:

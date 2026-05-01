@@ -139,3 +139,8 @@ Compare against `nes-py`/`gym-super-mario-bros` at env counts:
 
 Report raw FPS, training-frame FPS, FPS/env, GPU utilization, memory footprint,
 and reset rate.
+
+The reproducible entrypoint is `benchmarks/phase5_benchmark.py`. Use the
+`step`, `render`, and `inference` modes for NeSLE scaling runs, then rerun with
+`--include-legacy` after installing `.[legacy-mario]` for CPU emulator
+comparison rows using registered legacy env IDs such as `SuperMarioBros-v0`.
