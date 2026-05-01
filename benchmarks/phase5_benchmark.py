@@ -5,6 +5,7 @@ import csv
 import json
 import os
 import subprocess
+import threading
 import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -99,6 +100,51 @@ def _gpu_snapshot() -> dict[str, Any]:
     return {"available": bool(gpus), "gpus": gpus}
 
 
+class _GpuSampler:
+    def __init__(self, interval_sec: float = 0.25) -> None:
+        self.interval_sec = interval_sec
+        self.samples: list[dict[str, Any]] = []
+        self._stop = threading.Event()
+        self._thread = threading.Thread(target=self._run, daemon=True)
+
+    def __enter__(self) -> "_GpuSampler":
+        self._thread.start()
+        return self
+
+    def __exit__(self, *exc_info: object) -> None:
+        self._stop.set()
+        self._thread.join(timeout=max(1.0, self.interval_sec * 4))
+
+    def _run(self) -> None:
+        while not self._stop.is_set():
+            self.samples.append(_gpu_snapshot())
+            self._stop.wait(self.interval_sec)
+
+    def peak(self) -> dict[str, Any]:
+        peaks: dict[str, dict[str, Any]] = {}
+        for sample in self.samples:
+            for gpu in sample.get("gpus", []):
+                name = str(gpu.get("name", "unknown"))
+                current = peaks.setdefault(
+                    name,
+                    {
+                        "name": name,
+                        "peak_utilization_percent": 0,
+                        "peak_memory_used_mib": 0,
+                        "memory_total_mib": gpu.get("memory_total_mib"),
+                    },
+                )
+                current["peak_utilization_percent"] = max(
+                    int(current["peak_utilization_percent"]),
+                    int(gpu.get("utilization_percent", 0)),
+                )
+                current["peak_memory_used_mib"] = max(
+                    int(current["peak_memory_used_mib"]),
+                    int(gpu.get("memory_used_mib", 0)),
+                )
+        return {"available": bool(peaks), "gpus": list(peaks.values()), "sample_count": len(self.samples)}
+
+
 def _make_actions(action_space: Any, rng: np.random.Generator, steps: int, num_envs: int) -> np.ndarray:
     return rng.integers(0, int(action_space.n), size=(steps, num_envs), dtype=np.int64)
 
@@ -143,17 +189,18 @@ def _benchmark_nesle(
     reward_sum = 0.0
     done_count = 0
     gpu_before = _gpu_snapshot()
-    started = time.perf_counter()
-    obs = None
-    for actions in actions_batch:
-        obs, rewards, dones, _infos = env.step(actions)
-        reward_sum += float(np.sum(rewards))
-        done_count += int(np.sum(dones))
-        if mode == "render":
-            env.render()
-        elif mode == "inference":
-            _run_torch_policy(torch_model, torch_device, obs)
-    duration = max(time.perf_counter() - started, 1e-12)
+    with _GpuSampler() as gpu_sampler:
+        started = time.perf_counter()
+        obs = None
+        for actions in actions_batch:
+            obs, rewards, dones, _infos = env.step(actions)
+            reward_sum += float(np.sum(rewards))
+            done_count += int(np.sum(dones))
+            if mode == "render":
+                env.render()
+            elif mode == "inference":
+                _run_torch_policy(torch_model, torch_device, obs)
+        duration = max(time.perf_counter() - started, 1e-12)
     gpu_after = _gpu_snapshot()
     env.close()
     return BenchmarkResult(
@@ -169,7 +216,7 @@ def _benchmark_nesle(
         fps_per_env=steps / duration,
         reset_rate=done_count / max(num_envs * steps, 1),
         reward_sum=reward_sum,
-        gpu={"before": gpu_before, "after": gpu_after, "torch_device": torch_device},
+        gpu={"before": gpu_before, "after": gpu_after, "peak": gpu_sampler.peak(), "torch_device": torch_device},
     )
 
 
@@ -230,20 +277,21 @@ def _benchmark_legacy(
     reward_sum = 0.0
     done_count = 0
     gpu_before = _gpu_snapshot()
-    started = time.perf_counter()
-    for _ in range(steps):
-        for env in envs:
-            result = env.step(int(rng.integers(0, env.action_space.n)))
-            if len(result) == 5:
-                _obs, reward, terminated, truncated, _info = result
-                done = bool(terminated or truncated)
-            else:
-                _obs, reward, done, _info = result
-            reward_sum += float(reward)
-            done_count += int(done)
-            if done:
-                env.reset()
-    duration = max(time.perf_counter() - started, 1e-12)
+    with _GpuSampler() as gpu_sampler:
+        started = time.perf_counter()
+        for _ in range(steps):
+            for env in envs:
+                result = env.step(int(rng.integers(0, env.action_space.n)))
+                if len(result) == 5:
+                    _obs, reward, terminated, truncated, _info = result
+                    done = bool(terminated or truncated)
+                else:
+                    _obs, reward, done, _info = result
+                reward_sum += float(reward)
+                done_count += int(done)
+                if done:
+                    env.reset()
+        duration = max(time.perf_counter() - started, 1e-12)
     for env in envs:
         env.close()
     return BenchmarkResult(
@@ -259,7 +307,7 @@ def _benchmark_legacy(
         fps_per_env=steps / duration,
         reset_rate=done_count / max(num_envs * steps, 1),
         reward_sum=reward_sum,
-        gpu={"before": gpu_before, "after": _gpu_snapshot(), "torch_device": None},
+        gpu={"before": gpu_before, "after": _gpu_snapshot(), "peak": gpu_sampler.peak(), "torch_device": None},
     )
 
 
