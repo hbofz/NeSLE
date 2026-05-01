@@ -116,6 +116,40 @@ rewards, and done flags through the Python vector API. This is the deeper
 implementation path. It is slower than the synthetic reward/render calibration
 kernels because it executes NES instructions and PPU timing work per environment.
 
+### Console Render-Copy Probe
+
+Command shape:
+
+```sh
+PYTHONPATH=src python3 - <<'PY'
+from nesle import _cuda_core
+from nesle.env import _action_masks
+# Construct CudaBatch(num_envs, 4, rom_bytes), then compare
+# step(actions, render_frame=True, copy_obs=True) with
+# step(actions, render_frame=False, copy_obs=False).
+PY
+```
+
+| Console mode | Envs | Env steps/sec | Training frames/sec |
+| --- | ---: | ---: | ---: |
+| RGB obs copy | 1 | 137.5 | 550.1 |
+| RGB obs copy | 2 | 272.0 | 1,087.8 |
+| RGB obs copy | 8 | 819.4 | 3,277.5 |
+| RGB obs copy | 32 | 1,629.2 | 6,517.0 |
+| RGB obs copy | 64 | 2,010.6 | 8,042.3 |
+| RGB obs copy | 128 | 3,650.5 | 14,602.0 |
+| no obs copy | 1 | 5,341.0 | 21,364.1 |
+| no obs copy | 2 | 18,845.8 | 75,383.0 |
+| no obs copy | 8 | 75,854.9 | 303,419.6 |
+| no obs copy | 32 | 299,746.4 | 1,198,985.7 |
+| no obs copy | 64 | 565,582.9 | 2,262,331.5 |
+| no obs copy | 128 | 1,139,578.8 | 4,558,315.3 |
+
+Interpretation: for the real `cuda-console` path, per-step RGB rendering and
+host observation copy dominate the current Python API benchmark. A training path
+that keeps observations on device, renders less often, or returns compact RAM
+features instead of full RGB frames is the largest near-term optimization lever.
+
 ## CUDA Reward No-Copy Mode
 
 Command:
@@ -182,7 +216,7 @@ NESLE_CUDA_ARCH=sm_80 sh scripts/benchmark_cuda_kernels.sh \
 | 16384 | 2,633,530,000 | 166,120 |
 
 Interpretation: the lower-level CUDA reward and render kernels scale on A100.
-The CUDA Python backend now owns device buffers and exposes NumPy
-observations/rewards/dones to the Python vector API. The next implementation
-step is replacing its synthetic action-application kernel with the full CUDA
-CPU/PPU console loop and adding render-cadence/no-copy modes for training.
+The CUDA Python backend now has both the ROM-backed `cuda-console` path for
+full CPU/PPU stepping and the synthetic reward/render kernels for calibration.
+The next optimization work is adding render-cadence/no-copy modes to the real
+console path and reducing per-environment serial work.

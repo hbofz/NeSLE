@@ -105,9 +105,9 @@ NESLE_CUDA_ARCH=sm_80 sh scripts/benchmark_cuda_kernels.sh \
   --env-counts 1024,4096,8192,16384
 ```
 
-The Python API benchmark currently reports the packaged native backend. The
-CUDA kernel benchmark reports the lower-level GPU reward/render kernels that
-will feed the future packaged CUDA environment backend.
+The Python API benchmark reports packaged backend throughput. The CUDA kernel
+benchmark reports the lower-level GPU reward/render kernels separately from the
+ROM-backed `cuda-console` path.
 
 To build the optional CUDA Python backend on an NVIDIA machine:
 
@@ -179,6 +179,7 @@ the `legacy-mario` extra for benchmark work.
 - [Research notes](docs/research-notes.md)
 - [Architecture](docs/architecture.md)
 - [Phases](docs/phases.md)
+- [Phase 6 readiness](docs/phase6-readiness.md)
 - [CPU validation](docs/cpu-validation.md)
 - [Headless runner](docs/headless-runner.md)
 - [Phase 5 results](docs/phase5-results.md)
