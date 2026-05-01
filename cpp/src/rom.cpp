@@ -30,18 +30,18 @@ std::string to_string(NametableArrangement arrangement) {
 
 bool is_supported_mario_target(const RomMetadata& metadata) noexcept {
     return metadata.mapper == 0 &&
+           metadata.submapper == 0 &&
            (metadata.prg_rom_banks == 1 || metadata.prg_rom_banks == 2) &&
            metadata.chr_rom_banks == 1 &&
-           !metadata.has_trainer &&
-           !metadata.is_nes2;
+           !metadata.has_trainer;
 }
 
 std::string unsupported_mario_target_reason(const RomMetadata& metadata) {
-    if (metadata.is_nes2) {
-        return "NES 2.0 ROMs are not supported in the Mario target yet";
-    }
     if (metadata.mapper != 0) {
         return "expected mapper 0/NROM for Super Mario Bros.";
+    }
+    if (metadata.submapper != 0) {
+        return "expected submapper 0 for Super Mario Bros.";
     }
     if (metadata.prg_rom_banks != 1 && metadata.prg_rom_banks != 2) {
         return "expected one or two 16 KB PRG ROM banks for NROM";
@@ -75,19 +75,28 @@ RomImage parse_ines(std::span<const std::uint8_t> bytes) {
     const auto chr_banks = bytes[5];
     const auto flags6 = bytes[6];
     const auto flags7 = bytes[7];
+    const bool is_nes2 = (flags7 & 0x0C) == 0x08;
+    if (is_nes2 && bytes[9] != 0) {
+        throw std::invalid_argument("NES 2.0 extended PRG/CHR ROM sizes are not supported yet");
+    }
 
     RomMetadata metadata;
     metadata.prg_rom_banks = prg_banks;
     metadata.chr_rom_banks = chr_banks;
     metadata.mapper = static_cast<std::uint16_t>((flags6 >> 4) | (flags7 & 0xF0));
+    metadata.is_nes2 = is_nes2;
+    if (metadata.is_nes2) {
+        metadata.mapper = static_cast<std::uint16_t>(
+            metadata.mapper | (static_cast<std::uint16_t>(bytes[8] & 0x0F) << 8));
+        metadata.submapper = static_cast<std::uint8_t>(bytes[8] >> 4);
+    }
     metadata.has_trainer = (flags6 & 0x04) != 0;
     metadata.has_battery = (flags6 & 0x02) != 0;
-    metadata.is_nes2 = (flags7 & 0x0C) == 0x08;
     metadata.nametable_arrangement = (flags6 & 0x08) != 0
                                          ? NametableArrangement::FourScreen
                                          : ((flags6 & 0x01) != 0
-                                                ? NametableArrangement::Horizontal
-                                                : NametableArrangement::Vertical);
+                                                ? NametableArrangement::Vertical
+                                                : NametableArrangement::Horizontal);
     metadata.prg_rom_size = static_cast<std::size_t>(prg_banks) * kPrgBankSize;
     metadata.chr_rom_size = static_cast<std::size_t>(chr_banks) * kChrBankSize;
 

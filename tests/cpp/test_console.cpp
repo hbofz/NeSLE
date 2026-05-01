@@ -10,8 +10,8 @@
 
 namespace {
 
-std::vector<std::uint8_t> make_nrom_bytes(std::uint8_t prg_banks) {
-    std::vector<std::uint8_t> data = {'N', 'E', 'S', 0x1A, prg_banks, 1, 0, 0};
+std::vector<std::uint8_t> make_nrom_bytes(std::uint8_t prg_banks, std::uint8_t flags6 = 0) {
+    std::vector<std::uint8_t> data = {'N', 'E', 'S', 0x1A, prg_banks, 1, flags6, 0};
     data.resize(16, 0);
     const auto prg_size = static_cast<std::size_t>(prg_banks) * 16 * 1024;
     for (std::size_t i = 0; i < prg_size; ++i) {
@@ -147,7 +147,7 @@ int main() {
     }
 
     {
-        nesle::Console console(make_nrom(2));
+        nesle::Console console(nesle::parse_ines(make_nrom_bytes(2, 0x01)));
         console.write(0x2006, 0x20);
         console.write(0x2006, 0x00);
         console.write(0x2007, 0x12);
@@ -230,6 +230,21 @@ int main() {
         assert(ppu.scanline() == 0);
         assert(ppu.dot() == 0);
         assert((ppu.status() & 0x80) == 0);
+    }
+
+    {
+        nesle::Ppu ppu;
+        ppu.write_register(0x01, 0x18);
+        const auto hit = ppu.step(
+            nesle::Ppu::kCoarseSpriteZeroHitScanline * nesle::Ppu::kDotsPerScanline +
+            nesle::Ppu::kCoarseSpriteZeroHitDot);
+        assert(hit.frames_completed == 0);
+        assert((ppu.status() & 0x40) != 0);
+        const auto cleared = ppu.step(
+            (nesle::Ppu::kPreRenderScanline - nesle::Ppu::kCoarseSpriteZeroHitScanline) *
+            nesle::Ppu::kDotsPerScanline);
+        assert(cleared.frames_completed == 0);
+        assert((ppu.status() & 0x40) == 0);
     }
 
     {

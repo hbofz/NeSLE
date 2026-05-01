@@ -14,9 +14,10 @@ Run:
 
 ```sh
 /tmp/nesle_run_nes_headless "Super Mario Bros. (World).nes" \
+  --allow-trap \
   --require-mario-target \
   --require-mario-boot \
-  --frames 1 \
+  --frames 120 \
   --max-instructions 5000000 \
   --trace 32
 ```
@@ -28,6 +29,10 @@ flag-get, plus a conservative Mario boot plausibility check. With `--trace N`,
 it also prints the last `N` executed instructions with CPU and PPU timing state.
 This is the Phase 1 bridge from synthetic NROM programs to real Super Mario
 Bros. boot debugging.
+
+Real games can park the CPU in short idle loops while PPU status drives the
+next step, so the Mario smoke path uses `--allow-trap` and runs a longer boot
+window before checking decoded RAM.
 
 The repo also includes an optional smoke gate that stays skipped unless a local
 ROM path is provided:

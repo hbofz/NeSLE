@@ -22,7 +22,7 @@ Success criteria:
 
 Gate: no CUDA work beyond single-thread mirrors until the CPU core is testable.
 
-Status: in progress. The first slice adds a portable official-opcode CPU core,
+Status: implemented. The first slice adds a portable official-opcode CPU core,
 a flat 64 KB test bus, an NROM CPU memory map, smoke tests for CPU execution,
 stack calls, branch timing, arithmetic, and memory mirrors, plus a flat-binary
 runner for Klaus-style functional tests. The stock upstream Klaus binary now
@@ -34,10 +34,10 @@ cycles, drives vblank/NMI timing, accounts for OAMDMA stalls, and can run a
 synthetic NROM program across one frame. A headless `.nes` runner now loads
 ROM files from disk and reports frame/instruction/cycle progress for NROM boot
 smoke tests. PPU memory now maps CHR ROM, CHR RAM fallback, nametable mirrors,
-and palette mirrors through the same `$2006/$2007` path that games use. The
-remaining Phase 1 gate is the optional user-ROM smoke test against a local Super
-Mario Bros. NROM ROM. The headless runner now reports decoded Mario RAM state so
-that smoke test can distinguish raw execution from meaningful boot progress.
+palette mirrors, and a coarse sprite-0-hit signal through the same register
+paths that games use. The optional user-ROM smoke test now accepts iNES and
+mapper-0 NES 2.0 Super Mario Bros. ROMs, runs the local boot window, and checks
+decoded Mario RAM for meaningful progress.
 
 ## Phase 2: Mario-Correct PPU And Input
 

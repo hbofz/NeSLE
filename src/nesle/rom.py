@@ -21,6 +21,7 @@ class INESRom:
     prg_rom_banks: int
     chr_rom_banks: int
     mapper: int
+    submapper: int
     has_trainer: bool
     has_battery: bool
     is_nes2: bool
@@ -42,7 +43,12 @@ class INESRom:
 
     @property
     def is_supported_mario_target(self) -> bool:
-        return self.is_nrom and self.chr_rom_banks == 1 and not self.has_trainer and not self.is_nes2
+        return (
+            self.is_nrom
+            and self.submapper == 0
+            and self.chr_rom_banks == 1
+            and not self.has_trainer
+        )
 
 
 def parse_ines(data: bytes | bytearray | memoryview) -> INESRom:
@@ -56,15 +62,23 @@ def parse_ines(data: bytes | bytearray | memoryview) -> INESRom:
     chr_banks = raw[5]
     flags6 = raw[6]
     flags7 = raw[7]
+    is_nes2 = (flags7 & 0x0C) == 0x08
+    if is_nes2 and raw[9] != 0:
+        raise ValueError("NES 2.0 extended PRG/CHR ROM sizes are not supported yet")
+
     mapper = (flags6 >> 4) | (flags7 & 0xF0)
+    submapper = 0
+    if is_nes2:
+        mapper |= (raw[8] & 0x0F) << 8
+        submapper = raw[8] >> 4
     has_trainer = bool(flags6 & 0x04)
 
     if flags6 & 0x08:
         arrangement = NametableArrangement.FOUR_SCREEN
     elif flags6 & 0x01:
-        arrangement = NametableArrangement.HORIZONTAL
-    else:
         arrangement = NametableArrangement.VERTICAL
+    else:
+        arrangement = NametableArrangement.HORIZONTAL
 
     prg_size = prg_banks * PRG_BANK_SIZE
     chr_size = chr_banks * CHR_BANK_SIZE
@@ -81,9 +95,10 @@ def parse_ines(data: bytes | bytearray | memoryview) -> INESRom:
         prg_rom_banks=prg_banks,
         chr_rom_banks=chr_banks,
         mapper=mapper,
+        submapper=submapper,
         has_trainer=has_trainer,
         has_battery=bool(flags6 & 0x02),
-        is_nes2=(flags7 & 0x0C) == 0x08,
+        is_nes2=is_nes2,
         nametable_arrangement=arrangement,
         prg_rom=prg_rom,
         chr_rom=chr_rom,

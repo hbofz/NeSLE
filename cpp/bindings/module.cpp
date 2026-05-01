@@ -22,6 +22,7 @@ py::dict rom_metadata_to_dict(const nesle::RomMetadata& metadata) {
     out["prg_rom_banks"] = metadata.prg_rom_banks;
     out["chr_rom_banks"] = metadata.chr_rom_banks;
     out["mapper"] = metadata.mapper;
+    out["submapper"] = metadata.submapper;
     out["has_trainer"] = metadata.has_trainer;
     out["has_battery"] = metadata.has_battery;
     out["is_nes2"] = metadata.is_nes2;

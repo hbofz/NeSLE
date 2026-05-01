@@ -19,6 +19,7 @@ struct RomMetadata {
     std::uint8_t prg_rom_banks = 0;
     std::uint8_t chr_rom_banks = 0;
     std::uint16_t mapper = 0;
+    std::uint8_t submapper = 0;
     bool has_trainer = false;
     bool has_battery = false;
     bool is_nes2 = false;

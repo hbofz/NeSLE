@@ -18,6 +18,8 @@ public:
     static constexpr std::int16_t kVblankStartScanline = 241;
     static constexpr std::int16_t kPreRenderScanline = 261;
     static constexpr std::uint16_t kVblankFlagDot = 1;
+    static constexpr std::int16_t kCoarseSpriteZeroHitScanline = 30;
+    static constexpr std::uint16_t kCoarseSpriteZeroHitDot = 1;
 
     struct StepResult {
         std::uint32_t cycles = 0;
@@ -45,6 +47,9 @@ public:
                 const bool had_nmi = nmi_pending_;
                 set_vblank(true);
                 result.nmi_started = result.nmi_started || (!had_nmi && nmi_pending_);
+            } else if (scanline_ == kCoarseSpriteZeroHitScanline &&
+                       dot_ == kCoarseSpriteZeroHitDot && rendering_enabled()) {
+                status_ |= 0x40;
             } else if (scanline_ == kPreRenderScanline && dot_ == kVblankFlagDot) {
                 set_vblank(false);
                 status_ &= 0x1F;
@@ -127,6 +132,10 @@ public:
 
     [[nodiscard]] bool nmi_enabled() const noexcept {
         return (ctrl_ & 0x80) != 0;
+    }
+
+    [[nodiscard]] bool rendering_enabled() const noexcept {
+        return (mask_ & 0x18) != 0;
     }
 
     [[nodiscard]] bool nmi_pending() const noexcept {
