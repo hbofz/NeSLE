@@ -78,7 +78,7 @@ Success criteria:
 
 Gate: correctness before throughput claims.
 
-Status: first CUDA contract slice started. Batch buffers now carry the Mario
+Status: CUDA correctness gate implemented. Batch buffers now carry the Mario
 reward baseline needed by GPU stepping, and a host/device batch helper reads
 per-env CPU RAM, computes SMB-style reward/done values, and advances the reward
 baseline with the same semantics as the CPU `smb` module. The CUDA step kernel
@@ -108,10 +108,16 @@ tests against `Console` for NMI frame service and DMA behavior. A host reset-cac
 contract now captures/restores CPU, CPU RAM, PRG RAM, PPU timing/register
 memory, OAM, reward baselines, and done/reward slots, with deterministic rerun
 coverage after restore. A device reset snapshot view now restores CPU state,
-CPU RAM, PRG RAM, PPU timing/register state, and OAM inside a CUDA kernel, and
-the CUDA smoke validates the restored console/DMA trace on NVIDIA hardware.
-Full PPU register/render parity and true frame-hash parity on device remain
-Phase 3 work.
+CPU RAM, PRG RAM, PPU timing/register state, scroll/open-bus/read-buffer state,
+and OAM inside a CUDA kernel, and the CUDA smoke validates the restored
+console/DMA trace on NVIDIA hardware. Batch PPU register writes now cover
+`PPUCTRL`, `PPUMASK`, `OAMADDR`, `OAMDATA`, `PPUSCROLL`, `PPUADDR`, and
+`PPUDATA` for nametable/palette updates. The CUDA render kernel now produces
+RGB frames from CHR ROM, nametable RAM, palette RAM, and OAM; host tests compare
+the batch renderer byte-for-byte against `Ppu::render_rgb_frame`, and the H100
+smoke validates a CPU/GPU frame-hash match for a synthetic background+sprite
+scene. Throughput-oriented tiled rendering and end-to-end Gym/SB3 integration
+move to the next phases.
 
 ## Phase 4: Gymnasium And SB3 API
 

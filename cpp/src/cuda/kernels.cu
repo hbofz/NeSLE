@@ -2,6 +2,7 @@
 
 #ifdef __CUDACC__
 
+#include "nesle/cuda/batch_render.cuh"
 #include "nesle/cuda/batch_step.cuh"
 
 namespace nesle::cuda {
@@ -14,6 +15,13 @@ __global__ void step_reward_kernel(BatchBuffers buffers, std::uint32_t num_envs)
     }
 }
 
+__global__ void render_rgb_kernel(BatchBuffers buffers, std::uint32_t num_envs) {
+    const auto env = blockIdx.x * blockDim.x + threadIdx.x;
+    if (env < num_envs) {
+        render_batch_rgb_frame_env(buffers, env);
+    }
+}
+
 }  // namespace
 
 void launch_step_kernel(const BatchBuffers& buffers, StepConfig config, cudaStream_t stream) {
@@ -22,7 +30,11 @@ void launch_step_kernel(const BatchBuffers& buffers, StepConfig config, cudaStre
     step_reward_kernel<<<blocks, kThreads, 0, stream>>>(buffers, config.num_envs);
 }
 
-void launch_render_kernel(const BatchBuffers&, StepConfig, cudaStream_t) {}
+void launch_render_kernel(const BatchBuffers& buffers, StepConfig config, cudaStream_t stream) {
+    constexpr int kThreads = 64;
+    const int blocks = static_cast<int>((config.num_envs + kThreads - 1) / kThreads);
+    render_rgb_kernel<<<blocks, kThreads, 0, stream>>>(buffers, config.num_envs);
+}
 
 }  // namespace nesle::cuda
 

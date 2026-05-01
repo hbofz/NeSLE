@@ -28,7 +28,8 @@ batch contract:
 - C++ tests for CPU execution, stack calls, branches, arithmetic, and NROM reads
 - CUDA smoke for 4096-env reward/done batches
 - CUDA device smoke for the shared CPU core, batch console stepping, OAM DMA,
-  PPU timing, and device-side reset snapshot restore
+  PPU timing, PPU register-fed RGB rendering, and device-side reset snapshot
+  restore
 
 ## Quick Verification
 
@@ -54,7 +55,8 @@ sh scripts/verify_cuda.sh
 That smoke compiles the CUDA kernels, launches a 4096-env reward/done batch,
 runs a tiny on-device NROM CPU trace through the batch CPU bus, steps an
 integrated CPU/PPU console path through OAM DMA, and verifies device-side reset
-snapshot restore.
+snapshot restore and byte-for-byte CPU/GPU RGB frame parity for a synthetic
+background+sprite scene.
 
 ## Target API
 

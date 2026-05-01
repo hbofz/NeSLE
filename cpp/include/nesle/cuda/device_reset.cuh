@@ -37,6 +37,10 @@ struct DeviceResetSnapshots {
     std::uint16_t* ppu_t = nullptr;
     std::uint8_t* ppu_x = nullptr;
     std::uint8_t* ppu_w = nullptr;
+    std::uint8_t* ppu_open_bus = nullptr;
+    std::uint8_t* ppu_read_buffer = nullptr;
+    std::uint8_t* ppu_scroll_x = nullptr;
+    std::uint8_t* ppu_scroll_y = nullptr;
 
     int* previous_mario_x = nullptr;
     int* previous_mario_time = nullptr;
@@ -112,6 +116,18 @@ NESLE_CUDA_DEVICE_RESET_HD inline void capture_device_reset_snapshot(
     }
     if (buffers.ppu.w != nullptr && snapshots.ppu_w != nullptr) {
         snapshots.ppu_w[slot] = buffers.ppu.w[env];
+    }
+    if (buffers.ppu.open_bus != nullptr && snapshots.ppu_open_bus != nullptr) {
+        snapshots.ppu_open_bus[slot] = buffers.ppu.open_bus[env];
+    }
+    if (buffers.ppu.read_buffer != nullptr && snapshots.ppu_read_buffer != nullptr) {
+        snapshots.ppu_read_buffer[slot] = buffers.ppu.read_buffer[env];
+    }
+    if (buffers.ppu.scroll_x != nullptr && snapshots.ppu_scroll_x != nullptr) {
+        snapshots.ppu_scroll_x[slot] = buffers.ppu.scroll_x[env];
+    }
+    if (buffers.ppu.scroll_y != nullptr && snapshots.ppu_scroll_y != nullptr) {
+        snapshots.ppu_scroll_y[slot] = buffers.ppu.scroll_y[env];
     }
 
     if (buffers.previous_mario_x != nullptr && snapshots.previous_mario_x != nullptr) {
@@ -199,6 +215,18 @@ NESLE_CUDA_DEVICE_RESET_HD inline void restore_device_reset_snapshot(
     }
     if (buffers.ppu.w != nullptr && snapshots.ppu_w != nullptr) {
         buffers.ppu.w[env] = snapshots.ppu_w[slot];
+    }
+    if (buffers.ppu.open_bus != nullptr && snapshots.ppu_open_bus != nullptr) {
+        buffers.ppu.open_bus[env] = snapshots.ppu_open_bus[slot];
+    }
+    if (buffers.ppu.read_buffer != nullptr && snapshots.ppu_read_buffer != nullptr) {
+        buffers.ppu.read_buffer[env] = snapshots.ppu_read_buffer[slot];
+    }
+    if (buffers.ppu.scroll_x != nullptr && snapshots.ppu_scroll_x != nullptr) {
+        buffers.ppu.scroll_x[env] = snapshots.ppu_scroll_x[slot];
+    }
+    if (buffers.ppu.scroll_y != nullptr && snapshots.ppu_scroll_y != nullptr) {
+        buffers.ppu.scroll_y[env] = snapshots.ppu_scroll_y[slot];
     }
 
     if (buffers.previous_mario_x != nullptr && snapshots.previous_mario_x != nullptr) {

@@ -38,6 +38,17 @@ int main() {
     std::vector<std::uint8_t> ppu_mask(kNumEnvs, 0);
     std::vector<std::uint8_t> ppu_status(kNumEnvs, 0);
     std::vector<std::uint8_t> ppu_oam_addr(kNumEnvs, 0);
+    std::vector<std::uint16_t> ppu_v(kNumEnvs, 0);
+    std::vector<std::uint16_t> ppu_t(kNumEnvs, 0);
+    std::vector<std::uint8_t> ppu_x(kNumEnvs, 0);
+    std::vector<std::uint8_t> ppu_w(kNumEnvs, 0);
+    std::vector<std::uint8_t> ppu_open_bus(kNumEnvs, 0);
+    std::vector<std::uint8_t> ppu_read_buffer(kNumEnvs, 0);
+    std::vector<std::uint8_t> ppu_scroll_x(kNumEnvs, 0);
+    std::vector<std::uint8_t> ppu_scroll_y(kNumEnvs, 0);
+    std::vector<std::uint8_t> nametable(kNumEnvs * nesle::cuda::kNametableRamBytes, 0);
+    std::vector<std::uint8_t> palette(kNumEnvs * nesle::cuda::kPaletteRamBytes, 0);
+    std::vector<std::uint8_t> oam(kNumEnvs * nesle::cuda::kOamBytes, 0);
 
     auto rom = make_nrom(32 * 1024);
 
@@ -51,9 +62,23 @@ int main() {
     buffers.ppu.mask = ppu_mask.data();
     buffers.ppu.status = ppu_status.data();
     buffers.ppu.oam_addr = ppu_oam_addr.data();
+    buffers.ppu.v = ppu_v.data();
+    buffers.ppu.t = ppu_t.data();
+    buffers.ppu.x = ppu_x.data();
+    buffers.ppu.w = ppu_w.data();
+    buffers.ppu.open_bus = ppu_open_bus.data();
+    buffers.ppu.read_buffer = ppu_read_buffer.data();
+    buffers.ppu.scroll_x = ppu_scroll_x.data();
+    buffers.ppu.scroll_y = ppu_scroll_y.data();
+    buffers.ppu.nametable_ram = nametable.data();
+    buffers.ppu.palette_ram = palette.data();
+    buffers.ppu.oam = oam.data();
     buffers.cart.prg_rom = rom.prg_rom.data();
+    buffers.cart.chr_rom = rom.chr_rom.data();
     buffers.cart.prg_rom_size = static_cast<std::uint32_t>(rom.prg_rom.size());
+    buffers.cart.chr_rom_size = static_cast<std::uint32_t>(rom.chr_rom.size());
     buffers.cart.mapper = 0;
+    buffers.cart.nametable_arrangement = nesle::cuda::kNametableVertical;
     buffers.action_masks = actions.data();
 
     {
@@ -98,7 +123,27 @@ int main() {
         assert(ppu_ctrl[0] == 0x80);
         assert(ppu_mask[0] == 0x1E);
         assert(ppu_oam_addr[0] == 0x44);
-        assert(nesle::cuda::batch_cpu_read(buffers, 0, 0x2002) == 0xA0);
+        assert(nesle::cuda::batch_cpu_read(buffers, 0, 0x2002) == 0xA4);
+    }
+
+    {
+        nesle::cuda::batch_cpu_write(buffers, 0, 0x2005, 0x23);
+        nesle::cuda::batch_cpu_write(buffers, 0, 0x2005, 0x45);
+        assert(ppu_scroll_x[0] == 0x23);
+        assert(ppu_scroll_y[0] == 0x45);
+        assert(ppu_x[0] == 0x03);
+        assert(ppu_w[0] == 0);
+
+        nesle::cuda::batch_cpu_write(buffers, 0, 0x2006, 0x20);
+        nesle::cuda::batch_cpu_write(buffers, 0, 0x2006, 0x00);
+        nesle::cuda::batch_cpu_write(buffers, 0, 0x2007, 0x34);
+        assert(nametable[0] == 0x34);
+        assert(ppu_v[0] == 0x2001);
+
+        nesle::cuda::batch_cpu_write(buffers, 0, 0x2006, 0x3F);
+        nesle::cuda::batch_cpu_write(buffers, 0, 0x2006, 0x10);
+        nesle::cuda::batch_cpu_write(buffers, 0, 0x2007, 0x21);
+        assert(palette[0] == 0x21);
     }
 
     {

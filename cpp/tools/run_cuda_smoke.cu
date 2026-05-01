@@ -9,6 +9,7 @@
 #include "nesle/cuda/batch_step.cuh"
 #include "nesle/cuda/device_reset.cuh"
 #include "nesle/cuda/kernels.cuh"
+#include "nesle/ppu.hpp"
 
 namespace {
 
@@ -17,6 +18,15 @@ void check(cudaError_t error, const char* label) {
         std::cerr << label << ": " << cudaGetErrorString(error) << '\n';
         std::exit(1);
     }
+}
+
+std::uint64_t fnv1a64(const std::uint8_t* bytes, std::size_t size) {
+    std::uint64_t hash = 1469598103934665603ULL;
+    for (std::size_t i = 0; i < size; ++i) {
+        hash ^= bytes[i];
+        hash *= 1099511628211ULL;
+    }
+    return hash;
 }
 
 void set_digits(std::vector<std::uint8_t>& ram,
@@ -882,6 +892,200 @@ int main() {
     check(cudaFree(device_console_dot), "cudaFree console dot");
     check(cudaFree(device_console_frame), "cudaFree console frame");
     check(cudaFree(device_console_result), "cudaFree console result");
+
+    constexpr std::size_t kFrameBytes =
+        nesle::cuda::kFrameWidth * nesle::cuda::kFrameHeight * nesle::cuda::kRgbChannels;
+    std::vector<std::uint8_t> host_render_chr_rom(8 * 1024, 0);
+    std::vector<std::uint8_t> host_render_nametable(nesle::cuda::kNametableRamBytes, 0);
+    std::vector<std::uint8_t> host_render_palette(nesle::cuda::kPaletteRamBytes, 0);
+    std::vector<std::uint8_t> host_render_oam(nesle::cuda::kOamBytes, 0);
+    std::vector<std::uint8_t> host_render_frame(kFrameBytes, 0);
+    std::uint8_t host_render_ctrl = 0;
+    std::uint8_t host_render_mask = 0x1E;
+    std::uint8_t host_render_status = 0;
+    std::uint8_t host_render_oam_addr = 0;
+    std::uint8_t host_render_nmi_pending = 0;
+    std::int16_t host_render_scanline = 0;
+    std::uint16_t host_render_dot = 0;
+    std::uint64_t host_render_frame_count = 0;
+
+    host_render_chr_rom[0x0010] = 0x80;
+    host_render_chr_rom[0x0020] = 0x80;
+    host_render_nametable[0] = 0x01;
+    host_render_palette[1] = 0x21;
+    host_render_palette[0x11] = 0x16;
+    host_render_oam[0] = 9;
+    host_render_oam[1] = 2;
+    host_render_oam[2] = 0;
+    host_render_oam[3] = 12;
+
+    nesle::Ppu host_ppu;
+    host_ppu.configure_cartridge(host_render_chr_rom, nesle::NametableArrangement::Vertical);
+    nesle::Ppu::RenderState host_render_state;
+    host_render_state.ctrl = host_render_ctrl;
+    host_render_state.mask = host_render_mask;
+    host_render_state.palette_ram = host_render_palette;
+    host_render_state.oam = host_render_oam;
+    host_render_state.nametable_ram = host_render_nametable;
+    host_ppu.load_render_state(host_render_state);
+    const auto expected_frame = host_ppu.render_rgb_frame();
+    const auto expected_hash = fnv1a64(expected_frame.data(), expected_frame.size());
+
+    std::uint8_t* device_render_chr_rom = nullptr;
+    std::uint8_t* device_render_nametable = nullptr;
+    std::uint8_t* device_render_palette = nullptr;
+    std::uint8_t* device_render_oam = nullptr;
+    std::uint8_t* device_render_frame = nullptr;
+    std::uint8_t* device_render_ctrl = nullptr;
+    std::uint8_t* device_render_mask = nullptr;
+    std::uint8_t* device_render_status = nullptr;
+    std::uint8_t* device_render_oam_addr = nullptr;
+    std::uint8_t* device_render_nmi_pending = nullptr;
+    std::int16_t* device_render_scanline = nullptr;
+    std::uint16_t* device_render_dot = nullptr;
+    std::uint64_t* device_render_frame_count = nullptr;
+
+    check(cudaMalloc(&device_render_chr_rom, host_render_chr_rom.size()),
+          "cudaMalloc render chr_rom");
+    check(cudaMalloc(&device_render_nametable, host_render_nametable.size()),
+          "cudaMalloc render nametable");
+    check(cudaMalloc(&device_render_palette, host_render_palette.size()),
+          "cudaMalloc render palette");
+    check(cudaMalloc(&device_render_oam, host_render_oam.size()), "cudaMalloc render oam");
+    check(cudaMalloc(&device_render_frame, host_render_frame.size()), "cudaMalloc render frame");
+    check(cudaMalloc(&device_render_ctrl, sizeof(host_render_ctrl)), "cudaMalloc render ctrl");
+    check(cudaMalloc(&device_render_mask, sizeof(host_render_mask)), "cudaMalloc render mask");
+    check(cudaMalloc(&device_render_status, sizeof(host_render_status)),
+          "cudaMalloc render status");
+    check(cudaMalloc(&device_render_oam_addr, sizeof(host_render_oam_addr)),
+          "cudaMalloc render oam_addr");
+    check(cudaMalloc(&device_render_nmi_pending, sizeof(host_render_nmi_pending)),
+          "cudaMalloc render nmi_pending");
+    check(cudaMalloc(&device_render_scanline, sizeof(host_render_scanline)),
+          "cudaMalloc render scanline");
+    check(cudaMalloc(&device_render_dot, sizeof(host_render_dot)), "cudaMalloc render dot");
+    check(cudaMalloc(&device_render_frame_count, sizeof(host_render_frame_count)),
+          "cudaMalloc render frame_count");
+
+    check(cudaMemcpy(device_render_chr_rom,
+                     host_render_chr_rom.data(),
+                     host_render_chr_rom.size(),
+                     cudaMemcpyHostToDevice),
+          "cudaMemcpy render chr_rom");
+    check(cudaMemcpy(device_render_nametable,
+                     host_render_nametable.data(),
+                     host_render_nametable.size(),
+                     cudaMemcpyHostToDevice),
+          "cudaMemcpy render nametable");
+    check(cudaMemcpy(device_render_palette,
+                     host_render_palette.data(),
+                     host_render_palette.size(),
+                     cudaMemcpyHostToDevice),
+          "cudaMemcpy render palette");
+    check(cudaMemcpy(device_render_oam,
+                     host_render_oam.data(),
+                     host_render_oam.size(),
+                     cudaMemcpyHostToDevice),
+          "cudaMemcpy render oam");
+    check(cudaMemcpy(device_render_frame,
+                     host_render_frame.data(),
+                     host_render_frame.size(),
+                     cudaMemcpyHostToDevice),
+          "cudaMemcpy render frame");
+    check(cudaMemcpy(device_render_ctrl,
+                     &host_render_ctrl,
+                     sizeof(host_render_ctrl),
+                     cudaMemcpyHostToDevice),
+          "cudaMemcpy render ctrl");
+    check(cudaMemcpy(device_render_mask,
+                     &host_render_mask,
+                     sizeof(host_render_mask),
+                     cudaMemcpyHostToDevice),
+          "cudaMemcpy render mask");
+    check(cudaMemcpy(device_render_status,
+                     &host_render_status,
+                     sizeof(host_render_status),
+                     cudaMemcpyHostToDevice),
+          "cudaMemcpy render status");
+    check(cudaMemcpy(device_render_oam_addr,
+                     &host_render_oam_addr,
+                     sizeof(host_render_oam_addr),
+                     cudaMemcpyHostToDevice),
+          "cudaMemcpy render oam_addr");
+    check(cudaMemcpy(device_render_nmi_pending,
+                     &host_render_nmi_pending,
+                     sizeof(host_render_nmi_pending),
+                     cudaMemcpyHostToDevice),
+          "cudaMemcpy render nmi_pending");
+    check(cudaMemcpy(device_render_scanline,
+                     &host_render_scanline,
+                     sizeof(host_render_scanline),
+                     cudaMemcpyHostToDevice),
+          "cudaMemcpy render scanline");
+    check(cudaMemcpy(device_render_dot,
+                     &host_render_dot,
+                     sizeof(host_render_dot),
+                     cudaMemcpyHostToDevice),
+          "cudaMemcpy render dot");
+    check(cudaMemcpy(device_render_frame_count,
+                     &host_render_frame_count,
+                     sizeof(host_render_frame_count),
+                     cudaMemcpyHostToDevice),
+          "cudaMemcpy render frame_count");
+
+    nesle::cuda::BatchBuffers render_buffers{};
+    render_buffers.ppu.ctrl = device_render_ctrl;
+    render_buffers.ppu.mask = device_render_mask;
+    render_buffers.ppu.status = device_render_status;
+    render_buffers.ppu.oam_addr = device_render_oam_addr;
+    render_buffers.ppu.nmi_pending = device_render_nmi_pending;
+    render_buffers.ppu.scanline = device_render_scanline;
+    render_buffers.ppu.dot = device_render_dot;
+    render_buffers.ppu.frame = device_render_frame_count;
+    render_buffers.ppu.nametable_ram = device_render_nametable;
+    render_buffers.ppu.palette_ram = device_render_palette;
+    render_buffers.ppu.oam = device_render_oam;
+    render_buffers.cart.chr_rom = device_render_chr_rom;
+    render_buffers.cart.chr_rom_size = static_cast<std::uint32_t>(host_render_chr_rom.size());
+    render_buffers.cart.nametable_arrangement = nesle::cuda::kNametableVertical;
+    render_buffers.frames_rgb = device_render_frame;
+
+    nesle::cuda::launch_render_kernel(
+        render_buffers,
+        nesle::cuda::StepConfig{1, 1, true},
+        nullptr);
+    check(cudaGetLastError(), "launch_render_kernel");
+    check(cudaDeviceSynchronize(), "cudaDeviceSynchronize render");
+    check(cudaMemcpy(host_render_frame.data(),
+                     device_render_frame,
+                     host_render_frame.size(),
+                     cudaMemcpyDeviceToHost),
+          "cudaMemcpy render frame back");
+
+    check(cudaFree(device_render_chr_rom), "cudaFree render chr_rom");
+    check(cudaFree(device_render_nametable), "cudaFree render nametable");
+    check(cudaFree(device_render_palette), "cudaFree render palette");
+    check(cudaFree(device_render_oam), "cudaFree render oam");
+    check(cudaFree(device_render_frame), "cudaFree render frame");
+    check(cudaFree(device_render_ctrl), "cudaFree render ctrl");
+    check(cudaFree(device_render_mask), "cudaFree render mask");
+    check(cudaFree(device_render_status), "cudaFree render status");
+    check(cudaFree(device_render_oam_addr), "cudaFree render oam_addr");
+    check(cudaFree(device_render_nmi_pending), "cudaFree render nmi_pending");
+    check(cudaFree(device_render_scanline), "cudaFree render scanline");
+    check(cudaFree(device_render_dot), "cudaFree render dot");
+    check(cudaFree(device_render_frame_count), "cudaFree render frame_count");
+
+    const auto render_hash = fnv1a64(host_render_frame.data(), host_render_frame.size());
+    if (render_hash != expected_hash || host_render_frame != std::vector<std::uint8_t>(
+                                            expected_frame.begin(), expected_frame.end())) {
+        std::cerr << "CUDA render smoke failed"
+                  << " hash=0x" << std::hex << render_hash
+                  << " expected=0x" << expected_hash << std::dec << '\n';
+        return 1;
+    }
+    std::cout << "cuda_render_frame hash=0x" << std::hex << render_hash << std::dec
+              << " bytes=" << host_render_frame.size() << '\n';
 
     return 0;
 }

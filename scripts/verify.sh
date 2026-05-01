@@ -22,6 +22,8 @@ c++ -std=c++20 -Icpp/include cpp/src/rom.cpp tests/cpp/test_cuda_batch_runner.cp
 /tmp/nesle_cuda_batch_runner_tests
 c++ -std=c++20 -Icpp/include tests/cpp/test_cuda_ppu.cpp -o /tmp/nesle_cuda_ppu_tests
 /tmp/nesle_cuda_ppu_tests
+c++ -std=c++20 -Icpp/include tests/cpp/test_cuda_render.cpp -o /tmp/nesle_cuda_render_tests
+/tmp/nesle_cuda_render_tests
 c++ -std=c++20 -Icpp/include cpp/src/rom.cpp tests/cpp/test_cuda_batch_console.cpp -o /tmp/nesle_cuda_batch_console_tests
 /tmp/nesle_cuda_batch_console_tests
 c++ -std=c++20 -Icpp/include tests/cpp/test_cuda_reset_cache.cpp -o /tmp/nesle_cuda_reset_cache_tests

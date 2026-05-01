@@ -53,6 +53,10 @@ struct PpuStateSoA {
     std::uint16_t* t;
     std::uint8_t* x;
     std::uint8_t* w;
+    std::uint8_t* open_bus;
+    std::uint8_t* read_buffer;
+    std::uint8_t* scroll_x;
+    std::uint8_t* scroll_y;
     std::uint8_t* nametable_ram;
     std::uint8_t* palette_ram;
     std::uint8_t* oam;

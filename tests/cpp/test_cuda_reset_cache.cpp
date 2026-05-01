@@ -60,6 +60,10 @@ int main() {
     std::vector<std::uint16_t> ppu_t(kNumEnvs, 0);
     std::vector<std::uint8_t> ppu_x(kNumEnvs, 0);
     std::vector<std::uint8_t> ppu_w(kNumEnvs, 0);
+    std::vector<std::uint8_t> ppu_open_bus(kNumEnvs, 0);
+    std::vector<std::uint8_t> ppu_read_buffer(kNumEnvs, 0);
+    std::vector<std::uint8_t> ppu_scroll_x(kNumEnvs, 0);
+    std::vector<std::uint8_t> ppu_scroll_y(kNumEnvs, 0);
     std::vector<std::uint8_t> nametable(kNumEnvs * nesle::cuda::kNametableRamBytes, 0);
     std::vector<std::uint8_t> palette(kNumEnvs * nesle::cuda::kPaletteRamBytes, 0);
     std::vector<std::uint8_t> oam(kNumEnvs * nesle::cuda::kOamBytes, 0);
@@ -96,6 +100,10 @@ int main() {
     buffers.ppu.t = ppu_t.data();
     buffers.ppu.x = ppu_x.data();
     buffers.ppu.w = ppu_w.data();
+    buffers.ppu.open_bus = ppu_open_bus.data();
+    buffers.ppu.read_buffer = ppu_read_buffer.data();
+    buffers.ppu.scroll_x = ppu_scroll_x.data();
+    buffers.ppu.scroll_y = ppu_scroll_y.data();
     buffers.ppu.nametable_ram = nametable.data();
     buffers.ppu.palette_ram = palette.data();
     buffers.ppu.oam = oam.data();
@@ -116,6 +124,10 @@ int main() {
     ppu_scanline[0] = 7;
     ppu_dot[0] = 9;
     ppu_frame[0] = 2;
+    ppu_open_bus[0] = 0x12;
+    ppu_read_buffer[0] = 0x34;
+    ppu_scroll_x[0] = 0x56;
+    ppu_scroll_y[0] = 0x78;
     nametable[4] = 0xCC;
     palette[1] = 0x2A;
     oam[5] = 0xDD;
@@ -129,6 +141,10 @@ int main() {
     ram[0x10] = 0;
     prg_ram[3] = 0;
     ppu_status[0] = 0;
+    ppu_open_bus[0] = 0;
+    ppu_read_buffer[0] = 0;
+    ppu_scroll_x[0] = 0;
+    ppu_scroll_y[0] = 0;
     nametable[4] = 0;
     palette[1] = 0;
     oam[5] = 0;
@@ -147,6 +163,10 @@ int main() {
     assert(ppu_scanline[0] == 7);
     assert(ppu_dot[0] == 9);
     assert(ppu_frame[0] == 2);
+    assert(ppu_open_bus[0] == 0x12);
+    assert(ppu_read_buffer[0] == 0x34);
+    assert(ppu_scroll_x[0] == 0x56);
+    assert(ppu_scroll_y[0] == 0x78);
     assert(nametable[4] == 0xCC);
     assert(palette[1] == 0x2A);
     assert(oam[5] == 0xDD);
