@@ -17,6 +17,9 @@ if [ ! -f "$rom_path" ]; then
 fi
 
 python_bin="${PYTHON:-python3}"
+export MPLCONFIGDIR="${MPLCONFIGDIR:-/private/tmp/nesle-matplotlib}"
+export XDG_CACHE_HOME="${XDG_CACHE_HOME:-/private/tmp/nesle-cache}"
+mkdir -p "$MPLCONFIGDIR" "$XDG_CACHE_HOME/fontconfig"
 if ! "$python_bin" - <<'PY'
 try:
     import numpy as np

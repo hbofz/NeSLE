@@ -432,6 +432,8 @@ class NesleVecEnv(_VecEnvBase):
         self._options = [dict(item) for item in options]
 
     def get_attr(self, attr_name: str, indices: Sequence[int] | int | None = None) -> list[Any]:
+        if attr_name == "render_mode":
+            return [self.render_mode for _ in self._resolve_indices(indices)]
         return [getattr(self._backends[i], attr_name) for i in self._resolve_indices(indices)]
 
     def set_attr(self, attr_name: str, value: Any, indices: Sequence[int] | int | None = None) -> None:

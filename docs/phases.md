@@ -131,7 +131,7 @@ Success criteria:
 
 Gate: keep a NumPy compatibility path even if the fast path returns GPU tensors.
 
-Status: started. `NesleEnv` now exposes a Gymnasium-style single-env API and
+Status: complete. `NesleEnv` exposes a Gymnasium-style single-env API and
 `NesleVecEnv` exposes the SB3-style vector contract with `reset`, `step`,
 `step_async`, `step_wait`, `render`, `get_images`, auto-reset, `reset_infos`,
 seed/options plumbing, and `terminal_observation`. When SB3 is installed the
@@ -149,7 +149,9 @@ and imports the pybind console hook when pybind11 headers are available, then
 exercises `NativeConsole` and the native Python backend when NumPy is complete.
 `scripts/smoke_phase4_user_rom.sh` exercises the Python vector API against a
 local Super Mario Bros. ROM and reports observation/render shapes, reward total,
-done flags, and selected backend.
+done flags, and selected backend. The local Phase 4 gate has passed with an
+editable `.[dev,rl]` install, Gymnasium checker, SB3 wrapper smoke, native
+binding smoke, and the real local Super Mario Bros. ROM smoke.
 
 ## Phase 5: Throughput Benchmark
 

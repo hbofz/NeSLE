@@ -4,6 +4,9 @@ set -eu
 python_bin="${PYTHON:-python3}"
 cxx_bin="${CXX:-c++}"
 build_dir="${NESLE_NATIVE_BINDING_CHECK_DIR:-/tmp/nesle_native_binding_check}"
+export MPLCONFIGDIR="${MPLCONFIGDIR:-/private/tmp/nesle-matplotlib}"
+export XDG_CACHE_HOME="${XDG_CACHE_HOME:-/private/tmp/nesle-cache}"
+mkdir -p "$MPLCONFIGDIR" "$XDG_CACHE_HOME/fontconfig"
 
 if ! command -v "$python_bin" >/dev/null 2>&1; then
   echo "python is not available; skipping native binding compile check."

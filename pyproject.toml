@@ -8,7 +8,7 @@ version = "0.0.1"
 description = "GPU-native NES learning environment for reinforcement learning"
 readme = "README.md"
 requires-python = ">=3.10"
-license = { text = "MIT" }
+license = "MIT"
 authors = [{ name = "NeSLE contributors" }]
 dependencies = ["numpy>=1.26"]
 
@@ -16,6 +16,8 @@ dependencies = ["numpy>=1.26"]
 rl = [
   "gymnasium>=1.0",
   "stable-baselines3>=2.0",
+]
+legacy-mario = [
   "nes-py>=8.2",
   "gym-super-mario-bros>=7.4",
 ]
