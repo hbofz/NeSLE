@@ -29,13 +29,9 @@ __global__ void console_step_kernel(BatchBuffers buffers,
         std::uint64_t instructions = 0;
         std::uint32_t frames_completed = 0;
         while (instructions < max_instructions_per_frame && frames_completed == 0) {
-            const auto previous_pc = buffers.cpu.pc[env];
             const auto step = step_batch_console_instruction(buffers, env);
             ++instructions;
             frames_completed += step.frames_completed;
-            if (buffers.cpu.pc[env] == previous_pc) {
-                break;
-            }
         }
     }
 
