@@ -2,6 +2,7 @@
 set -eu
 
 PYTHONPATH=src python3 -m unittest discover -s tests
+sh scripts/verify_phase4.sh
 c++ -std=c++20 -Icpp/include cpp/src/rom.cpp cpp/src/smb.cpp tests/cpp/test_core.cpp -o /tmp/nesle_cpp_tests
 /tmp/nesle_cpp_tests
 c++ -std=c++20 -Icpp/include cpp/src/rom.cpp tests/cpp/test_cpu.cpp -o /tmp/nesle_cpu_tests
@@ -33,3 +34,4 @@ c++ -std=c++20 -Icpp/include cpp/src/rom.cpp cpp/src/smb.cpp cpp/tools/run_nes_h
 /tmp/nesle_run_nes_headless /tmp/nesle_headless_test.nes --frames 1 --max-instructions 50000 --trace 2
 c++ -std=c++20 -Icpp/include cpp/src/rom.cpp cpp/tools/render_nestopia_state.cpp -o /tmp/nesle_render_nestopia_state
 c++ -std=c++20 -Icpp/include cpp/tools/compare_rgb_frame.cpp -o /tmp/nesle_compare_rgb_frame
+sh scripts/verify_native_binding.sh

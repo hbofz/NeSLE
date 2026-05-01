@@ -498,6 +498,8 @@ class NesleEnv(_EnvBase):
         self.action_space = self.vector_env.action_space
 
     def reset(self, *, seed: int | None = None, options: dict[str, Any] | None = None) -> tuple[np.ndarray, dict[str, Any]]:
+        if gym is not None:
+            super().reset(seed=seed)
         if seed is not None:
             self.vector_env.seed(seed)
         if options is not None:

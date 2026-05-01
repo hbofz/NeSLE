@@ -42,6 +42,13 @@ contract, and the first Phase 4 Python API:
 sh scripts/verify.sh
 ```
 
+Phase 4 API checks can also be run directly:
+
+```sh
+sh scripts/verify_phase4.sh
+sh scripts/verify_native_binding.sh
+```
+
 With a local Super Mario Bros. `.nes` file, run the optional real-ROM gate:
 
 ```sh
