@@ -2,13 +2,16 @@
 
 Date: 2026-05-01
 
+This file is a historical entry gate for Phase 6. The current final Phase 6
+status lives in `docs/phase6-report.md`.
+
 ## Status
 
-Phase 6 can start from a working artifact: the public Python API can build the
-CUDA extension, construct a ROM-backed `cuda-console` vector backend, and step a
-real Super Mario Bros. ROM on an A100. The benchmark harness also records native
-CPU, legacy `gym-super-mario-bros`, synthetic CUDA, raw CUDA kernel, and
-ROM-backed CUDA-console rows.
+At Phase 6 entry, the project already had a working artifact: the public Python
+API could build the CUDA extension, construct a ROM-backed `cuda-console` vector
+backend, and step a real Super Mario Bros. ROM on an A100. The benchmark
+harness also recorded native CPU, legacy `gym-super-mario-bros`, synthetic
+CUDA, raw CUDA kernel, and ROM-backed CUDA-console rows.
 
 ## Verification Snapshot
 
@@ -34,21 +37,22 @@ ROM-backed CUDA-console rows.
 | Synthetic CUDA reward no-copy | 102,991,288.4 env-steps/sec at 16,384 envs | Calibration kernel, not full NES emulation |
 | Raw CUDA reward kernel | 2,633,530,000 env-steps/sec at 16,384 envs | Bare kernel ceiling |
 
-## Optimization Remaining
+## Historical Optimization Targets
+
+These were the targets identified before Phase 6 implementation. They are kept
+here to show why Phase 6 focused on observation transfer and reproducibility.
 
 1. Expose render cadence and no-copy training modes through `NesleVecEnv`.
-   The probe shows a roughly 312x gap at 128 envs between RGB-copy stepping and
-   no-observation-copy stepping.
+   Status: addressed by CUDA copy flags, `step_reward`, and RGB observation
+   cadence support.
 
-2. Add GPU-resident observation options.
-   Returning full RGB NumPy frames every step is the main bottleneck. Phase 6
-   should test device tensors, compact RAM/state features, frame stacks rendered
-   every N steps, and lazy `render()` calls for evaluation.
+2. Add compact observation options.
+   Status: addressed for normal vector stepping by `observation_mode="ram"`.
+   GPU-resident visual feature tensors remain future work for image policies.
 
-3. Broaden scaling runs.
-   Current real-console numbers cover up to 128 envs in the quick audit. Phase 6
-   should run longer, warmed benchmarks for 256, 512, 1024, and 2048 envs with
-   and without observation copies.
+3. Broaden and package scaling runs.
+   Status: addressed by the Phase 6 reproduction script, Dockerfile, tracked
+   A100 JSON, and SVG plots.
 
 4. Optimize per-env serial execution.
    Each environment currently uses one CUDA thread to run its CPU/PPU loop. That
@@ -56,13 +60,12 @@ ROM-backed CUDA-console rows.
    dispatch tuning, memory layout tuning, and render kernel tiling.
 
 5. Add reset-cache and frame-skip ablations.
-   Phase 3 has reset-cache primitives. Phase 6 needs benchmark rows showing the
-   effect of reset restore, frame-skip choices, render cadence, and env count.
+   Status: frame-skip and copy-mode ablations are in the Phase 6 report; deeper
+   reset-cache ablations remain future research.
 
 6. Package reproducibility.
-   The artifact builds on Colab A100, but Phase 6 should add a CUDA container or
-   one-command setup path so external reviewers do not depend on the ad hoc SSH
-   tunnel.
+   Status: addressed by `docker/cuda.Dockerfile` and
+   `scripts/reproduce_phase6.sh`.
 
 ## Bottom Line
 

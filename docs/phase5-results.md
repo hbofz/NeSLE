@@ -83,11 +83,11 @@ PYTHONPATH=src python3 benchmarks/phase5_benchmark.py \
 | render | 4096 | 7,177.6 | 28,710.6 | 36% | 6193 MiB |
 | inference | 4096 | 2,871.5 | 11,486.0 | 46% | 11955 MiB |
 
-Interpretation: `backend="cuda"` now exercises a packaged CUDA vector backend
-through the public Python API. These rows were produced by the first synthetic
-CUDA backend, which moved batched action application, reward, and RGB render
-kernels onto the GPU while still returning NumPy observations/rewards/dones each
-step.
+Interpretation: these rows are historical calibration data from the first
+packaged CUDA vector backend. That backend used synthetic batched action,
+reward, and RGB render kernels while returning NumPy observations/rewards/dones
+each step. Current `backend="cuda"` behavior with a ROM uses the deeper
+ROM-backed `cuda-console` path below.
 
 ## CUDA Console Backend
 
@@ -146,9 +146,10 @@ PY
 | no obs copy | 128 | 1,139,578.8 | 4,558,315.3 |
 
 Interpretation: for the real `cuda-console` path, per-step RGB rendering and
-host observation copy dominate the current Python API benchmark. A training path
-that keeps observations on device, renders less often, or returns compact RAM
-features instead of full RGB frames is the largest near-term optimization lever.
+host observation copy dominate the RGB Python API benchmark. Phase 6 addresses
+the practical version of this bottleneck with `observation_mode="ram"`, which
+keeps normal vector `reset()`/`step()` calls while returning compact 2 KB CPU
+RAM observations instead of full RGB frames.
 
 ## CUDA Reward No-Copy Mode
 
@@ -216,7 +217,9 @@ NESLE_CUDA_ARCH=sm_80 sh scripts/benchmark_cuda_kernels.sh \
 | 16384 | 2,633,530,000 | 166,120 |
 
 Interpretation: the lower-level CUDA reward and render kernels scale on A100.
-The CUDA Python backend now has both the ROM-backed `cuda-console` path for
-full CPU/PPU stepping and the synthetic reward/render kernels for calibration.
-The next optimization work is adding render-cadence/no-copy modes to the real
-console path and reducing per-environment serial work.
+They are calibration kernels, not a replacement for full NES emulation. The
+CUDA Python backend has the ROM-backed `cuda-console` path for full CPU/PPU
+stepping, plus synthetic reward/render kernels for ceiling measurements. Phase 6
+has since added RAM-observation and no-copy modes to the real console path; the
+remaining performance work is reducing per-environment serial CUDA console work
+and improving visual-policy observation paths.

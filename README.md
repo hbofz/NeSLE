@@ -9,12 +9,14 @@ architecture, project layout, NROM/iNES parsing, Mario RAM decoding, reward
 extraction, action mappings, and tests. Phases 1 and 2 built the portable CPU,
 PPU, input, rendering, and OpenEmu reference gates. Phase 3 moved the emulator
 correctness contract into CUDA batch execution. Phase 4 added the Gymnasium/SB3
-Python API.
+Python API. Phases 5 and 6 package the ROM-backed CUDA console backend,
+benchmarks, A100 results, and high-throughput RAM-observation training path.
 
-## Current Phase
+## Current Status
 
-The current path covers the Phase 1/2 CPU emulator, the Phase 3 CUDA batch
-contract, and the completed Phase 4 Python API:
+The current path covers the completed CPU emulator, CUDA batch execution,
+Gymnasium/SB3 Python API, ROM-backed CUDA console backend, and Phase 6
+benchmark package:
 
 - 2A03/6502 state and official-opcode execution core
 - Flat 64 KB test bus, NROM memory-map smoke tests, and NES console CPU bus
@@ -35,6 +37,10 @@ contract, and the completed Phase 4 Python API:
   reset/step and SB3-style vector reset/step/auto-reset semantics
 - Native C++ console binding hook plus deterministic Python compatibility
   backend for API development without a packaged native runtime
+- ROM-backed `cuda-console` backend that advances the CPU/PPU console loop on
+  CUDA
+- `observation_mode="ram"` for normal vector stepping without full RGB host
+  copies, plus `render()` for explicit RGB frame capture
 
 ## Quick Verification
 
