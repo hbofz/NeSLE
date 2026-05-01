@@ -94,7 +94,6 @@ NESLE_CUDA_HD inline void apply_batch_reward_env(BatchBuffers& buffers, std::uin
     MarioBatchSnapshot previous;
     previous.x_pos = buffers.previous_mario_x[env];
     previous.time = buffers.previous_mario_time[env];
-    previous.is_dying = buffers.previous_mario_dying[env] != 0;
 
     const auto reward = compute_batch_reward(previous, current);
     buffers.rewards[env] = static_cast<float>(reward.total);
@@ -104,7 +103,6 @@ NESLE_CUDA_HD inline void apply_batch_reward_env(BatchBuffers& buffers, std::uin
                             : 0;
     buffers.previous_mario_x[env] = current.x_pos;
     buffers.previous_mario_time[env] = current.time;
-    buffers.previous_mario_dying[env] = (current.is_dying || current.is_dead) ? 1 : 0;
 }
 
 
@@ -180,7 +178,6 @@ NESLE_CUDA_HD inline void cold_reset_console_env(BatchBuffers& buffers, std::uin
     // Reward baselines.
     buffers.previous_mario_x[env] = 0;
     buffers.previous_mario_time[env] = 0;
-    buffers.previous_mario_dying[env] = 0;
     buffers.rewards[env] = 0.0F;
     buffers.done[env] = 0;
 }
@@ -201,7 +198,6 @@ NESLE_CUDA_HD inline void cold_reset_synthetic_env(BatchBuffers& buffers, std::u
 
     buffers.previous_mario_x[env] = 0x100 + 2;
     buffers.previous_mario_time[env] = 400;
-    buffers.previous_mario_dying[env] = 0;
     buffers.rewards[env] = 0.0F;
     buffers.done[env] = 0;
 }

@@ -80,7 +80,6 @@ struct BatchBuffers {
     float* rewards;
     int* previous_mario_x;
     int* previous_mario_time;
-    std::uint8_t* previous_mario_dying;
     std::uint8_t* frames_rgb;
 };
 

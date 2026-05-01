@@ -44,7 +44,6 @@ struct DeviceResetSnapshots {
 
     int* previous_mario_x = nullptr;
     int* previous_mario_time = nullptr;
-    std::uint8_t* previous_mario_dying = nullptr;
     float* rewards = nullptr;
     std::uint8_t* done = nullptr;
 
@@ -135,9 +134,6 @@ NESLE_CUDA_DEVICE_RESET_HD inline void capture_device_reset_snapshot(
     }
     if (buffers.previous_mario_time != nullptr && snapshots.previous_mario_time != nullptr) {
         snapshots.previous_mario_time[slot] = buffers.previous_mario_time[env];
-    }
-    if (buffers.previous_mario_dying != nullptr && snapshots.previous_mario_dying != nullptr) {
-        snapshots.previous_mario_dying[slot] = buffers.previous_mario_dying[env];
     }
     if (buffers.rewards != nullptr && snapshots.rewards != nullptr) {
         snapshots.rewards[slot] = buffers.rewards[env];
@@ -234,9 +230,6 @@ NESLE_CUDA_DEVICE_RESET_HD inline void restore_device_reset_snapshot(
     }
     if (buffers.previous_mario_time != nullptr && snapshots.previous_mario_time != nullptr) {
         buffers.previous_mario_time[env] = snapshots.previous_mario_time[slot];
-    }
-    if (buffers.previous_mario_dying != nullptr && snapshots.previous_mario_dying != nullptr) {
-        buffers.previous_mario_dying[env] = snapshots.previous_mario_dying[slot];
     }
     if (buffers.rewards != nullptr && snapshots.rewards != nullptr) {
         buffers.rewards[env] = snapshots.rewards[slot];

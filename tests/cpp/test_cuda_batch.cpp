@@ -43,7 +43,6 @@ int main() {
     std::vector<std::uint8_t> done(kNumEnvs, 0);
     std::vector<int> previous_x(kNumEnvs, 0);
     std::vector<int> previous_time(kNumEnvs, 0);
-    std::vector<std::uint8_t> previous_dying(kNumEnvs, 0);
 
     seed_mario_ram(ram, 0, 0, 43, 399);
     previous_x[0] = 40;
@@ -63,7 +62,6 @@ int main() {
     buffers.rewards = rewards.data();
     buffers.previous_mario_x = previous_x.data();
     buffers.previous_mario_time = previous_time.data();
-    buffers.previous_mario_dying = previous_dying.data();
 
     for (std::uint32_t env = 0; env < kNumEnvs; ++env) {
         const auto base = env * nesle::cuda::kCpuRamBytes;
@@ -79,7 +77,6 @@ int main() {
         assert(rewards[env] == static_cast<float>(expected.total));
         assert(previous_x[env] == current.x_pos);
         assert(previous_time[env] == current.time);
-        assert(previous_dying[env] == static_cast<std::uint8_t>(current.is_dying || current.is_dead));
     }
 
     assert(rewards[0] == 2.0F);

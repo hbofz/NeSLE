@@ -22,4 +22,4 @@ ENV NESLE_CUDA_ARCH=sm_80
 ENV NESLE_PIP_INSTALL_FLAGS=--break-system-packages
 ENV PYTHONPATH=src
 
-CMD ["sh", "scripts/verify.sh"]
+CMD ["python3", "-m", "pytest", "tests/", "-v"]

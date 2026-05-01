@@ -72,7 +72,6 @@ int main() {
     std::vector<float> rewards(kNumEnvs, 0.0F);
     std::vector<int> previous_x(kNumEnvs, 0);
     std::vector<int> previous_time(kNumEnvs, 0);
-    std::vector<std::uint8_t> previous_dying(kNumEnvs, 0);
 
     nesle::cuda::BatchBuffers buffers{};
     buffers.cpu.pc = pc.data();
@@ -114,7 +113,6 @@ int main() {
     buffers.rewards = rewards.data();
     buffers.previous_mario_x = previous_x.data();
     buffers.previous_mario_time = previous_time.data();
-    buffers.previous_mario_dying = previous_dying.data();
 
     nesle::cuda::reset_batch_cpu_env(buffers, 0);
     ram[0x10] = 0xAA;

@@ -613,11 +613,49 @@ class NesleVecEnv(_VecEnvBase):
             [self.action_masks[int(action)] for action in action_array],
             dtype=numpy.uint8,
         )
+        if self._cuda_env_step_counts is not None:
+            self._cuda_env_step_counts += 1
         result = self._cuda_batch.step(action_masks, render_frame=False, copy_obs=False)
         rewards = numpy.asarray(result["rewards"], dtype=numpy.float32)
         dones = numpy.asarray(result["dones"], dtype=bool)
+
+        max_steps = self.config.max_episode_steps
+        if max_steps > 0 and self._cuda_env_step_counts is not None:
+            truncated_mask = self._cuda_env_step_counts >= max_steps
+            dones = dones | truncated_mask
+        else:
+            truncated_mask = numpy.zeros(self.num_envs, dtype=bool)
+
         backend_name = str(self._cuda_batch.name)
-        infos = [{"backend": backend_name, "observations_copied": False} for _ in range(self.num_envs)]
+        infos = [
+            {
+                "backend": backend_name,
+                "observation_mode": self.observation_mode,
+                "observations_copied": False,
+            }
+            for _ in range(self.num_envs)
+        ]
+
+        if numpy.any(dones):
+            terminal_observations = (
+                numpy.asarray(self._cuda_batch.ram(), dtype=numpy.uint8)
+                if self.observation_mode == "ram"
+                else numpy.asarray(self._cuda_batch.render(), dtype=numpy.uint8)
+            )
+            reset_mask = numpy.asarray(dones, dtype=numpy.uint8)
+            for env in range(self.num_envs):
+                if dones[env]:
+                    infos[env]["terminal_observation"] = terminal_observations[env].copy()
+                    infos[env]["terminated"] = bool(dones[env] and not truncated_mask[env])
+                    infos[env]["truncated"] = bool(truncated_mask[env])
+                    self.reset_infos[env] = {
+                        "backend": backend_name,
+                        "observation_mode": self.observation_mode,
+                    }
+            self._cuda_batch.reset_envs(reset_mask)
+            if self._cuda_env_step_counts is not None:
+                self._cuda_env_step_counts[dones] = 0
+
         self._pending_actions = None
         self.buf_infos = infos
         return rewards, dones, infos

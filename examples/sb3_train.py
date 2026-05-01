@@ -26,11 +26,20 @@ def main() -> None:
         from stable_baselines3 import PPO
     except ImportError as exc:
         raise SystemExit("Install the 'rl' extra to run this example: pip install -e '.[rl]'") from exc
+    try:
+        import torch
+    except ImportError as exc:
+        raise SystemExit("Stable-Baselines3 requires PyTorch; install the 'rl' extra.") from exc
 
     if args.observation_mode == "ram" and args.policy == "CnnPolicy":
         raise SystemExit("CnnPolicy requires --observation-mode rgb_array.")
     if args.observation_mode == "rgb_array" and args.policy == "MlpPolicy":
         raise SystemExit("MlpPolicy requires --observation-mode ram.")
+    if args.sb3_device.startswith("cuda") and not torch.cuda.is_available():
+        raise SystemExit(
+            "--sb3-device cuda was requested, but PyTorch CUDA is not available. "
+            "Install a CUDA-enabled PyTorch build or use --sb3-device cpu."
+        )
 
     env = nesle.make_vec(
         rom_path=args.rom_path,
@@ -42,6 +51,11 @@ def main() -> None:
         render_mode="rgb_array",
         observation_mode=args.observation_mode,
     )
+    env_backend = "unknown"
+    if getattr(env, "_cuda_batch", None) is not None:
+        env_backend = str(env._cuda_batch.name)
+    elif hasattr(env, "config"):
+        env_backend = str(env.config.backend)
     if args.observation_mode == "rgb_array":
         from stable_baselines3.common.vec_env import VecFrameStack, VecTransposeImage
 
@@ -51,6 +65,15 @@ def main() -> None:
     policy = args.policy
     if policy == "auto":
         policy = "MlpPolicy" if args.observation_mode == "ram" else "CnnPolicy"
+
+    torch_device = args.sb3_device
+    if torch_device == "auto":
+        torch_device = "cuda" if torch.cuda.is_available() else "cpu"
+    cuda_name = torch.cuda.get_device_name(0) if torch.cuda.is_available() else "unavailable"
+    print(
+        f"nesle_backend={env_backend} observation_mode={args.observation_mode} "
+        f"sb3_device={torch_device} torch={torch.__version__} torch_cuda={cuda_name}"
+    )
 
     model = PPO(
         policy,

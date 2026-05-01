@@ -39,7 +39,6 @@ struct EnvResetSnapshot {
 
     int previous_mario_x = 0;
     int previous_mario_time = 0;
-    std::uint8_t previous_mario_dying = 0;
     float reward = 0.0F;
     std::uint8_t done = 0;
 
@@ -105,9 +104,6 @@ struct EnvResetSnapshot {
     }
     if (buffers.previous_mario_time != nullptr) {
         snapshot.previous_mario_time = buffers.previous_mario_time[env];
-    }
-    if (buffers.previous_mario_dying != nullptr) {
-        snapshot.previous_mario_dying = buffers.previous_mario_dying[env];
     }
     if (buffers.rewards != nullptr) {
         snapshot.reward = buffers.rewards[env];
@@ -192,9 +188,6 @@ inline void restore_reset_snapshot(BatchBuffers& buffers,
     }
     if (buffers.previous_mario_time != nullptr) {
         buffers.previous_mario_time[env] = snapshot.previous_mario_time;
-    }
-    if (buffers.previous_mario_dying != nullptr) {
-        buffers.previous_mario_dying[env] = snapshot.previous_mario_dying;
     }
     if (buffers.rewards != nullptr) {
         buffers.rewards[env] = snapshot.reward;

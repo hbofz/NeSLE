@@ -188,7 +188,6 @@ int main() {
     std::vector<std::uint8_t> host_ram(kNumEnvs * nesle::cuda::kCpuRamBytes, 0);
     std::vector<int> host_previous_x(kNumEnvs, 0);
     std::vector<int> host_previous_time(kNumEnvs, 400);
-    std::vector<std::uint8_t> host_previous_dying(kNumEnvs, 0);
     std::vector<float> host_rewards(kNumEnvs, 0.0F);
     std::vector<std::uint8_t> host_done(kNumEnvs, 0);
 
@@ -204,7 +203,6 @@ int main() {
     std::uint8_t* device_ram = nullptr;
     int* device_previous_x = nullptr;
     int* device_previous_time = nullptr;
-    std::uint8_t* device_previous_dying = nullptr;
     float* device_rewards = nullptr;
     std::uint8_t* device_done = nullptr;
 
@@ -213,8 +211,6 @@ int main() {
           "cudaMalloc previous_x");
     check(cudaMalloc(&device_previous_time, host_previous_time.size() * sizeof(int)),
           "cudaMalloc previous_time");
-    check(cudaMalloc(&device_previous_dying, host_previous_dying.size()),
-          "cudaMalloc previous_dying");
     check(cudaMalloc(&device_rewards, host_rewards.size() * sizeof(float)), "cudaMalloc rewards");
     check(cudaMalloc(&device_done, host_done.size()), "cudaMalloc done");
 
@@ -230,11 +226,6 @@ int main() {
                      host_previous_time.size() * sizeof(int),
                      cudaMemcpyHostToDevice),
           "cudaMemcpy previous_time");
-    check(cudaMemcpy(device_previous_dying,
-                     host_previous_dying.data(),
-                     host_previous_dying.size(),
-                     cudaMemcpyHostToDevice),
-          "cudaMemcpy previous_dying");
     check(cudaMemcpy(device_rewards,
                      host_rewards.data(),
                      host_rewards.size() * sizeof(float),
@@ -247,7 +238,6 @@ int main() {
     buffers.cpu.ram = device_ram;
     buffers.previous_mario_x = device_previous_x;
     buffers.previous_mario_time = device_previous_time;
-    buffers.previous_mario_dying = device_previous_dying;
     buffers.rewards = device_rewards;
     buffers.done = device_done;
 
@@ -274,7 +264,6 @@ int main() {
     check(cudaFree(device_ram), "cudaFree ram");
     check(cudaFree(device_previous_x), "cudaFree previous_x");
     check(cudaFree(device_previous_time), "cudaFree previous_time");
-    check(cudaFree(device_previous_dying), "cudaFree previous_dying");
     check(cudaFree(device_rewards), "cudaFree rewards");
     check(cudaFree(device_done), "cudaFree done");
 

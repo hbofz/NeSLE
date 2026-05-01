@@ -154,6 +154,33 @@ class TestAutoResetContract(unittest.TestCase):
         self.assertEqual(obs.shape, (3, 240, 256, 3))
         env.close()
 
+    def test_cuda_step_reward_auto_resets_done_envs(self):
+        try:
+            import nesle._cuda_core  # noqa: F401
+        except ImportError:
+            self.skipTest("CUDA extension is not available")
+
+        env = NesleVecEnv(
+            str(self.rom_path),
+            num_envs=2,
+            backend="cuda",
+            observation_mode="ram",
+            max_episode_steps=2,
+        )
+        env.reset()
+        env.step_reward([1, 1])
+        _, dones, infos = env.step_reward([1, 1])
+        self.assertTrue(dones.all())
+        for i in range(2):
+            self.assertIn("terminal_observation", infos[i])
+            self.assertEqual(infos[i]["terminal_observation"].shape, (CPU_RAM_BYTES,))
+            self.assertTrue(infos[i]["truncated"])
+        # A follow-up reward-only step should be in a fresh episode, not
+        # immediately truncated from stale step counts.
+        _, dones, _ = env.step_reward([1, 1])
+        self.assertFalse(dones.any())
+        env.close()
+
     def test_single_env_with_start(self):
         env = NesleEnv(
             str(self.rom_path),

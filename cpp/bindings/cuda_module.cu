@@ -164,7 +164,6 @@ public:
         std::vector<std::uint8_t> ram(static_cast<std::size_t>(num_env_) * nesle::cuda::kCpuRamBytes, 0);
         std::vector<int> previous_x(num_env_, 0);
         std::vector<int> previous_time(num_env_, 400);
-        std::vector<std::uint8_t> previous_dying(num_env_, 0);
         std::vector<float> rewards(num_env_, 0.0F);
         std::vector<std::uint8_t> done(num_env_, 0);
         std::vector<std::uint32_t> step_counts(num_env_, 0);
@@ -188,7 +187,6 @@ public:
         copy_to_device(device_ram_, ram, "reset ram");
         copy_to_device(device_previous_x_, previous_x, "reset previous_x");
         copy_to_device(device_previous_time_, previous_time, "reset previous_time");
-        copy_to_device(device_previous_dying_, previous_dying, "reset previous_dying");
         copy_to_device(device_rewards_, rewards, "reset rewards");
         copy_to_device(device_done_, done, "reset done");
         copy_to_device(device_step_counts_, step_counts, "reset step_counts");
@@ -332,7 +330,6 @@ private:
         device_pending_dma_cycles_ = cuda_alloc<std::uint32_t>(num_env_, "cudaMalloc pending dma");
         device_previous_x_ = cuda_alloc<int>(num_env_, "cudaMalloc previous_x");
         device_previous_time_ = cuda_alloc<int>(num_env_, "cudaMalloc previous_time");
-        device_previous_dying_ = cuda_alloc<std::uint8_t>(num_env_, "cudaMalloc previous_dying");
         device_rewards_ = cuda_alloc<float>(num_env_, "cudaMalloc rewards");
         device_done_ = cuda_alloc<std::uint8_t>(num_env_, "cudaMalloc done");
         device_actions_ = cuda_alloc<std::uint8_t>(num_env_, "cudaMalloc actions");
@@ -385,7 +382,6 @@ private:
         buffers_.action_masks = device_actions_;
         buffers_.previous_mario_x = device_previous_x_;
         buffers_.previous_mario_time = device_previous_time_;
-        buffers_.previous_mario_dying = device_previous_dying_;
         buffers_.rewards = device_rewards_;
         buffers_.done = device_done_;
         buffers_.ppu.ctrl = device_ppu_ctrl_;
@@ -428,7 +424,6 @@ private:
         cudaFree(device_pending_dma_cycles_);
         cudaFree(device_previous_x_);
         cudaFree(device_previous_time_);
-        cudaFree(device_previous_dying_);
         cudaFree(device_rewards_);
         cudaFree(device_done_);
         cudaFree(device_actions_);
@@ -489,7 +484,6 @@ private:
         std::vector<std::uint32_t> pending_dma(env_count, 0);
         std::vector<int> previous_x(env_count, 0);
         std::vector<int> previous_time(env_count, 0);
-        std::vector<std::uint8_t> previous_dying(env_count, 0);
         std::vector<float> rewards(env_count, 0.0F);
         std::vector<std::uint8_t> done(env_count, 0);
         std::vector<std::uint32_t> step_counts(env_count, 0);
@@ -517,7 +511,6 @@ private:
         copy_to_device(device_pending_dma_cycles_, pending_dma, "reset pending dma");
         copy_to_device(device_previous_x_, previous_x, "reset previous_x");
         copy_to_device(device_previous_time_, previous_time, "reset previous_time");
-        copy_to_device(device_previous_dying_, previous_dying, "reset previous_dying");
         copy_to_device(device_rewards_, rewards, "reset rewards");
         copy_to_device(device_done_, done, "reset done");
         copy_to_device(device_actions_, bytes, "reset actions");
@@ -571,7 +564,6 @@ private:
     std::uint32_t* device_pending_dma_cycles_ = nullptr;
     int* device_previous_x_ = nullptr;
     int* device_previous_time_ = nullptr;
-    std::uint8_t* device_previous_dying_ = nullptr;
     float* device_rewards_ = nullptr;
     std::uint8_t* device_done_ = nullptr;
     std::uint8_t* device_actions_ = nullptr;

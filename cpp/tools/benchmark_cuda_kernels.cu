@@ -107,7 +107,6 @@ int main(int argc, char** argv) {
         std::vector<std::uint8_t> host_ram(static_cast<std::size_t>(num_envs) * nesle::cuda::kCpuRamBytes, 0);
         std::vector<int> host_previous_x(num_envs, 0);
         std::vector<int> host_previous_time(num_envs, 400);
-        std::vector<std::uint8_t> host_previous_dying(num_envs, 0);
         std::vector<float> host_rewards(num_envs, 0.0F);
         std::vector<std::uint8_t> host_done(num_envs, 0);
         seed_mario_ram(host_ram, host_previous_x, host_previous_time);
@@ -123,7 +122,6 @@ int main(int argc, char** argv) {
         auto* device_ram = copy_to_device(host_ram, "ram");
         auto* device_previous_x = copy_to_device(host_previous_x, "previous_x");
         auto* device_previous_time = copy_to_device(host_previous_time, "previous_time");
-        auto* device_previous_dying = copy_to_device(host_previous_dying, "previous_dying");
         auto* device_rewards = copy_to_device(host_rewards, "rewards");
         auto* device_done = copy_to_device(host_done, "done");
         auto* device_ctrl = copy_to_device(host_ctrl, "ppu_ctrl");
@@ -135,7 +133,6 @@ int main(int argc, char** argv) {
         buffers.cpu.ram = device_ram;
         buffers.previous_mario_x = device_previous_x;
         buffers.previous_mario_time = device_previous_time;
-        buffers.previous_mario_dying = device_previous_dying;
         buffers.rewards = device_rewards;
         buffers.done = device_done;
         buffers.ppu.ctrl = device_ctrl;
@@ -191,7 +188,6 @@ int main(int argc, char** argv) {
         check(cudaFree(device_ram), "cudaFree ram");
         check(cudaFree(device_previous_x), "cudaFree previous_x");
         check(cudaFree(device_previous_time), "cudaFree previous_time");
-        check(cudaFree(device_previous_dying), "cudaFree previous_dying");
         check(cudaFree(device_rewards), "cudaFree rewards");
         check(cudaFree(device_done), "cudaFree done");
         check(cudaFree(device_ctrl), "cudaFree ctrl");

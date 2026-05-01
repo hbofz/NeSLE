@@ -1,23 +1,28 @@
-# NeSLE — Next Steps (NVIDIA GPU Testing & Training)
+# NeSLE - Next Steps (NVIDIA GPU Testing & Training)
 
-> **Context**: A full audit was performed and 3 critical issues were fixed in commit
-> `a341713` ("Fix critical pre-training issues: CUDA auto-reset, START button, loop guard").
-> All Python and C++ host-side tests pass. The CUDA device code compiles as C++ but
-> needs `nvcc` compilation and GPU testing on your NVIDIA machine.
+> Context: The pre-training audit blockers have been fixed and verified.
+> CUDA env stepping, reward-only stepping, per-env reset, terminal observations,
+> and START-button actions are covered by tests. The next major milestone is
+> large-GPU training on Colab/A100/H100 with both `backend="cuda"` and
+> `--sb3-device cuda`.
 
 ---
 
 ## 1. Setup on NVIDIA Machine
 
 ```bash
-# Clone the repo
 git clone git@github.com:hbofz/Nesle-codex.git
 cd Nesle-codex
 
-# Create a virtual environment and install dependencies
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -e ".[dev,rl]"
+```
+
+For Colab, verify PyTorch sees the GPU before training:
+
+```bash
+python -c "import torch; print(torch.__version__); print(torch.cuda.is_available()); print(torch.cuda.get_device_name(0))"
 ```
 
 ---
@@ -25,129 +30,124 @@ pip install -e ".[dev,rl]"
 ## 2. Build the CUDA Extension
 
 ```bash
-# Build the native C++ pybind11 module
 pip install -e .
 
-# Build the CUDA extension (requires nvcc + CUDA toolkit)
-# Set NESLE_CUDA_ARCH to match your GPU (e.g., sm_75 for RTX 2080, sm_86 for RTX 3080)
-export NESLE_CUDA_ARCH=sm_75  # adjust for your GPU
+# Set NESLE_CUDA_ARCH for the GPU:
+# - GTX 1050 Ti: sm_61, requires CUDA Toolkit 12.x
+# - A100: sm_80
+# - H100: sm_90
+export NESLE_CUDA_ARCH=sm_80
 sh scripts/build_cuda_extension.sh
 ```
 
 If the build fails, check:
-- `nvcc --version` to confirm CUDA toolkit is installed
-- Your GPU's compute capability at https://developer.nvidia.com/cuda-gpus
-- Set `NESLE_CUDA_ARCH` accordingly (e.g., `sm_75`, `sm_86`, `sm_89`)
+
+- `nvcc --version`
+- The GPU compute capability at https://developer.nvidia.com/cuda-gpus
+- `NESLE_CUDA_ARCH`
+
+Note: CUDA 13 drops offline compilation for Pascal GPUs such as GTX 1050 Ti.
+Use CUDA Toolkit 12.x for `sm_61`.
 
 ---
 
-## 3. Run the Full Verification Suite
+## 3. Run Verification
 
 ```bash
-# Set PYTHONPATH for scripts that don't use pip install
 export PYTHONPATH=src
 
-# Run all Python tests (including the new critical fix tests)
 python -m pytest tests/ -v
-
-# Run the full verification script
 sh scripts/verify.sh
+sh scripts/verify_cuda.sh
 
-# If you have a Super Mario Bros ROM, set the path and run ROM-dependent tests
-export NESLE_ROM_PATH=/path/to/Super\ Mario\ Bros.\ \(World\).nes
+export NESLE_ROM_PATH="/path/to/Super Mario Bros. (World).nes"
 sh scripts/verify_phase4.sh
 sh scripts/verify_phase5.sh
 sh scripts/verify_native_binding.sh
 ```
 
-### What to Verify Specifically
-
-These are the **new features from the latest commit** that need GPU validation:
+Specific GPU checks:
 
 | Test | What It Validates |
 |------|-------------------|
-| `python -m pytest tests/test_critical_fixes.py -v` | START button, auto-reset contract, numpy array actions |
+| `python -m pytest tests/test_critical_fixes.py -v` | START button, auto-reset, numpy actions, CUDA `step_reward()` auto-reset |
 | `python -c "from nesle._cuda_core import CudaBatch; b = CudaBatch(4, 4); print(b.name)"` | CUDA extension loads |
-| `python -c "import nesle; e = nesle.make_vec('ROM.nes', 4, backend='cuda'); e.reset(); r = e.step([0,0,0,0]); print('dones:', r[2])"` | CUDA step works |
-| Step until an env dies, verify `terminal_observation` is in info | Auto-reset works |
-| `python -c "from nesle._cuda_core import CudaBatch; import numpy as np; b = CudaBatch(4, 4); b.reset(); b.reset_envs(np.array([1,0,0,0], dtype=np.uint8))"` | Per-env reset kernel works |
+| `python -c "import nesle; e = nesle.make_vec('ROM.nes', 4, backend='cuda'); e.reset(); r = e.step([0,0,0,0]); print('dones:', r[2])"` | CUDA ROM step works |
+| Step until envs finish and inspect `infos` | `terminal_observation` and auto-reset work |
+| `python -c "from nesle._cuda_core import CudaBatch; import numpy as np; b = CudaBatch(4, 4); b.reset(); b.reset_envs(np.array([1,0,0,0], dtype=np.uint8)); print('ok')"` | Per-env reset kernel works |
 
 ---
 
-## 4. Important Issues Still Open (from the audit)
+## 4. Audit Follow-Ups
 
-These were identified but not yet fixed (severity: Important/Minor):
+Resolved:
 
-### I3: `step_reward()` Needs Auto-Reset Too
-The `step_reward()` method (CUDA reward-only fast path) still doesn't implement auto-reset.
-If you plan to use `step_reward()` for high-throughput training, it needs the same
-`terminal_observation` + `reset_envs()` treatment that `step()` now has.
-
-### I4: Add `conftest.py` for pytest
-Create `tests/conftest.py` with:
-```python
-import sys
-sys.path.insert(0, "src")
-```
-This lets `pytest` find the `nesle` package without setting `PYTHONPATH` manually.
-
-### M4: Remove Unused `previous_mario_dying` Tracking
-The `previous_mario_dying` field in `BatchBuffers` is tracked but never read in the
-reward formula. Harmless dead state that can be cleaned up.
-
-### M6: Docker Default CMD
-`docker/cuda.Dockerfile` CMD runs `verify.sh` which needs `$NESLE_ROM_PATH`.
-Consider changing the default CMD to run only ROM-independent tests.
+- `step_reward()` now implements CUDA auto-reset and returns
+  `terminal_observation` for done envs.
+- `tests/conftest.py` adds `src` to `sys.path` for pytest.
+- Unused `previous_mario_dying` CUDA tracking was removed from buffers,
+  reset snapshots, tests, and tools.
+- `docker/cuda.Dockerfile` now defaults to ROM-independent pytest instead of
+  `verify.sh`, which can require `$NESLE_ROM_PATH`.
 
 ---
 
 ## 5. Start Agent Training
 
-Once verification passes:
+Start with a small smoke before long runs:
 
 ```bash
-# Basic PPO training with RAM observations (fastest)
-python examples/sb3_train.py \
-    --rom /path/to/rom.nes \
-    --backend native \
+python examples/sb3_train.py /path/to/rom.nes \
+    --backend cuda \
+    --sb3-device cuda \
     --observation-mode ram \
     --action-space simple_with_start \
     --num-envs 8 \
-    --total-timesteps 1000000
+    --timesteps 10000 \
+    --n-steps 128 \
+    --batch-size 256 \
+    --model-path nesle_cuda_smoke
+```
 
-# CUDA backend (if extension built successfully)
-python examples/sb3_train.py \
-    --rom /path/to/rom.nes \
+Then scale up on A100/H100:
+
+```bash
+python examples/sb3_train.py /path/to/rom.nes \
     --backend cuda \
+    --sb3-device cuda \
     --observation-mode ram \
     --action-space simple_with_start \
     --num-envs 64 \
-    --total-timesteps 5000000
+    --timesteps 5000000 \
+    --n-steps 128 \
+    --batch-size 256 \
+    --model-path nesle_cuda_ppo
 ```
 
-### Training Tips
-- Start with `--backend native` to validate the training loop works before switching to CUDA
-- `ram` observation mode is much faster than `rgb_array` — use it for initial experiments
-- `simple_with_start` includes 8 actions (START, NOOP, right, right+A, right+B, right+A+B, A, left)
-- Monitor `ep_rew_mean` in TensorBoard/stdout — Mario's x-position reward should trend positive
-- If the agent seems stuck, check that it's actually pressing START at the beginning of episodes
+Training tips:
+
+- `ram` observation mode is much faster than `rgb_array`; use it first.
+- `simple_with_start` includes START, NOOP, right, right+A, right+B,
+  right+A+B, A, and left.
+- Monitor `ep_rew_mean`; Mario's x-position reward should trend positive.
+- If the agent gets stuck, verify it presses START at the beginning of episodes.
+- The training script prints both the NeSLE backend and SB3/PyTorch device. For
+  Colab A100/H100 runs, expect `nesle_backend=cuda-console` and `sb3_device=cuda`.
 
 ---
 
 ## 6. File Reference
-
-Key files you'll be working with:
 
 | File | Purpose |
 |------|---------|
 | `src/nesle/env.py` | Core env implementation (VecEnv + single env) |
 | `src/nesle/actions.py` | Action space definitions |
 | `src/nesle/smb.py` | Mario RAM addresses + reward function |
-| `cpp/bindings/cuda_module.cu` | CUDA Python binding (CudaBatch) |
+| `cpp/bindings/cuda_module.cu` | CUDA Python binding (`CudaBatch`) |
 | `cpp/src/cuda/kernels.cu` | CUDA kernel implementations |
 | `cpp/include/nesle/cuda/batch_step.cuh` | Reward logic + per-env reset functions |
 | `examples/sb3_train.py` | SB3 training script |
-| `tests/test_critical_fixes.py` | Tests for the latest fixes |
+| `tests/test_critical_fixes.py` | Tests for audit fixes |
 | `scripts/verify.sh` | Full verification suite |
 | `docs/architecture.md` | Architecture overview |
 | `docs/phases.md` | Project phase history |
