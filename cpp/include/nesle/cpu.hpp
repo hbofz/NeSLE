@@ -4,6 +4,12 @@
 #include <stdexcept>
 #include <string>
 
+#ifdef __CUDACC__
+#define NESLE_CPU_HD __host__ __device__
+#else
+#define NESLE_CPU_HD
+#endif
+
 namespace nesle::cpu {
 
 enum class CpuVariant {
@@ -39,11 +45,11 @@ struct StepResult {
     std::uint8_t cycles = 0;
 };
 
-[[nodiscard]] inline bool get_flag(const CpuState& state, StatusFlag flag) noexcept {
+[[nodiscard]] NESLE_CPU_HD inline bool get_flag(const CpuState& state, StatusFlag flag) noexcept {
     return (state.p & flag) != 0;
 }
 
-inline void set_flag(CpuState& state, StatusFlag flag, bool enabled) noexcept {
+NESLE_CPU_HD inline void set_flag(CpuState& state, StatusFlag flag, bool enabled) noexcept {
     if (enabled) {
         state.p |= flag;
     } else {
@@ -52,30 +58,30 @@ inline void set_flag(CpuState& state, StatusFlag flag, bool enabled) noexcept {
     state.p |= Unused;
 }
 
-inline void set_zn(CpuState& state, std::uint8_t value) noexcept {
+NESLE_CPU_HD inline void set_zn(CpuState& state, std::uint8_t value) noexcept {
     set_flag(state, Zero, value == 0);
     set_flag(state, Negative, (value & 0x80) != 0);
 }
 
 template <typename Bus>
-[[nodiscard]] std::uint8_t read8(Bus& bus, std::uint16_t address) {
+[[nodiscard]] NESLE_CPU_HD std::uint8_t read8(Bus& bus, std::uint16_t address) {
     return bus.read(address);
 }
 
 template <typename Bus>
-void write8(Bus& bus, std::uint16_t address, std::uint8_t value) {
+NESLE_CPU_HD void write8(Bus& bus, std::uint16_t address, std::uint8_t value) {
     bus.write(address, value);
 }
 
 template <typename Bus>
-[[nodiscard]] std::uint16_t read16(Bus& bus, std::uint16_t address) {
+[[nodiscard]] NESLE_CPU_HD std::uint16_t read16(Bus& bus, std::uint16_t address) {
     const auto low = static_cast<std::uint16_t>(read8(bus, address));
     const auto high = static_cast<std::uint16_t>(read8(bus, static_cast<std::uint16_t>(address + 1)));
     return static_cast<std::uint16_t>(low | (high << 8));
 }
 
 template <typename Bus>
-void reset(CpuState& state, Bus& bus) {
+NESLE_CPU_HD void reset(CpuState& state, Bus& bus) {
     state.a = 0;
     state.x = 0;
     state.y = 0;
@@ -86,7 +92,7 @@ void reset(CpuState& state, Bus& bus) {
 }
 
 template <typename Bus>
-void irq(CpuState& state, Bus& bus) {
+NESLE_CPU_HD void irq(CpuState& state, Bus& bus) {
     if (get_flag(state, InterruptDisable)) {
         return;
     }
@@ -103,7 +109,7 @@ void irq(CpuState& state, Bus& bus) {
 }
 
 template <typename Bus>
-void nmi(CpuState& state, Bus& bus) {
+NESLE_CPU_HD void nmi(CpuState& state, Bus& bus) {
     auto push = [&](std::uint8_t value) {
         write8(bus, static_cast<std::uint16_t>(0x0100 | state.sp), value);
         --state.sp;
@@ -117,7 +123,7 @@ void nmi(CpuState& state, Bus& bus) {
 }
 
 template <typename Bus>
-StepResult step(CpuState& state, Bus& bus) {
+NESLE_CPU_HD StepResult step(CpuState& state, Bus& bus) {
     const std::uint16_t start_pc = state.pc;
     std::uint8_t cycles = 0;
 
@@ -469,7 +475,13 @@ StepResult step(CpuState& state, Bus& bus) {
         case 0xFD: sbc(read8(bus, absx(true))); cycles += 4; break;
         case 0xFE: { const auto a = absx(false); const auto v = static_cast<std::uint8_t>(read8(bus, a) + 1); write8(bus, a, v); set_zn(state, v); cycles = 7; break; }
         default:
+#ifdef __CUDA_ARCH__
+            asm("trap;");
+            cycles = 0;
+            break;
+#else
             throw std::runtime_error("unimplemented or illegal 6502 opcode 0x" + std::to_string(opcode));
+#endif
     }
 
     state.cycles += cycles;
@@ -477,3 +489,5 @@ StepResult step(CpuState& state, Bus& bus) {
 }
 
 }  // namespace nesle::cpu
+
+#undef NESLE_CPU_HD

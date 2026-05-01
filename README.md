@@ -47,6 +47,9 @@ On an NVIDIA CUDA machine, run the optional device smoke:
 sh scripts/verify_cuda.sh
 ```
 
+That smoke compiles the CUDA kernels, launches a 4096-env reward/done batch,
+and runs a tiny on-device NROM CPU trace through the batch CPU bus.
+
 ## Target API
 
 The end state is:
