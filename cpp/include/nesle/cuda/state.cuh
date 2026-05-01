@@ -18,6 +18,9 @@ constexpr int kNametableRamBytes = 2048;
 constexpr int kFrameWidth = 256;
 constexpr int kFrameHeight = 240;
 constexpr int kRgbChannels = 3;
+constexpr std::uint8_t kNametableVertical = 0;
+constexpr std::uint8_t kNametableHorizontal = 1;
+constexpr std::uint8_t kNametableFourScreen = 2;
 
 struct CpuStateSoA {
     std::uint16_t* pc;
@@ -61,6 +64,7 @@ struct CartridgeView {
     std::uint32_t prg_rom_size;
     std::uint32_t chr_rom_size;
     std::uint8_t mapper;
+    std::uint8_t nametable_arrangement;
 };
 
 struct BatchBuffers {
