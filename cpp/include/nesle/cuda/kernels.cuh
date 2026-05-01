@@ -18,6 +18,10 @@ struct StepConfig {
 
 #ifdef __CUDACC__
 void launch_step_kernel(const BatchBuffers& buffers, StepConfig config, cudaStream_t stream);
+void launch_console_step_kernel(const BatchBuffers& buffers,
+                                StepConfig config,
+                                std::uint64_t max_instructions_per_frame,
+                                cudaStream_t stream);
 void launch_render_kernel(const BatchBuffers& buffers, StepConfig config, cudaStream_t stream);
 #endif
 

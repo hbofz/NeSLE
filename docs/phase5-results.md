@@ -52,9 +52,10 @@ Throughput is flat across environment counts, so Phase 5 cannot claim GPU-scale
 environment stepping until a packaged CUDA backend is wired into `NesleVecEnv`.
 The inference path uses CUDA, but the GPU waits on CPU env stepping.
 
-## CUDA Python Backend
+## Synthetic CUDA Python Backend
 
-Command:
+Historical calibration command from the first packaged CUDA backend, before the
+ROM-backed `cuda-console` path became the default for `backend="cuda"`:
 
 ```sh
 NESLE_CUDA_ARCH=sm_80 PYTHON=python3 sh scripts/build_cuda_extension.sh
@@ -83,12 +84,37 @@ PYTHONPATH=src python3 benchmarks/phase5_benchmark.py \
 | inference | 4096 | 2,871.5 | 11,486.0 | 46% | 11955 MiB |
 
 Interpretation: `backend="cuda"` now exercises a packaged CUDA vector backend
-through the public Python API. This first backend moves batched action
-application, reward, and RGB render kernels onto the GPU, while still returning
-NumPy observations/rewards/dones each step. It is a large improvement over the
-native CPU backend, but it is still below raw kernel capacity because every step
-copies full RGB observations back to host memory and does not yet run the full
-CUDA CPU/PPU console loop per action.
+through the public Python API. These rows were produced by the first synthetic
+CUDA backend, which moved batched action application, reward, and RGB render
+kernels onto the GPU while still returning NumPy observations/rewards/dones each
+step.
+
+## CUDA Console Backend
+
+Command:
+
+```sh
+PYTHONPATH=src python3 benchmarks/phase5_benchmark.py \
+  "Super Mario Bros. (World).nes" \
+  --env-counts 1,2,8,32 \
+  --steps 10 \
+  --warmup-steps 2 \
+  --modes step \
+  --backend cuda
+```
+
+| Mode | Envs | Backend | Env steps/sec | Training frames/sec | Peak GPU util | Peak GPU memory |
+| --- | ---: | --- | ---: | ---: | ---: | ---: |
+| step | 1 | cuda-console | 135.2 | 541.0 | 90% | 5009 MiB |
+| step | 2 | cuda-console | 268.3 | 1,073.4 | 83% | 5009 MiB |
+| step | 8 | cuda-console | 813.0 | 3,252.1 | 91% | 5009 MiB |
+| step | 32 | cuda-console | 1,653.3 | 6,613.1 | 97% | 5015 MiB |
+
+Interpretation: the ROM-backed CUDA path now advances the actual batch CPU/PPU
+console loop to frame boundaries on the GPU and returns RGB observations,
+rewards, and done flags through the Python vector API. This is the deeper
+implementation path. It is slower than the synthetic reward/render calibration
+kernels because it executes NES instructions and PPU timing work per environment.
 
 ## CUDA Reward No-Copy Mode
 

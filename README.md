@@ -117,8 +117,15 @@ NESLE_CUDA_ARCH=sm_80 sh scripts/build_cuda_extension.sh
 PYTHONPATH=src python benchmarks/phase5_benchmark.py \
   "Super Mario Bros. (World).nes" \
   --backend cuda \
-  --env-counts 128,512,2048,4096
+  --env-counts 1,2,8,32 \
+  --steps 10 \
+  --warmup-steps 2
 ```
+
+When a ROM is supplied through the Python vector API, `backend="cuda"` uses the
+ROM-backed `cuda-console` path, which advances the CUDA batch CPU/PPU console
+loop to frame boundaries. The lower-level two-argument `CudaBatch` constructor
+is kept for synthetic reward/render kernel calibration.
 
 To measure reward/done throughput without copying RGB observations back to the
 host on every step:
