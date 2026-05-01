@@ -90,8 +90,10 @@ register surface, with host-side tests comparing the memory-map behavior against
 the CPU console/controller path. A host-side batch CPU step adapter now runs the
 existing CPU core over the batch bus and checks instruction, register, cycle,
 RAM, PRG RAM, and controller parity against `Console` on a synthetic NROM trace.
-Full device compilation of the CPU core, PPU state parity, reset cache, and
-high-count batched execution remain Phase 3 work.
+A host batch runner now steps multiple envs independently through that adapter
+and verifies per-env controller divergence and RAM/PRG RAM isolation against
+independent `Console` instances. Full device compilation of the CPU core, PPU
+state parity, reset cache, and high-count batched execution remain Phase 3 work.
 
 ## Phase 4: Gymnasium And SB3 API
 
