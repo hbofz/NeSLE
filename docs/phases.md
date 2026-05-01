@@ -92,8 +92,11 @@ existing CPU core over the batch bus and checks instruction, register, cycle,
 RAM, PRG RAM, and controller parity against `Console` on a synthetic NROM trace.
 A host batch runner now steps multiple envs independently through that adapter
 and verifies per-env controller divergence and RAM/PRG RAM isolation against
-independent `Console` instances. Full device compilation of the CPU core, PPU
-state parity, reset cache, and high-count batched execution remain Phase 3 work.
+independent `Console` instances. Batch PPU timing now tracks per-env
+scanline/dot/frame state, vblank/NMI start, pre-render status clearing, and the
+coarse sprite-0 signal, with parity tests against the CPU `Ppu`. Full device
+compilation of the CPU core, full PPU register/render parity, reset cache, and
+high-count batched execution remain Phase 3 work.
 
 ## Phase 4: Gymnasium And SB3 API
 

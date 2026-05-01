@@ -41,6 +41,10 @@ struct PpuStateSoA {
     std::uint8_t* mask;
     std::uint8_t* status;
     std::uint8_t* oam_addr;
+    std::uint8_t* nmi_pending;
+    std::int16_t* scanline;
+    std::uint16_t* dot;
+    std::uint64_t* frame;
     std::uint16_t* v;
     std::uint16_t* t;
     std::uint8_t* x;
