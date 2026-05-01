@@ -23,6 +23,7 @@ struct HeadlessRunConfig {
     std::uint64_t max_instructions = 10'000'000;
     std::size_t trace_capacity = 0;
     bool stop_on_trap = true;
+    std::vector<std::uint8_t> controller1_frame_actions;
 };
 
 struct HeadlessTraceEntry {
@@ -80,6 +81,9 @@ struct HeadlessRunResult {
     if (config.trace_capacity != 0) {
         result.trace.reserve(config.trace_capacity);
     }
+    if (!config.controller1_frame_actions.empty()) {
+        console.controller1().set_buttons(config.controller1_frame_actions.front());
+    }
 
     auto append_trace = [&](const Console::StepResult& step) {
         if (config.trace_capacity == 0) {
@@ -129,6 +133,11 @@ struct HeadlessRunResult {
             result.frames_completed += step.frames_completed;
             result.opcode = step.cpu.opcode;
             append_trace(step);
+            if (step.frames_completed != 0 &&
+                result.frames_completed < config.controller1_frame_actions.size()) {
+                console.controller1().set_buttons(
+                    config.controller1_frame_actions[result.frames_completed]);
+            }
 
             if (config.stop_on_trap && state.pc == step.cpu.pc) {
                 result.status = HeadlessRunStatus::Trap;

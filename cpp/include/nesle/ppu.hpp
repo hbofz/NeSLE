@@ -13,6 +13,9 @@ class Ppu {
 public:
     static constexpr std::size_t kOamBytes = 256;
     static constexpr std::size_t kPpuAddressSpaceBytes = 16 * 1024;
+    static constexpr std::size_t kScreenWidth = 256;
+    static constexpr std::size_t kScreenHeight = 240;
+    static constexpr std::size_t kRgbFrameBytes = kScreenWidth * kScreenHeight * 3;
     static constexpr std::uint16_t kDotsPerScanline = 341;
     static constexpr std::uint16_t kScanlinesPerFrame = 262;
     static constexpr std::int16_t kVblankStartScanline = 241;
@@ -26,6 +29,8 @@ public:
         std::uint32_t frames_completed = 0;
         bool nmi_started = false;
     };
+
+    using RgbFrame = std::array<std::uint8_t, kRgbFrameBytes>;
 
     [[nodiscard]] StepResult step(std::uint32_t ppu_cycles) noexcept {
         StepResult result;
@@ -194,7 +199,47 @@ public:
         return frame_;
     }
 
+    [[nodiscard]] RgbFrame render_rgb_frame() const noexcept {
+        RgbFrame output{};
+        std::array<bool, kScreenWidth * kScreenHeight> background_opaque{};
+        const auto backdrop = palette_rgb(read_palette_entry(0));
+        for (std::size_t i = 0; i < kScreenWidth * kScreenHeight; ++i) {
+            output[i * 3] = backdrop[0];
+            output[i * 3 + 1] = backdrop[1];
+            output[i * 3 + 2] = backdrop[2];
+        }
+
+        if ((mask_ & 0x08) != 0) {
+            render_background(output, background_opaque);
+        }
+        if ((mask_ & 0x10) != 0) {
+            render_sprites(output, background_opaque);
+        }
+        return output;
+    }
+
 private:
+    using Rgb = std::array<std::uint8_t, 3>;
+
+    static constexpr std::array<Rgb, 64> kNesPalette = {{
+        Rgb{0x54, 0x54, 0x54}, Rgb{0x00, 0x1e, 0x74}, Rgb{0x08, 0x10, 0x90}, Rgb{0x30, 0x00, 0x88},
+        Rgb{0x44, 0x00, 0x64}, Rgb{0x5c, 0x00, 0x30}, Rgb{0x54, 0x04, 0x00}, Rgb{0x3c, 0x18, 0x00},
+        Rgb{0x20, 0x2a, 0x00}, Rgb{0x08, 0x3a, 0x00}, Rgb{0x00, 0x40, 0x00}, Rgb{0x00, 0x3c, 0x00},
+        Rgb{0x00, 0x32, 0x3c}, Rgb{0x00, 0x00, 0x00}, Rgb{0x00, 0x00, 0x00}, Rgb{0x00, 0x00, 0x00},
+        Rgb{0x98, 0x96, 0x98}, Rgb{0x08, 0x4c, 0xc4}, Rgb{0x30, 0x32, 0xec}, Rgb{0x5c, 0x1e, 0xe4},
+        Rgb{0x88, 0x14, 0xb0}, Rgb{0xa0, 0x14, 0x64}, Rgb{0x98, 0x22, 0x20}, Rgb{0x78, 0x3c, 0x00},
+        Rgb{0x54, 0x5a, 0x00}, Rgb{0x28, 0x72, 0x00}, Rgb{0x08, 0x7c, 0x00}, Rgb{0x00, 0x76, 0x28},
+        Rgb{0x00, 0x66, 0x78}, Rgb{0x00, 0x00, 0x00}, Rgb{0x00, 0x00, 0x00}, Rgb{0x00, 0x00, 0x00},
+        Rgb{0xec, 0xee, 0xec}, Rgb{0x4c, 0x9a, 0xec}, Rgb{0x78, 0x7c, 0xec}, Rgb{0xb0, 0x62, 0xec},
+        Rgb{0xe4, 0x54, 0xec}, Rgb{0xec, 0x58, 0xb4}, Rgb{0xec, 0x6a, 0x64}, Rgb{0xd4, 0x88, 0x20},
+        Rgb{0xa0, 0xaa, 0x00}, Rgb{0x74, 0xc4, 0x00}, Rgb{0x4c, 0xd0, 0x20}, Rgb{0x38, 0xcc, 0x6c},
+        Rgb{0x38, 0xb4, 0xcc}, Rgb{0x3c, 0x3c, 0x3c}, Rgb{0x00, 0x00, 0x00}, Rgb{0x00, 0x00, 0x00},
+        Rgb{0xec, 0xee, 0xec}, Rgb{0xa8, 0xcc, 0xec}, Rgb{0xbc, 0xbc, 0xec}, Rgb{0xd4, 0xb2, 0xec},
+        Rgb{0xec, 0xae, 0xec}, Rgb{0xec, 0xae, 0xd4}, Rgb{0xec, 0xb4, 0xb0}, Rgb{0xe4, 0xc4, 0x90},
+        Rgb{0xcc, 0xd2, 0x78}, Rgb{0xb4, 0xde, 0x78}, Rgb{0xa8, 0xe2, 0x90}, Rgb{0x98, 0xe2, 0xb4},
+        Rgb{0xa0, 0xd6, 0xe4}, Rgb{0xa0, 0xa2, 0xa0}, Rgb{0x00, 0x00, 0x00}, Rgb{0x00, 0x00, 0x00},
+    }};
+
     [[nodiscard]] static std::uint16_t mirror_ppu_address(std::uint16_t address) noexcept {
         return static_cast<std::uint16_t>(address & 0x3FFF);
     }
@@ -311,6 +356,155 @@ private:
 
     void increment_vram_address() noexcept {
         v_ = static_cast<std::uint16_t>(v_ + ((ctrl_ & 0x04) != 0 ? 32 : 1));
+    }
+
+    [[nodiscard]] std::uint8_t read_palette_entry(std::uint16_t index) const noexcept {
+        auto value = read_ppu_memory(static_cast<std::uint16_t>(0x3F00 + index));
+        if ((mask_ & 0x01) != 0) {
+            value &= 0x30;
+        }
+        return static_cast<std::uint8_t>(value & 0x3F);
+    }
+
+    [[nodiscard]] Rgb palette_rgb(std::uint8_t index) const noexcept {
+        return kNesPalette[index & 0x3F];
+    }
+
+    void write_rgb(RgbFrame& output, std::size_t pixel, const Rgb& rgb) const noexcept {
+        output[pixel * 3] = rgb[0];
+        output[pixel * 3 + 1] = rgb[1];
+        output[pixel * 3 + 2] = rgb[2];
+    }
+
+    [[nodiscard]] std::uint8_t pattern_pixel(std::uint16_t tile_base,
+                                             std::uint8_t fine_x,
+                                             std::uint8_t fine_y) const noexcept {
+        const auto low = read_ppu_memory(static_cast<std::uint16_t>(tile_base + fine_y));
+        const auto high = read_ppu_memory(static_cast<std::uint16_t>(tile_base + fine_y + 8));
+        const auto bit = static_cast<std::uint8_t>(7 - fine_x);
+        return static_cast<std::uint8_t>(((low >> bit) & 0x01) | (((high >> bit) & 0x01) << 1));
+    }
+
+    void render_background(RgbFrame& output,
+                           std::array<bool, kScreenWidth * kScreenHeight>& opaque) const noexcept {
+        const bool show_left = (mask_ & 0x02) != 0;
+        const std::uint16_t pattern_base = (ctrl_ & 0x10) != 0 ? 0x1000 : 0x0000;
+        const std::uint8_t base_nametable = static_cast<std::uint8_t>(ctrl_ & 0x03);
+
+        for (std::size_t y = 0; y < kScreenHeight; ++y) {
+            const auto world_y = static_cast<unsigned>(scroll_y_) + static_cast<unsigned>(y);
+            const auto coarse_y = static_cast<std::uint8_t>((world_y % 240) / 8);
+            const auto fine_y = static_cast<std::uint8_t>(world_y & 0x07);
+            const auto nt_y = static_cast<std::uint8_t>(((base_nametable >> 1) + (world_y / 240)) & 0x01);
+
+            for (std::size_t x = 0; x < kScreenWidth; ++x) {
+                if (!show_left && x < 8) {
+                    continue;
+                }
+
+                const auto world_x = static_cast<unsigned>(scroll_x_) + static_cast<unsigned>(x);
+                const auto coarse_x = static_cast<std::uint8_t>((world_x & 0xFF) / 8);
+                const auto fine_x = static_cast<std::uint8_t>(world_x & 0x07);
+                const auto nt_x = static_cast<std::uint8_t>(((base_nametable & 0x01) + (world_x / 256)) & 0x01);
+                const auto nametable = static_cast<std::uint8_t>(nt_x | (nt_y << 1));
+                const auto nametable_base = static_cast<std::uint16_t>(0x2000 + nametable * 0x0400);
+                const auto tile = read_ppu_memory(static_cast<std::uint16_t>(
+                    nametable_base + coarse_y * 32 + coarse_x));
+                const auto color = pattern_pixel(
+                    static_cast<std::uint16_t>(pattern_base + static_cast<std::uint16_t>(tile) * 16),
+                    fine_x,
+                    fine_y);
+                if (color == 0) {
+                    continue;
+                }
+
+                const auto attribute = read_ppu_memory(static_cast<std::uint16_t>(
+                    nametable_base + 0x03C0 + (coarse_y / 4) * 8 + (coarse_x / 4)));
+                const auto shift = static_cast<std::uint8_t>(((coarse_y & 0x02) << 1) |
+                                                             (coarse_x & 0x02));
+                const auto palette = static_cast<std::uint8_t>((attribute >> shift) & 0x03);
+                const auto palette_value =
+                    read_palette_entry(static_cast<std::uint16_t>(palette * 4 + color));
+                const auto pixel = y * kScreenWidth + x;
+                opaque[pixel] = true;
+                write_rgb(output, pixel, palette_rgb(palette_value));
+            }
+        }
+    }
+
+    [[nodiscard]] std::uint8_t sprite_pattern_pixel(std::uint8_t tile,
+                                                    std::uint8_t attributes,
+                                                    std::uint8_t pixel_x,
+                                                    std::uint8_t pixel_y) const noexcept {
+        if ((attributes & 0x40) != 0) {
+            pixel_x = static_cast<std::uint8_t>(7 - pixel_x);
+        }
+
+        const bool tall_sprite = (ctrl_ & 0x20) != 0;
+        if (tall_sprite) {
+            if ((attributes & 0x80) != 0) {
+                pixel_y = static_cast<std::uint8_t>(15 - pixel_y);
+            }
+            const auto pattern_base = static_cast<std::uint16_t>((tile & 0x01) ? 0x1000 : 0x0000);
+            const auto tile_number = static_cast<std::uint8_t>((tile & 0xFE) + (pixel_y / 8));
+            return pattern_pixel(static_cast<std::uint16_t>(pattern_base + tile_number * 16),
+                                 pixel_x,
+                                 static_cast<std::uint8_t>(pixel_y & 0x07));
+        }
+
+        if ((attributes & 0x80) != 0) {
+            pixel_y = static_cast<std::uint8_t>(7 - pixel_y);
+        }
+        const auto pattern_base = (ctrl_ & 0x08) != 0 ? 0x1000 : 0x0000;
+        return pattern_pixel(static_cast<std::uint16_t>(pattern_base + tile * 16), pixel_x, pixel_y);
+    }
+
+    void render_sprites(RgbFrame& output,
+                        const std::array<bool, kScreenWidth * kScreenHeight>& background_opaque) const noexcept {
+        const bool show_left = (mask_ & 0x04) != 0;
+        const auto sprite_height = static_cast<std::uint8_t>((ctrl_ & 0x20) != 0 ? 16 : 8);
+
+        for (int sprite = 63; sprite >= 0; --sprite) {
+            const auto base = static_cast<std::size_t>(sprite * 4);
+            const auto top = static_cast<int>(oam_[base]) + 1;
+            const auto tile = oam_[base + 1];
+            const auto attributes = oam_[base + 2];
+            const auto left = static_cast<int>(oam_[base + 3]);
+            const auto palette = static_cast<std::uint8_t>(attributes & 0x03);
+            const bool behind_background = (attributes & 0x20) != 0;
+
+            for (int sy = 0; sy < sprite_height; ++sy) {
+                const auto y = top + sy;
+                if (y < 0 || y >= static_cast<int>(kScreenHeight)) {
+                    continue;
+                }
+
+                for (int sx = 0; sx < 8; ++sx) {
+                    const auto x = left + sx;
+                    if (x < 0 || x >= static_cast<int>(kScreenWidth) || (!show_left && x < 8)) {
+                        continue;
+                    }
+
+                    const auto pixel = static_cast<std::size_t>(y) * kScreenWidth +
+                                       static_cast<std::size_t>(x);
+                    if (behind_background && background_opaque[pixel]) {
+                        continue;
+                    }
+
+                    const auto color = sprite_pattern_pixel(tile,
+                                                            attributes,
+                                                            static_cast<std::uint8_t>(sx),
+                                                            static_cast<std::uint8_t>(sy));
+                    if (color == 0) {
+                        continue;
+                    }
+
+                    const auto palette_value =
+                        read_palette_entry(static_cast<std::uint16_t>(0x10 + palette * 4 + color));
+                    write_rgb(output, pixel, palette_rgb(palette_value));
+                }
+            }
+        }
     }
 
     std::uint8_t ctrl_ = 0;

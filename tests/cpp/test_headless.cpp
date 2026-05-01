@@ -71,6 +71,46 @@ std::vector<std::uint8_t> make_nrom_bytes() {
     return data;
 }
 
+std::vector<std::uint8_t> make_controller_read_rom() {
+    std::vector<std::uint8_t> data = {'N', 'E', 'S', 0x1A, 2, 1, 0, 0};
+    data.resize(16, 0);
+    data.insert(data.end(), 32 * 1024, 0xEA);
+    data.insert(data.end(), 8 * 1024, 0);
+
+    constexpr std::size_t kPrgOffset = 16;
+    std::size_t pc = kPrgOffset;
+    auto emit = [&](std::uint8_t value) {
+        data[pc++] = value;
+    };
+    auto lda_imm = [&](std::uint8_t value) {
+        emit(0xA9);
+        emit(value);
+    };
+    auto sta_abs = [&](std::uint16_t address) {
+        emit(0x8D);
+        emit(static_cast<std::uint8_t>(address & 0x00FF));
+        emit(static_cast<std::uint8_t>(address >> 8));
+    };
+
+    lda_imm(1);
+    sta_abs(0x4016);
+    lda_imm(0);
+    sta_abs(0x4016);
+    emit(0xAD);  // LDA $4016
+    emit(0x16);
+    emit(0x40);
+    emit(0x29);  // AND #$01
+    emit(0x01);
+    sta_abs(0x0002);
+    emit(0x4C);  // JMP $8011
+    emit(0x11);
+    emit(0x80);
+
+    data[kPrgOffset + 0x7FFC] = 0x00;  // RESET vector -> $8000
+    data[kPrgOffset + 0x7FFD] = 0x80;
+    return data;
+}
+
 void write_file(const std::string& path, const std::vector<std::uint8_t>& bytes) {
     std::ofstream output(path, std::ios::binary);
     assert(output);
@@ -83,6 +123,8 @@ void write_file(const std::string& path, const std::vector<std::uint8_t>& bytes)
 int main() {
     const std::string rom_path = "/tmp/nesle_headless_test.nes";
     write_file(rom_path, make_nrom_bytes());
+    const std::string controller_rom_path = "/tmp/nesle_controller_test.nes";
+    write_file(controller_rom_path, make_controller_read_rom());
 
     {
         auto rom = nesle::load_ines_file(rom_path);
@@ -150,6 +192,21 @@ int main() {
         config.stop_on_trap = false;
         const auto result = nesle::run_headless(console, state, config);
         assert(nesle::to_string(result.status) == std::string("completed"));
+    }
+
+    {
+        auto rom = nesle::load_ines_file(controller_rom_path);
+        nesle::Console console(std::move(rom));
+        nesle::cpu::CpuState state;
+        console.reset_cpu(state);
+
+        nesle::HeadlessRunConfig config;
+        config.frames = 1;
+        config.stop_on_trap = false;
+        config.controller1_frame_actions = {nesle::ButtonA};
+        const auto result = nesle::run_headless(console, state, config);
+        assert(result.completed());
+        assert(console.read(0x0002) == 1);
     }
 
     return 0;

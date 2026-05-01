@@ -11,13 +11,16 @@ CPU and NROM memory-map core that will later compile into CUDA kernels.
 
 ## Current Phase
 
-Phase 1 is the CPU-correct NES core:
+The current CPU path covers the Phase 1 core and the first Phase 2 Mario
+PPU/input gate:
 
 - 2A03/6502 state and official-opcode execution core
 - Flat 64 KB test bus, NROM memory-map smoke tests, and NES console CPU bus
 - RAM, PPU register, APU/input, and PRG ROM mirroring behavior
 - Basic NTSC PPU timing, vblank/NMI delivery, OAMDMA stalls, and frame stepping
 - Coarse sprite-0-hit behavior for early Super Mario Bros. boot progress
+- CPU RGB frame rendering for background and sprite tiles
+- Deterministic action traces with Mario RAM, reward, RAM hash, and frame hash
 - Headless `.nes` boot runner for NROM smoke tests
 - C++ tests for CPU execution, stack calls, branches, arithmetic, and NROM reads
 
@@ -31,6 +34,7 @@ With a local Super Mario Bros. `.nes` file, run the optional real-ROM gate:
 
 ```sh
 NESLE_ROM_PATH="/path/to/Super Mario Bros. (World).nes" sh scripts/smoke_user_rom.sh
+NESLE_ROM_PATH="/path/to/Super Mario Bros. (World).nes" sh scripts/smoke_phase2_user_rom.sh
 ```
 
 ## Target API

@@ -248,6 +248,50 @@ int main() {
     }
 
     {
+        nesle::Ppu ppu;
+        ppu.write_register(0x06, 0x00);
+        ppu.write_register(0x06, 0x10);
+        ppu.write_register(0x07, 0x80);
+        ppu.write_register(0x06, 0x20);
+        ppu.write_register(0x06, 0x00);
+        ppu.write_register(0x07, 0x01);
+        ppu.write_register(0x06, 0x3F);
+        ppu.write_register(0x06, 0x01);
+        ppu.write_register(0x07, 0x21);
+        ppu.write_register(0x01, 0x0A);
+
+        const auto frame = ppu.render_rgb_frame();
+        assert(frame[0] == 0x4C);
+        assert(frame[1] == 0x9A);
+        assert(frame[2] == 0xEC);
+        assert(frame[3] == 0x54);
+        assert(frame[4] == 0x54);
+        assert(frame[5] == 0x54);
+    }
+
+    {
+        nesle::Ppu ppu;
+        ppu.write_register(0x06, 0x00);
+        ppu.write_register(0x06, 0x20);
+        ppu.write_register(0x07, 0x80);
+        ppu.write_register(0x06, 0x3F);
+        ppu.write_register(0x06, 0x11);
+        ppu.write_register(0x07, 0x16);
+        ppu.write_register(0x03, 0x00);
+        ppu.write_register(0x04, 0x09);
+        ppu.write_register(0x04, 0x02);
+        ppu.write_register(0x04, 0x00);
+        ppu.write_register(0x04, 0x0C);
+        ppu.write_register(0x01, 0x14);
+
+        const auto frame = ppu.render_rgb_frame();
+        const auto pixel = (10 * nesle::Ppu::kScreenWidth + 12) * 3;
+        assert(frame[pixel] == 0x98);
+        assert(frame[pixel + 1] == 0x22);
+        assert(frame[pixel + 2] == 0x20);
+    }
+
+    {
         nesle::Console console(make_nmi_rom());
         nesle::cpu::CpuState state;
         console.reset_cpu(state);
