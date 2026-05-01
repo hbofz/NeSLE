@@ -63,6 +63,11 @@ SIMPLE_MOVEMENT = [
     ["left"],
 ]
 
+SIMPLE_MOVEMENT_WITH_START = [
+    ["start"],
+    *SIMPLE_MOVEMENT,
+]
+
 COMPLEX_MOVEMENT = [
     ["NOOP"],
     ["right"],
@@ -80,4 +85,5 @@ COMPLEX_MOVEMENT = [
 
 RIGHT_ONLY_MASKS = tuple(encode_action(action) for action in RIGHT_ONLY)
 SIMPLE_MOVEMENT_MASKS = tuple(encode_action(action) for action in SIMPLE_MOVEMENT)
+SIMPLE_MOVEMENT_WITH_START_MASKS = tuple(encode_action(action) for action in SIMPLE_MOVEMENT_WITH_START)
 COMPLEX_MOVEMENT_MASKS = tuple(encode_action(action) for action in COMPLEX_MOVEMENT)

@@ -7,6 +7,8 @@ from .actions import (
     RIGHT_ONLY_MASKS,
     SIMPLE_MOVEMENT,
     SIMPLE_MOVEMENT_MASKS,
+    SIMPLE_MOVEMENT_WITH_START,
+    SIMPLE_MOVEMENT_WITH_START_MASKS,
     Button,
     encode_action,
 )
@@ -24,6 +26,8 @@ __all__ = [
     "RewardComponents",
     "SIMPLE_MOVEMENT",
     "SIMPLE_MOVEMENT_MASKS",
+    "SIMPLE_MOVEMENT_WITH_START",
+    "SIMPLE_MOVEMENT_WITH_START_MASKS",
     "compute_reward",
     "encode_action",
     "make",

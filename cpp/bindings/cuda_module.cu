@@ -287,6 +287,22 @@ public:
         return out;
     }
 
+    void reset_envs(py::array_t<std::uint8_t, py::array::c_style | py::array::forcecast> mask) {
+        const auto view = mask.request();
+        if (view.ndim != 1 || static_cast<std::uint32_t>(view.shape[0]) != num_env_) {
+            throw std::invalid_argument("mask must have shape (num_envs,)");
+        }
+        check_cuda(cudaMemcpy(device_reset_mask_,
+                              view.ptr,
+                              static_cast<std::size_t>(num_env_) * sizeof(std::uint8_t),
+                              cudaMemcpyHostToDevice),
+                   "copy reset mask");
+        nesle::cuda::launch_reset_envs_kernel(
+            buffers_, device_reset_mask_, num_env_, use_console_, nullptr);
+        check_cuda(cudaGetLastError(), "launch_reset_envs_kernel");
+        check_cuda(cudaDeviceSynchronize(), "reset_envs synchronize");
+    }
+
     std::string name() const {
         return use_console_ ? "cuda-console" : "cuda";
     }
@@ -349,6 +365,7 @@ private:
         device_frames_ = cuda_alloc<std::uint8_t>(
             static_cast<std::size_t>(num_env_) * kFrameBytes,
             "cudaMalloc frames");
+        device_reset_mask_ = cuda_alloc<std::uint8_t>(num_env_, "cudaMalloc reset mask");
 
         buffers_.cpu.pc = device_pc_;
         buffers_.cpu.a = device_a_;
@@ -438,6 +455,7 @@ private:
         cudaFree(device_prg_rom_);
         cudaFree(device_chr_rom_);
         cudaFree(device_frames_);
+        cudaFree(device_reset_mask_);
     }
 
     void upload_rom() {
@@ -580,6 +598,7 @@ private:
     std::uint8_t* device_prg_rom_ = nullptr;
     std::uint8_t* device_chr_rom_ = nullptr;
     std::uint8_t* device_frames_ = nullptr;
+    std::uint8_t* device_reset_mask_ = nullptr;
 };
 
 }  // namespace
@@ -598,5 +617,6 @@ PYBIND11_MODULE(_cuda_core, m) {
              py::arg("copy_obs") = true)
         .def("render", &CudaBatchBinding::render)
         .def("ram", &CudaBatchBinding::ram)
+        .def("reset_envs", &CudaBatchBinding::reset_envs, py::arg("mask"))
         .def_property_readonly("name", &CudaBatchBinding::name);
 }

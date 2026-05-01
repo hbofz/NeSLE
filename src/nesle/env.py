@@ -16,6 +16,7 @@ from .actions import (
     COMPLEX_MOVEMENT_MASKS,
     RIGHT_ONLY_MASKS,
     SIMPLE_MOVEMENT_MASKS,
+    SIMPLE_MOVEMENT_WITH_START_MASKS,
 )
 from .rom import INESRom, parse_ines
 from .smb import CPU_RAM_BYTES, MarioRamState, compute_reward, read_ram
@@ -96,6 +97,8 @@ def _action_masks(action_space: str | Sequence[int]) -> tuple[int, ...]:
             return RIGHT_ONLY_MASKS
         if key == "simple":
             return SIMPLE_MOVEMENT_MASKS
+        if key in {"simple_with_start", "simple_start"}:
+            return SIMPLE_MOVEMENT_WITH_START_MASKS
         if key == "complex":
             return COMPLEX_MOVEMENT_MASKS
         if key in {"full", "raw"}:
@@ -379,6 +382,7 @@ class NesleVecEnv(_VecEnvBase):
         self._closed = False
         self._cuda_observations: np.ndarray | None = None
         self._cuda_step_count = 0
+        self._cuda_env_step_counts: np.ndarray | None = None
         cuda_requested = backend.lower() == "cuda" or (
             backend.lower() == "auto" and device.lower() == "cuda"
         )
@@ -389,17 +393,21 @@ class NesleVecEnv(_VecEnvBase):
             except Exception:
                 if backend.lower() == "cuda":
                     raise
-        self._backends = [] if self._cuda_batch is not None else [
-            _make_backend(
-                backend,
-                device,
-                rom_bytes,
-                rom,
-                None if seed is None else seed + env,
-                max_episode_steps,
-            )
-            for env in range(num_envs)
-        ]
+        if self._cuda_batch is not None:
+            self._backends = []
+            self._cuda_env_step_counts = numpy.zeros(num_envs, dtype=numpy.int64)
+        else:
+            self._backends = [
+                _make_backend(
+                    backend,
+                    device,
+                    rom_bytes,
+                    rom,
+                    None if seed is None else seed + env,
+                    max_episode_steps,
+                )
+                for env in range(num_envs)
+            ]
 
     def reset(self) -> np.ndarray:
         numpy = _require_numpy()
@@ -412,6 +420,8 @@ class NesleVecEnv(_VecEnvBase):
                 observations = reset_frame
                 self._cuda_observations = observations
             self._cuda_step_count = 0
+            if self._cuda_env_step_counts is not None:
+                self._cuda_env_step_counts[:] = 0
             backend_name = str(self._cuda_batch.name)
             infos = [
                 {
@@ -446,7 +456,7 @@ class NesleVecEnv(_VecEnvBase):
 
     def step_async(self, actions: Iterable[int]) -> None:
         numpy = _require_numpy()
-        action_array = numpy.asarray(list(actions), dtype=numpy.int64)
+        action_array = numpy.asarray(actions, dtype=numpy.int64).ravel()
         if action_array.shape != (self.num_envs,):
             raise ValueError(f"expected actions with shape ({self.num_envs},), got {action_array.shape}")
         self._pending_actions = action_array
@@ -458,7 +468,7 @@ class NesleVecEnv(_VecEnvBase):
 
     def step(self, actions: Iterable[int]) -> tuple[np.ndarray, np.ndarray, np.ndarray, list[dict[str, Any]]]:
         numpy = _require_numpy()
-        action_array = numpy.asarray(list(actions), dtype=numpy.int64)
+        action_array = numpy.asarray(actions, dtype=numpy.int64).ravel()
         if action_array.shape != (self.num_envs,):
             raise ValueError(f"expected actions with shape ({self.num_envs},), got {action_array.shape}")
 
@@ -470,6 +480,8 @@ class NesleVecEnv(_VecEnvBase):
                 dtype=numpy.uint8,
             )
             self._cuda_step_count += 1
+            if self._cuda_env_step_counts is not None:
+                self._cuda_env_step_counts += 1
             if self.observation_mode == "ram":
                 result = self._cuda_batch.step(action_masks, render_frame=False, copy_obs=False)
                 observations = numpy.asarray(self._cuda_batch.ram(), dtype=numpy.uint8)
@@ -498,6 +510,15 @@ class NesleVecEnv(_VecEnvBase):
                 rgb_observations_copied = copy_observations
             rewards = numpy.asarray(result["rewards"], dtype=numpy.float32)
             dones = numpy.asarray(result["dones"], dtype=bool)
+
+            # Episode truncation for CUDA path.
+            max_steps = self.config.max_episode_steps
+            if max_steps > 0 and self._cuda_env_step_counts is not None:
+                truncated_mask = self._cuda_env_step_counts >= max_steps
+                dones = dones | truncated_mask
+            else:
+                truncated_mask = numpy.zeros(self.num_envs, dtype=bool)
+
             backend_name = str(self._cuda_batch.name)
             infos = [
                 {
@@ -510,6 +531,37 @@ class NesleVecEnv(_VecEnvBase):
                 }
                 for _ in range(self.num_envs)
             ]
+
+            # SB3 auto-reset contract: save terminal observations and reset
+            # done environments before returning.
+            any_done = numpy.any(dones)
+            if any_done:
+                reset_mask = numpy.asarray(dones, dtype=numpy.uint8)
+                for env in range(self.num_envs):
+                    if dones[env]:
+                        infos[env]["terminal_observation"] = observations[env].copy()
+                        infos[env]["terminated"] = bool(dones[env] and not truncated_mask[env])
+                        infos[env]["truncated"] = bool(truncated_mask[env])
+                        self.reset_infos[env] = {
+                            "backend": backend_name,
+                            "observation_mode": self.observation_mode,
+                        }
+                # Reset done envs on device.
+                self._cuda_batch.reset_envs(reset_mask)
+                # Re-read observations for reset envs so the returned obs
+                # reflects the new episode, not the terminal state.
+                if self.observation_mode == "ram":
+                    fresh_obs = numpy.asarray(self._cuda_batch.ram(), dtype=numpy.uint8)
+                else:
+                    fresh_obs = numpy.asarray(self._cuda_batch.render(), dtype=numpy.uint8)
+                    self._cuda_observations = fresh_obs
+                for env in range(self.num_envs):
+                    if dones[env]:
+                        observations[env] = fresh_obs[env]
+                # Reset per-env step counts for done envs.
+                if self._cuda_env_step_counts is not None:
+                    self._cuda_env_step_counts[dones] = 0
+
             self._pending_actions = None
             self.buf_infos = infos
             return observations, rewards, dones, infos
@@ -551,7 +603,7 @@ class NesleVecEnv(_VecEnvBase):
         numpy = _require_numpy()
         if self._cuda_batch is None:
             raise RuntimeError("step_reward requires backend='cuda'")
-        action_array = numpy.asarray(list(actions), dtype=numpy.int64)
+        action_array = numpy.asarray(actions, dtype=numpy.int64).ravel()
         if action_array.shape != (self.num_envs,):
             raise ValueError(f"expected actions with shape ({self.num_envs},), got {action_array.shape}")
         if numpy.any(action_array < 0) or numpy.any(action_array >= len(self.action_masks)):

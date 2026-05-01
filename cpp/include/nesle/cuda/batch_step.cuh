@@ -107,6 +107,105 @@ NESLE_CUDA_HD inline void apply_batch_reward_env(BatchBuffers& buffers, std::uin
     buffers.previous_mario_dying[env] = (current.is_dying || current.is_dead) ? 1 : 0;
 }
 
+
+NESLE_CUDA_HD inline void cold_reset_console_env(BatchBuffers& buffers, std::uint32_t env) {
+    // Read reset vector from PRG ROM.
+    std::uint16_t reset_pc = 0;
+    if (buffers.cart.prg_rom != nullptr && buffers.cart.prg_rom_size > 0) {
+        const auto base = buffers.cart.prg_rom_size == 16u * 1024u ? 0x3FFCu : 0x7FFCu;
+        reset_pc = static_cast<std::uint16_t>(
+            buffers.cart.prg_rom[base] |
+            (static_cast<std::uint16_t>(buffers.cart.prg_rom[base + 1]) << 8));
+    }
+
+    // CPU registers.
+    buffers.cpu.pc[env] = reset_pc;
+    buffers.cpu.a[env] = 0;
+    buffers.cpu.x[env] = 0;
+    buffers.cpu.y[env] = 0;
+    buffers.cpu.sp[env] = 0xFD;
+    buffers.cpu.p[env] = 0x24;
+    buffers.cpu.cycles[env] = 7;
+    buffers.cpu.nmi_pending[env] = 0;
+    buffers.cpu.irq_pending[env] = 0;
+    buffers.cpu.controller1_shift[env] = 0;
+    buffers.cpu.controller1_shift_count[env] = 8;
+    buffers.cpu.controller1_strobe[env] = 0;
+    buffers.cpu.pending_dma_cycles[env] = 0;
+
+    // CPU RAM.
+    auto* ram = env_cpu_ram(buffers, env);
+    for (int i = 0; i < kCpuRamBytes; ++i) {
+        ram[i] = 0;
+    }
+
+    // PRG RAM.
+    auto* prg_ram = buffers.cpu.prg_ram + static_cast<std::uint64_t>(env) * kPrgRamBytes;
+    for (int i = 0; i < kPrgRamBytes; ++i) {
+        prg_ram[i] = 0;
+    }
+
+    // PPU state.
+    buffers.ppu.ctrl[env] = 0;
+    buffers.ppu.mask[env] = 0;
+    buffers.ppu.status[env] = 0;
+    buffers.ppu.oam_addr[env] = 0;
+    buffers.ppu.nmi_pending[env] = 0;
+    buffers.ppu.scanline[env] = 0;
+    buffers.ppu.dot[env] = 0;
+    buffers.ppu.frame[env] = 0;
+    buffers.ppu.v[env] = 0;
+    buffers.ppu.t[env] = 0;
+    buffers.ppu.x[env] = 0;
+    buffers.ppu.w[env] = 0;
+    buffers.ppu.open_bus[env] = 0;
+    buffers.ppu.read_buffer[env] = 0;
+    buffers.ppu.scroll_x[env] = 0;
+    buffers.ppu.scroll_y[env] = 0;
+
+    // PPU memory.
+    auto* nt = buffers.ppu.nametable_ram + static_cast<std::uint64_t>(env) * kNametableRamBytes;
+    for (int i = 0; i < kNametableRamBytes; ++i) {
+        nt[i] = 0;
+    }
+    auto* pal = buffers.ppu.palette_ram + static_cast<std::uint64_t>(env) * kPaletteRamBytes;
+    for (int i = 0; i < kPaletteRamBytes; ++i) {
+        pal[i] = 0;
+    }
+    auto* oam = env_oam(buffers, env);
+    for (int i = 0; i < kOamBytes; ++i) {
+        oam[i] = 0;
+    }
+
+    // Reward baselines.
+    buffers.previous_mario_x[env] = 0;
+    buffers.previous_mario_time[env] = 0;
+    buffers.previous_mario_dying[env] = 0;
+    buffers.rewards[env] = 0.0F;
+    buffers.done[env] = 0;
+}
+
+NESLE_CUDA_HD inline void cold_reset_synthetic_env(BatchBuffers& buffers, std::uint32_t env) {
+    auto* ram = env_cpu_ram(buffers, env);
+    for (int i = 0; i < kCpuRamBytes; ++i) {
+        ram[i] = 0;
+    }
+    ram[kMarioXPage] = 1;
+    ram[kMarioXScreen] = 2;
+    ram[kMarioYViewport] = 1;
+    ram[kMarioLives] = 2;
+    ram[kMarioPlayerState] = 0;
+    ram[kMarioTimeDigits] = 4;
+    ram[kMarioTimeDigits + 1] = 0;
+    ram[kMarioTimeDigits + 2] = 0;
+
+    buffers.previous_mario_x[env] = 0x100 + 2;
+    buffers.previous_mario_time[env] = 400;
+    buffers.previous_mario_dying[env] = 0;
+    buffers.rewards[env] = 0.0F;
+    buffers.done[env] = 0;
+}
+
 }  // namespace nesle::cuda
 
 #undef NESLE_CUDA_HD

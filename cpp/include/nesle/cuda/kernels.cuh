@@ -23,6 +23,11 @@ void launch_console_step_kernel(const BatchBuffers& buffers,
                                 std::uint64_t max_instructions_per_frame,
                                 cudaStream_t stream);
 void launch_render_kernel(const BatchBuffers& buffers, StepConfig config, cudaStream_t stream);
+void launch_reset_envs_kernel(const BatchBuffers& buffers,
+                              const std::uint8_t* device_mask,
+                              std::uint32_t num_envs,
+                              bool console_mode,
+                              cudaStream_t stream);
 #endif
 
 }  // namespace nesle::cuda

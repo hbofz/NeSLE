@@ -76,6 +76,44 @@ void launch_render_kernel(const BatchBuffers& buffers, StepConfig config, cudaSt
     render_rgb_kernel<<<blocks, kThreads, 0, stream>>>(buffers, config.num_envs);
 }
 
+namespace {
+
+__global__ void reset_console_envs_kernel(BatchBuffers buffers,
+                                          const std::uint8_t* mask,
+                                          std::uint32_t num_envs) {
+    const auto env = blockIdx.x * blockDim.x + threadIdx.x;
+    if (env < num_envs && mask[env] != 0) {
+        cold_reset_console_env(buffers, env);
+    }
+}
+
+__global__ void reset_synthetic_envs_kernel(BatchBuffers buffers,
+                                            const std::uint8_t* mask,
+                                            std::uint32_t num_envs) {
+    const auto env = blockIdx.x * blockDim.x + threadIdx.x;
+    if (env < num_envs && mask[env] != 0) {
+        cold_reset_synthetic_env(buffers, env);
+    }
+}
+
+}  // namespace
+
+void launch_reset_envs_kernel(const BatchBuffers& buffers,
+                              const std::uint8_t* device_mask,
+                              std::uint32_t num_envs,
+                              bool console_mode,
+                              cudaStream_t stream) {
+    constexpr int kThreads = 256;
+    const int blocks = static_cast<int>((num_envs + kThreads - 1) / kThreads);
+    if (console_mode) {
+        reset_console_envs_kernel<<<blocks, kThreads, 0, stream>>>(
+            buffers, device_mask, num_envs);
+    } else {
+        reset_synthetic_envs_kernel<<<blocks, kThreads, 0, stream>>>(
+            buffers, device_mask, num_envs);
+    }
+}
+
 }  // namespace nesle::cuda
 
 #endif

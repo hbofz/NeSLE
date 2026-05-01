@@ -13,7 +13,7 @@ def main() -> None:
     parser.add_argument("--n-steps", type=int, default=128)
     parser.add_argument("--batch-size", type=int, default=256)
     parser.add_argument("--frameskip", type=int, default=4)
-    parser.add_argument("--action-space", default="simple", choices=["right_only", "simple", "complex", "raw"])
+    parser.add_argument("--action-space", default="simple_with_start", choices=["right_only", "simple", "simple_with_start", "complex", "raw"])
     parser.add_argument("--device", default="auto")
     parser.add_argument("--backend", default="auto", choices=["auto", "native", "synthetic", "cuda"])
     parser.add_argument("--observation-mode", default="ram", choices=["ram", "rgb_array"])
