@@ -38,15 +38,6 @@ struct BatchReward {
     int total = 0;
 };
 
-NESLE_CUDA_HD inline const std::uint8_t* env_cpu_ram(const BatchBuffers& buffers,
-                                                     std::uint32_t env) {
-    return buffers.cpu.ram + static_cast<std::uint64_t>(env) * kCpuRamBytes;
-}
-
-NESLE_CUDA_HD inline std::uint8_t* env_cpu_ram(BatchBuffers& buffers, std::uint32_t env) {
-    return buffers.cpu.ram + static_cast<std::uint64_t>(env) * kCpuRamBytes;
-}
-
 NESLE_CUDA_HD inline int read_bcd_digits(const std::uint8_t* ram,
                                          std::uint32_t address,
                                          std::uint32_t length) {

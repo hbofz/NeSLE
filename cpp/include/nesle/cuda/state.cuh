@@ -2,9 +2,16 @@
 
 #include <cstdint>
 
+#ifdef __CUDACC__
+#define NESLE_CUDA_STATE_HD __host__ __device__
+#else
+#define NESLE_CUDA_STATE_HD
+#endif
+
 namespace nesle::cuda {
 
 constexpr int kCpuRamBytes = 2048;
+constexpr int kPrgRamBytes = 8 * 1024;
 constexpr int kPaletteRamBytes = 32;
 constexpr int kOamBytes = 256;
 constexpr int kNametableRamBytes = 2048;
@@ -23,6 +30,10 @@ struct CpuStateSoA {
     std::uint8_t* nmi_pending;
     std::uint8_t* irq_pending;
     std::uint8_t* ram;
+    std::uint8_t* prg_ram;
+    std::uint8_t* controller1_shift;
+    std::uint8_t* controller1_shift_count;
+    std::uint8_t* controller1_strobe;
 };
 
 struct PpuStateSoA {
@@ -60,4 +71,15 @@ struct BatchBuffers {
     std::uint8_t* frames_rgb;
 };
 
+NESLE_CUDA_STATE_HD inline const std::uint8_t* env_cpu_ram(const BatchBuffers& buffers,
+                                                           std::uint32_t env) {
+    return buffers.cpu.ram + static_cast<std::uint64_t>(env) * kCpuRamBytes;
+}
+
+NESLE_CUDA_STATE_HD inline std::uint8_t* env_cpu_ram(BatchBuffers& buffers, std::uint32_t env) {
+    return buffers.cpu.ram + static_cast<std::uint64_t>(env) * kCpuRamBytes;
+}
+
 }  // namespace nesle::cuda
+
+#undef NESLE_CUDA_STATE_HD
