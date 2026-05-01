@@ -41,6 +41,12 @@ NESLE_ROM_PATH="/path/to/Super Mario Bros. (World).nes" sh scripts/render_openem
 NESLE_ROM_PATH="/path/to/Super Mario Bros. (World).nes" sh scripts/compare_openemu_state.sh
 ```
 
+On an NVIDIA CUDA machine, run the optional device smoke:
+
+```sh
+sh scripts/verify_cuda.sh
+```
+
 ## Target API
 
 The end state is:

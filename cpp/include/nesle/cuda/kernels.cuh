@@ -4,6 +4,10 @@
 
 #include "nesle/cuda/state.cuh"
 
+#ifdef __CUDACC__
+#include <cuda_runtime_api.h>
+#endif
+
 namespace nesle::cuda {
 
 struct StepConfig {

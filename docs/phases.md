@@ -84,10 +84,13 @@ per-env CPU RAM, computes SMB-style reward/done values, and advances the reward
 baseline with the same semantics as the CPU `smb` module. The CUDA step kernel
 uses that helper as its current per-env work item, and a host-side C++ parity
 test compares the GPU-ready helper against the CPU reward implementation across
-multiple environments. The GPU-ready batch CPU bus now covers CPU RAM mirrors,
-PRG RAM, NROM PRG ROM mapping, controller strobe/shift reads, and a minimal PPU
-register surface, with host-side tests comparing the memory-map behavior against
-the CPU console/controller path. A host-side batch CPU step adapter now runs the
+multiple environments. The optional CUDA smoke script compiles this kernel with
+`nvcc` and launches it on NVIDIA hardware, checking device-computed reward/done
+outputs against expected SMB RAM cases. The GPU-ready batch CPU bus covers CPU
+RAM mirrors, PRG RAM, NROM PRG ROM mapping, controller strobe/shift reads, and
+a minimal PPU register surface, with host-side tests comparing the memory-map
+behavior against the CPU console/controller path. A host-side batch CPU step
+adapter now runs the
 existing CPU core over the batch bus and checks instruction, register, cycle,
 RAM, PRG RAM, and controller parity against `Console` on a synthetic NROM trace.
 A host batch runner now steps multiple envs independently through that adapter
