@@ -15,3 +15,4 @@ c++ -std=c++20 -Icpp/include cpp/src/rom.cpp cpp/src/smb.cpp tests/cpp/test_head
 c++ -std=c++20 -Icpp/include cpp/tools/run_6502_binary.cpp -o /tmp/nesle_run_6502_binary
 c++ -std=c++20 -Icpp/include cpp/src/rom.cpp cpp/src/smb.cpp cpp/tools/run_nes_headless.cpp -o /tmp/nesle_run_nes_headless
 /tmp/nesle_run_nes_headless /tmp/nesle_headless_test.nes --frames 1 --max-instructions 50000 --trace 2
+c++ -std=c++20 -Icpp/include cpp/src/rom.cpp cpp/tools/render_nestopia_state.cpp -o /tmp/nesle_render_nestopia_state

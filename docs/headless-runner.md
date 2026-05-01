@@ -59,3 +59,20 @@ ROM path is provided:
 NESLE_ROM_PATH="/path/to/Super Mario Bros. (World).nes" sh scripts/smoke_user_rom.sh
 NESLE_ROM_PATH="/path/to/Super Mario Bros. (World).nes" sh scripts/smoke_phase2_user_rom.sh
 ```
+
+## OpenEmu/Nestopia Reference States
+
+OpenEmu's NES cores can create Nestopia `.oesavestate` packages that include a
+native `State` file and a screenshot. NeSLE can parse the Nestopia state chunks
+and render the saved PPU state through its own renderer:
+
+```sh
+NESLE_ROM_PATH="/path/to/Super Mario Bros. (World).nes" \
+  sh scripts/render_openemu_state.sh
+```
+
+By default this reads OpenEmu's autosave for `Super Mario Bros. (World)` and
+writes `/tmp/nesle_openemu_state.ppm`. Override the inputs with
+`NESLE_OPENEMU_STATE_PATH` and `NESLE_OPENEMU_RENDER_PATH`. OpenEmu screenshots
+may be aspect-corrected wider than the raw NES frame; this tool emits the native
+256x240 RGB frame and a deterministic frame hash.

@@ -292,6 +292,30 @@ int main() {
     }
 
     {
+        nesle::Ppu ppu;
+        ppu.write_register(0x06, 0x00);
+        ppu.write_register(0x06, 0x10);
+        ppu.write_register(0x07, 0x80);
+        std::array<std::uint8_t, 32> palette{};
+        std::array<std::uint8_t, nesle::Ppu::kOamBytes> oam{};
+        std::array<std::uint8_t, 2 * 1024> nametable{};
+        palette[1] = 0x21;
+        nametable[0] = 0x01;
+
+        nesle::Ppu::RenderState state;
+        state.mask = 0x0A;
+        state.palette_ram = palette;
+        state.oam = oam;
+        state.nametable_ram = nametable;
+        ppu.load_render_state(state);
+
+        const auto frame = ppu.render_rgb_frame();
+        assert(frame[0] == 0x4C);
+        assert(frame[1] == 0x9A);
+        assert(frame[2] == 0xEC);
+    }
+
+    {
         nesle::Console console(make_nmi_rom());
         nesle::cpu::CpuState state;
         console.reset_cpu(state);

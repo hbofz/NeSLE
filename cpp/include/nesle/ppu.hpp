@@ -30,6 +30,17 @@ public:
         bool nmi_started = false;
     };
 
+    struct RenderState {
+        std::uint8_t ctrl = 0;
+        std::uint8_t mask = 0;
+        std::uint8_t status = 0;
+        std::uint8_t scroll_x = 0;
+        std::uint8_t scroll_y = 0;
+        std::span<const std::uint8_t> palette_ram;
+        std::span<const std::uint8_t> oam;
+        std::span<const std::uint8_t> nametable_ram;
+    };
+
     using RgbFrame = std::array<std::uint8_t, kRgbFrameBytes>;
 
     [[nodiscard]] StepResult step(std::uint32_t ppu_cycles) noexcept {
@@ -216,6 +227,32 @@ public:
             render_sprites(output, background_opaque);
         }
         return output;
+    }
+
+    void load_render_state(const RenderState& state) noexcept {
+        ctrl_ = state.ctrl;
+        mask_ = state.mask;
+        status_ = state.status;
+        scroll_x_ = state.scroll_x;
+        scroll_y_ = state.scroll_y;
+        if (state.palette_ram.size() >= palette_ram_.size()) {
+            for (std::size_t i = 0; i < palette_ram_.size(); ++i) {
+                palette_ram_[i] = state.palette_ram[i];
+            }
+        }
+        if (state.oam.size() >= oam_.size()) {
+            for (std::size_t i = 0; i < oam_.size(); ++i) {
+                oam_[i] = state.oam[i];
+            }
+        }
+        if (state.nametable_ram.size() >= 2 * 1024) {
+            const auto limit = state.nametable_ram.size() < nametable_ram_.size()
+                                   ? state.nametable_ram.size()
+                                   : nametable_ram_.size();
+            for (std::size_t i = 0; i < limit; ++i) {
+                nametable_ram_[i] = state.nametable_ram[i];
+            }
+        }
     }
 
 private:
