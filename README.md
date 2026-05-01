@@ -188,8 +188,17 @@ An SB3 PPO starter is available at [examples/sb3_train.py](examples/sb3_train.py
 
 ```sh
 python -m pip install -e '.[rl]'
-python examples/sb3_train.py "Super Mario Bros. (World).nes" --num-envs 8
+python examples/sb3_train.py "Super Mario Bros. (World).nes" \
+  --backend cuda \
+  --observation-mode ram \
+  --num-envs 512 \
+  --n-steps 128
 ```
+
+The starter defaults to `observation_mode="ram"` and `MlpPolicy` so SB3 does
+not build giant CPU rollout buffers from stacked RGB frames. Use
+`--observation-mode rgb_array --policy CnnPolicy` only for explicit visual-policy
+experiments; that path copies RGB frames back to host RAM every step.
 
 Legacy `nes-py` and `gym-super-mario-bros` comparison dependencies are kept in
 the `legacy-mario` extra for benchmark work.

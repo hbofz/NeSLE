@@ -123,6 +123,12 @@ frames = env.render()  # shape: (128, 240, 256, 3)
 `NesleVecEnv.step_reward(actions)` remains available for custom CUDA-only loops
 that need rewards and done flags without any observation copy.
 
+For SB3 PPO, the practical CUDA starter is RAM observations plus `MlpPolicy`.
+RGB observations should be treated as an explicit visual-policy experiment: SB3
+stores rollout observations in host-side NumPy buffers, so hundreds of stacked
+RGB environments can consume tens of GB of system RAM even while GPU memory
+looks mostly flat.
+
 ## Limitations
 
 - Mapper support is limited to NROM/Super Mario Bros.
