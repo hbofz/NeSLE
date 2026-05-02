@@ -20,6 +20,8 @@ struct ConsoleStepStats {
     std::uint64_t* instructions = nullptr;
     std::uint32_t* frames_completed = nullptr;
     std::uint32_t* budget_hits = nullptr;
+    unsigned long long* opcode_counts = nullptr;
+    unsigned long long* pc_counts = nullptr;
 };
 
 #ifdef __CUDACC__

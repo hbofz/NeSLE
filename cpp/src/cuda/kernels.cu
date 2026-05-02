@@ -35,6 +35,12 @@ __global__ void console_step_kernel(BatchBuffers buffers,
         std::uint32_t frames_completed = 0;
         while (instructions < max_instructions_per_frame && frames_completed == 0) {
             const auto step = step_batch_console_instruction(buffers, env, state);
+            if (stats.opcode_counts != nullptr) {
+                atomicAdd(&stats.opcode_counts[step.cpu.opcode], 1ULL);
+            }
+            if (stats.pc_counts != nullptr) {
+                atomicAdd(&stats.pc_counts[step.cpu.pc], 1ULL);
+            }
             ++instructions;
             frames_completed += step.frames_completed;
         }

@@ -324,6 +324,92 @@ public:
         return out;
     }
 
+    py::dict step_profile(py::array_t<std::uint8_t, py::array::c_style | py::array::forcecast> actions) {
+        if (!use_console_) {
+            throw std::runtime_error("step_profile is only available for CUDA console mode");
+        }
+        const auto view = actions.request();
+        if (view.ndim != 1 || static_cast<std::uint32_t>(view.shape[0]) != num_env_) {
+            throw std::invalid_argument("actions must have shape (num_envs,)");
+        }
+        check_cuda(cudaMemset(device_profile_opcode_counts_, 0, kOpcodeProfileBytes),
+                   "clear opcode profile");
+        check_cuda(cudaMemset(device_profile_pc_counts_, 0, kPcProfileBytes),
+                   "clear pc profile");
+        check_cuda(cudaMemcpy(device_actions_,
+                              view.ptr,
+                              static_cast<std::size_t>(num_env_) * sizeof(std::uint8_t),
+                              cudaMemcpyHostToDevice),
+                   "copy actions");
+        nesle::cuda::launch_console_step_kernel(
+            buffers_,
+            nesle::cuda::StepConfig{num_env_, frameskip_, false},
+            max_instructions_per_frame_,
+            nesle::cuda::ConsoleStepStats{
+                device_stat_instructions_,
+                device_stat_frames_completed_,
+                device_stat_budget_hits_,
+                device_profile_opcode_counts_,
+                device_profile_pc_counts_,
+            },
+            nullptr);
+        check_cuda(cudaGetLastError(), "launch_console_step_profile_kernel");
+        check_cuda(cudaDeviceSynchronize(), "cuda step profile synchronize");
+
+        py::array_t<float> rewards(static_cast<py::ssize_t>(num_env_));
+        py::array_t<std::uint8_t> dones(static_cast<py::ssize_t>(num_env_));
+        py::array_t<std::uint64_t> instructions(static_cast<py::ssize_t>(num_env_));
+        py::array_t<std::uint32_t> frames_completed(static_cast<py::ssize_t>(num_env_));
+        py::array_t<std::uint32_t> budget_hits(static_cast<py::ssize_t>(num_env_));
+        py::array_t<unsigned long long> opcode_counts(256);
+        py::array_t<unsigned long long> pc_counts(65536);
+        check_cuda(cudaMemcpy(rewards.mutable_data(),
+                              device_rewards_,
+                              static_cast<std::size_t>(num_env_) * sizeof(float),
+                              cudaMemcpyDeviceToHost),
+                   "copy profile rewards");
+        check_cuda(cudaMemcpy(dones.mutable_data(),
+                              device_done_,
+                              static_cast<std::size_t>(num_env_) * sizeof(std::uint8_t),
+                              cudaMemcpyDeviceToHost),
+                   "copy profile dones");
+        check_cuda(cudaMemcpy(instructions.mutable_data(),
+                              device_stat_instructions_,
+                              static_cast<std::size_t>(num_env_) * sizeof(std::uint64_t),
+                              cudaMemcpyDeviceToHost),
+                   "copy profile instructions");
+        check_cuda(cudaMemcpy(frames_completed.mutable_data(),
+                              device_stat_frames_completed_,
+                              static_cast<std::size_t>(num_env_) * sizeof(std::uint32_t),
+                              cudaMemcpyDeviceToHost),
+                   "copy profile frames completed");
+        check_cuda(cudaMemcpy(budget_hits.mutable_data(),
+                              device_stat_budget_hits_,
+                              static_cast<std::size_t>(num_env_) * sizeof(std::uint32_t),
+                              cudaMemcpyDeviceToHost),
+                   "copy profile budget hits");
+        check_cuda(cudaMemcpy(opcode_counts.mutable_data(),
+                              device_profile_opcode_counts_,
+                              kOpcodeProfileBytes,
+                              cudaMemcpyDeviceToHost),
+                   "copy opcode profile");
+        check_cuda(cudaMemcpy(pc_counts.mutable_data(),
+                              device_profile_pc_counts_,
+                              kPcProfileBytes,
+                              cudaMemcpyDeviceToHost),
+                   "copy pc profile");
+
+        py::dict out;
+        out["rewards"] = rewards;
+        out["dones"] = dones;
+        out["instructions"] = instructions;
+        out["frames_completed"] = frames_completed;
+        out["budget_hits"] = budget_hits;
+        out["opcode_counts"] = opcode_counts;
+        out["pc_counts"] = pc_counts;
+        return out;
+    }
+
     py::array_t<std::uint8_t> render() const {
         py::array_t<std::uint8_t> out(std::vector<py::ssize_t>{
             static_cast<py::ssize_t>(num_env_),
@@ -436,6 +522,10 @@ private:
             cuda_alloc<std::uint32_t>(num_env_, "cudaMalloc stat frames completed");
         device_stat_budget_hits_ =
             cuda_alloc<std::uint32_t>(num_env_, "cudaMalloc stat budget hits");
+        device_profile_opcode_counts_ =
+            cuda_alloc<unsigned long long>(256, "cudaMalloc opcode profile");
+        device_profile_pc_counts_ =
+            cuda_alloc<unsigned long long>(65536, "cudaMalloc pc profile");
 
         buffers_.cpu.pc = device_pc_;
         buffers_.cpu.a = device_a_;
@@ -527,6 +617,8 @@ private:
         cudaFree(device_stat_instructions_);
         cudaFree(device_stat_frames_completed_);
         cudaFree(device_stat_budget_hits_);
+        cudaFree(device_profile_opcode_counts_);
+        cudaFree(device_profile_pc_counts_);
     }
 
     void upload_rom() {
@@ -670,6 +762,10 @@ private:
     std::uint64_t* device_stat_instructions_ = nullptr;
     std::uint32_t* device_stat_frames_completed_ = nullptr;
     std::uint32_t* device_stat_budget_hits_ = nullptr;
+    unsigned long long* device_profile_opcode_counts_ = nullptr;
+    unsigned long long* device_profile_pc_counts_ = nullptr;
+    static constexpr std::size_t kOpcodeProfileBytes = 256 * sizeof(unsigned long long);
+    static constexpr std::size_t kPcProfileBytes = 65536 * sizeof(unsigned long long);
 };
 
 }  // namespace
@@ -687,6 +783,7 @@ PYBIND11_MODULE(_cuda_core, m) {
              py::arg("render_frame") = true,
              py::arg("copy_obs") = true)
         .def("step_stats", &CudaBatchBinding::step_stats, py::arg("actions"))
+        .def("step_profile", &CudaBatchBinding::step_profile, py::arg("actions"))
         .def("render", &CudaBatchBinding::render)
         .def("ram", &CudaBatchBinding::ram)
         .def("reset_envs", &CudaBatchBinding::reset_envs, py::arg("mask"))
