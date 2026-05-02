@@ -31,8 +31,9 @@ NESLE_CUDA_BATCH_CONSOLE_HD inline void clear_batch_ppu_nmi_pending(BatchBuffers
 }
 
 [[nodiscard]] NESLE_CUDA_BATCH_CONSOLE_HD inline BatchConsoleStepResult
-step_batch_console_instruction(BatchBuffers& buffers, std::uint32_t env) {
-    auto state = load_cpu_state(buffers, env);
+step_batch_console_instruction(BatchBuffers& buffers,
+                               std::uint32_t env,
+                               cpu::CpuState& state) {
     const auto cycles_before = state.cycles;
     bool nmi_serviced = false;
     BatchCpuBus bus(buffers, env);
@@ -48,7 +49,6 @@ step_batch_console_instruction(BatchBuffers& buffers, std::uint32_t env) {
         state.cycles += buffers.cpu.pending_dma_cycles[env];
         buffers.cpu.pending_dma_cycles[env] = 0;
     }
-    store_cpu_state(buffers, env, state);
 
     const auto cpu_cycles = static_cast<std::uint32_t>(state.cycles - cycles_before);
     const auto ppu_cycles = cpu_cycles * kPpuCyclesPerCpuCycle;
@@ -62,6 +62,14 @@ step_batch_console_instruction(BatchBuffers& buffers, std::uint32_t env) {
         nmi_serviced,
         ppu_step.nmi_started,
     };
+}
+
+[[nodiscard]] NESLE_CUDA_BATCH_CONSOLE_HD inline BatchConsoleStepResult
+step_batch_console_instruction(BatchBuffers& buffers, std::uint32_t env) {
+    auto state = load_cpu_state(buffers, env);
+    const auto result = step_batch_console_instruction(buffers, env, state);
+    store_cpu_state(buffers, env, state);
+    return result;
 }
 
 }  // namespace nesle::cuda

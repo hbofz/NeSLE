@@ -25,15 +25,17 @@ __global__ void console_step_kernel(BatchBuffers buffers,
         return;
     }
 
+    auto state = load_cpu_state(buffers, env);
     for (std::uint32_t frame = 0; frame < frameskip; ++frame) {
         std::uint64_t instructions = 0;
         std::uint32_t frames_completed = 0;
         while (instructions < max_instructions_per_frame && frames_completed == 0) {
-            const auto step = step_batch_console_instruction(buffers, env);
+            const auto step = step_batch_console_instruction(buffers, env, state);
             ++instructions;
             frames_completed += step.frames_completed;
         }
     }
+    store_cpu_state(buffers, env, state);
 
     apply_batch_reward_env(buffers, env);
 }
