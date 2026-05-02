@@ -537,8 +537,6 @@ private:
         copy_to_device(device_prg_rom_, rom_.prg_rom, "copy prg rom");
         buffers_.cart.prg_rom = device_prg_rom_;
         buffers_.cart.prg_rom_size = static_cast<std::uint32_t>(rom_.prg_rom.size());
-        buffers_.cart.prg_rom_mask =
-            rom_.prg_rom.size() == 16u * 1024u ? 0x3FFFu : 0x7FFFu;
         if (!rom_.chr_rom.empty()) {
             device_chr_rom_ = cuda_alloc<std::uint8_t>(rom_.chr_rom.size(), "cudaMalloc chr rom");
             copy_to_device(device_chr_rom_, rom_.chr_rom, "copy chr rom");

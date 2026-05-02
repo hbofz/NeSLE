@@ -24,15 +24,12 @@ NESLE_CUDA_HD inline const std::uint8_t* env_prg_ram(const BatchBuffers& buffers
 NESLE_CUDA_HD inline std::uint8_t read_nrom_prg(const CartridgeView& cart,
                                                 std::uint16_t address) {
     auto index = static_cast<std::uint32_t>(address - 0x8000);
-    const auto mask = cart.prg_rom_mask != 0
-                          ? cart.prg_rom_mask
-                          : (cart.prg_rom_size == 16u * 1024u ? 0x3FFFu : 0x7FFFu);
-    index &= mask;
-#ifdef __CUDA_ARCH__
-    return __ldg(cart.prg_rom + index);
-#else
+    if (cart.prg_rom_size == 16u * 1024u) {
+        index &= 0x3FFFu;
+    } else {
+        index &= 0x7FFFu;
+    }
     return cart.prg_rom[index];
-#endif
 }
 
 NESLE_CUDA_HD inline std::uint16_t bus_mirror_palette_address(std::uint16_t address) {
