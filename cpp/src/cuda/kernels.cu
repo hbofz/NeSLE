@@ -43,6 +43,10 @@ __global__ void console_step_kernel(BatchBuffers buffers,
             }
             ++instructions;
             frames_completed += step.frames_completed;
+            if (step.cpu.opcode == 0x4C && state.pc == step.cpu.pc && frames_completed == 0) {
+                const auto fast_forward = fast_forward_batch_console_idle_loop(buffers, env, state);
+                frames_completed += fast_forward.frames_completed;
+            }
         }
         total_instructions += instructions;
         total_frames_completed += frames_completed;

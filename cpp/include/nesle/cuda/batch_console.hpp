@@ -72,6 +72,30 @@ step_batch_console_instruction(BatchBuffers& buffers, std::uint32_t env) {
     return result;
 }
 
+[[nodiscard]] NESLE_CUDA_BATCH_CONSOLE_HD inline BatchConsoleStepResult
+fast_forward_batch_console_idle_loop(BatchBuffers& buffers,
+                                     std::uint32_t env,
+                                     cpu::CpuState& state) {
+    const auto ppu_cycles_to_event = batch_ppu_cycles_until_next_timing_event(buffers, env);
+    const auto skipped_jumps = (ppu_cycles_to_event + 8u) / 9u;
+    if (skipped_jumps == 0) {
+        return {};
+    }
+
+    const auto cpu_cycles = skipped_jumps * 3u;
+    const auto ppu_cycles = cpu_cycles * kPpuCyclesPerCpuCycle;
+    state.cycles += cpu_cycles;
+    const auto ppu_step = batch_ppu_step_env(buffers, env, ppu_cycles);
+    return BatchConsoleStepResult{
+        {},
+        cpu_cycles,
+        ppu_cycles,
+        ppu_step.frames_completed,
+        false,
+        ppu_step.nmi_started,
+    };
+}
+
 }  // namespace nesle::cuda
 
 #undef NESLE_CUDA_BATCH_CONSOLE_HD

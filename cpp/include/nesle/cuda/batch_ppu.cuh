@@ -36,6 +36,13 @@ NESLE_CUDA_HD inline bool batch_ppu_rendering_enabled(const BatchBuffers& buffer
     return (buffers.ppu.mask[env] & 0x18) != 0;
 }
 
+NESLE_CUDA_HD inline std::uint32_t batch_ppu_frame_dot(const BatchBuffers& buffers,
+                                                       std::uint32_t env) {
+    return static_cast<std::uint32_t>(buffers.ppu.scanline[env]) *
+               static_cast<std::uint32_t>(kPpuDotsPerScanline) +
+           static_cast<std::uint32_t>(buffers.ppu.dot[env]);
+}
+
 NESLE_CUDA_HD inline void batch_ppu_set_vblank(BatchBuffers& buffers,
                                                std::uint32_t env,
                                                bool enabled) {
@@ -50,6 +57,48 @@ NESLE_CUDA_HD inline void batch_ppu_set_vblank(BatchBuffers& buffers,
 
     buffers.ppu.status[env] = static_cast<std::uint8_t>(buffers.ppu.status[env] & 0x7F);
     buffers.ppu.nmi_pending[env] = 0;
+}
+
+NESLE_CUDA_HD inline std::uint32_t batch_ppu_cycles_until_next_timing_event(
+    const BatchBuffers& buffers,
+    std::uint32_t env) {
+    constexpr std::uint32_t kFrameDots =
+        static_cast<std::uint32_t>(kPpuDotsPerScanline) *
+        static_cast<std::uint32_t>(kPpuScanlinesPerFrame);
+    constexpr std::uint32_t kSpriteZeroHitDot =
+        static_cast<std::uint32_t>(kPpuCoarseSpriteZeroHitScanline) *
+            static_cast<std::uint32_t>(kPpuDotsPerScanline) +
+        static_cast<std::uint32_t>(kPpuCoarseSpriteZeroHitDot);
+    constexpr std::uint32_t kVblankDot =
+        static_cast<std::uint32_t>(kPpuVblankStartScanline) *
+            static_cast<std::uint32_t>(kPpuDotsPerScanline) +
+        static_cast<std::uint32_t>(kPpuVblankFlagDot);
+    constexpr std::uint32_t kPreRenderDot =
+        static_cast<std::uint32_t>(kPpuPreRenderScanline) *
+            static_cast<std::uint32_t>(kPpuDotsPerScanline) +
+        static_cast<std::uint32_t>(kPpuVblankFlagDot);
+
+    const auto current = batch_ppu_frame_dot(buffers, env);
+    auto distance = [current](std::uint32_t event_dot) {
+        return event_dot > current ? event_dot - current : kFrameDots - current + event_dot;
+    };
+
+    auto next = kFrameDots - current;
+    const auto vblank = distance(kVblankDot);
+    if (vblank < next) {
+        next = vblank;
+    }
+    const auto prerender = distance(kPreRenderDot);
+    if (prerender < next) {
+        next = prerender;
+    }
+    if (batch_ppu_rendering_enabled(buffers, env)) {
+        const auto sprite_zero = distance(kSpriteZeroHitDot);
+        if (sprite_zero < next) {
+            next = sprite_zero;
+        }
+    }
+    return next;
 }
 
 NESLE_CUDA_HD inline BatchPpuStepResult batch_ppu_step_env(BatchBuffers& buffers,
@@ -74,10 +123,7 @@ NESLE_CUDA_HD inline BatchPpuStepResult batch_ppu_step_env(BatchBuffers& buffers
             static_cast<std::uint32_t>(kPpuDotsPerScanline) +
         static_cast<std::uint32_t>(kPpuVblankFlagDot);
 
-    const auto start_dot =
-        static_cast<std::uint32_t>(buffers.ppu.scanline[env]) *
-            static_cast<std::uint32_t>(kPpuDotsPerScanline) +
-        static_cast<std::uint32_t>(buffers.ppu.dot[env]);
+    const auto start_dot = batch_ppu_frame_dot(buffers, env);
     const auto end_dot = start_dot + ppu_cycles;
     result.frames_completed = end_dot / kFrameDots;
 
