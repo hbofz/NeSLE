@@ -67,6 +67,7 @@ struct CartridgeView {
     const std::uint8_t* chr_rom;
     std::uint32_t prg_rom_size;
     std::uint32_t chr_rom_size;
+    std::uint32_t prg_rom_mask;
     std::uint8_t mapper;
     std::uint8_t nametable_arrangement;
 };
