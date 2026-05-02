@@ -215,6 +215,7 @@ public:
                 buffers_,
                 nesle::cuda::StepConfig{num_env_, frameskip_, false},
                 max_instructions_per_frame_,
+                {},
                 nullptr);
             check_cuda(cudaGetLastError(), "launch_console_step_kernel");
         } else {
@@ -254,6 +255,72 @@ public:
         }
         out["rewards"] = rewards;
         out["dones"] = dones;
+        return out;
+    }
+
+    py::dict step_stats(py::array_t<std::uint8_t, py::array::c_style | py::array::forcecast> actions) {
+        if (!use_console_) {
+            throw std::runtime_error("step_stats is only available for CUDA console mode");
+        }
+        const auto view = actions.request();
+        if (view.ndim != 1 || static_cast<std::uint32_t>(view.shape[0]) != num_env_) {
+            throw std::invalid_argument("actions must have shape (num_envs,)");
+        }
+        check_cuda(cudaMemcpy(device_actions_,
+                              view.ptr,
+                              static_cast<std::size_t>(num_env_) * sizeof(std::uint8_t),
+                              cudaMemcpyHostToDevice),
+                   "copy actions");
+        nesle::cuda::launch_console_step_kernel(
+            buffers_,
+            nesle::cuda::StepConfig{num_env_, frameskip_, false},
+            max_instructions_per_frame_,
+            nesle::cuda::ConsoleStepStats{
+                device_stat_instructions_,
+                device_stat_frames_completed_,
+                device_stat_budget_hits_,
+            },
+            nullptr);
+        check_cuda(cudaGetLastError(), "launch_console_step_stats_kernel");
+        check_cuda(cudaDeviceSynchronize(), "cuda step stats synchronize");
+
+        py::array_t<float> rewards(static_cast<py::ssize_t>(num_env_));
+        py::array_t<std::uint8_t> dones(static_cast<py::ssize_t>(num_env_));
+        py::array_t<std::uint64_t> instructions(static_cast<py::ssize_t>(num_env_));
+        py::array_t<std::uint32_t> frames_completed(static_cast<py::ssize_t>(num_env_));
+        py::array_t<std::uint32_t> budget_hits(static_cast<py::ssize_t>(num_env_));
+        check_cuda(cudaMemcpy(rewards.mutable_data(),
+                              device_rewards_,
+                              static_cast<std::size_t>(num_env_) * sizeof(float),
+                              cudaMemcpyDeviceToHost),
+                   "copy stats rewards");
+        check_cuda(cudaMemcpy(dones.mutable_data(),
+                              device_done_,
+                              static_cast<std::size_t>(num_env_) * sizeof(std::uint8_t),
+                              cudaMemcpyDeviceToHost),
+                   "copy stats dones");
+        check_cuda(cudaMemcpy(instructions.mutable_data(),
+                              device_stat_instructions_,
+                              static_cast<std::size_t>(num_env_) * sizeof(std::uint64_t),
+                              cudaMemcpyDeviceToHost),
+                   "copy stats instructions");
+        check_cuda(cudaMemcpy(frames_completed.mutable_data(),
+                              device_stat_frames_completed_,
+                              static_cast<std::size_t>(num_env_) * sizeof(std::uint32_t),
+                              cudaMemcpyDeviceToHost),
+                   "copy stats frames completed");
+        check_cuda(cudaMemcpy(budget_hits.mutable_data(),
+                              device_stat_budget_hits_,
+                              static_cast<std::size_t>(num_env_) * sizeof(std::uint32_t),
+                              cudaMemcpyDeviceToHost),
+                   "copy stats budget hits");
+
+        py::dict out;
+        out["rewards"] = rewards;
+        out["dones"] = dones;
+        out["instructions"] = instructions;
+        out["frames_completed"] = frames_completed;
+        out["budget_hits"] = budget_hits;
         return out;
     }
 
@@ -363,6 +430,12 @@ private:
             static_cast<std::size_t>(num_env_) * kFrameBytes,
             "cudaMalloc frames");
         device_reset_mask_ = cuda_alloc<std::uint8_t>(num_env_, "cudaMalloc reset mask");
+        device_stat_instructions_ =
+            cuda_alloc<std::uint64_t>(num_env_, "cudaMalloc stat instructions");
+        device_stat_frames_completed_ =
+            cuda_alloc<std::uint32_t>(num_env_, "cudaMalloc stat frames completed");
+        device_stat_budget_hits_ =
+            cuda_alloc<std::uint32_t>(num_env_, "cudaMalloc stat budget hits");
 
         buffers_.cpu.pc = device_pc_;
         buffers_.cpu.a = device_a_;
@@ -451,6 +524,9 @@ private:
         cudaFree(device_chr_rom_);
         cudaFree(device_frames_);
         cudaFree(device_reset_mask_);
+        cudaFree(device_stat_instructions_);
+        cudaFree(device_stat_frames_completed_);
+        cudaFree(device_stat_budget_hits_);
     }
 
     void upload_rom() {
@@ -591,6 +667,9 @@ private:
     std::uint8_t* device_chr_rom_ = nullptr;
     std::uint8_t* device_frames_ = nullptr;
     std::uint8_t* device_reset_mask_ = nullptr;
+    std::uint64_t* device_stat_instructions_ = nullptr;
+    std::uint32_t* device_stat_frames_completed_ = nullptr;
+    std::uint32_t* device_stat_budget_hits_ = nullptr;
 };
 
 }  // namespace
@@ -607,6 +686,7 @@ PYBIND11_MODULE(_cuda_core, m) {
              py::arg("actions"),
              py::arg("render_frame") = true,
              py::arg("copy_obs") = true)
+        .def("step_stats", &CudaBatchBinding::step_stats, py::arg("actions"))
         .def("render", &CudaBatchBinding::render)
         .def("ram", &CudaBatchBinding::ram)
         .def("reset_envs", &CudaBatchBinding::reset_envs, py::arg("mask"))

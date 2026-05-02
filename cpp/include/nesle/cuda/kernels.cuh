@@ -16,11 +16,18 @@ struct StepConfig {
     bool render;
 };
 
+struct ConsoleStepStats {
+    std::uint64_t* instructions = nullptr;
+    std::uint32_t* frames_completed = nullptr;
+    std::uint32_t* budget_hits = nullptr;
+};
+
 #ifdef __CUDACC__
 void launch_step_kernel(const BatchBuffers& buffers, StepConfig config, cudaStream_t stream);
 void launch_console_step_kernel(const BatchBuffers& buffers,
                                 StepConfig config,
                                 std::uint64_t max_instructions_per_frame,
+                                ConsoleStepStats stats,
                                 cudaStream_t stream);
 void launch_render_kernel(const BatchBuffers& buffers, StepConfig config, cudaStream_t stream);
 void launch_reset_envs_kernel(const BatchBuffers& buffers,

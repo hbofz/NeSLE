@@ -19,13 +19,17 @@ __global__ void step_reward_kernel(BatchBuffers buffers, std::uint32_t num_envs)
 __global__ void console_step_kernel(BatchBuffers buffers,
                                     std::uint32_t num_envs,
                                     std::uint32_t frameskip,
-                                    std::uint64_t max_instructions_per_frame) {
+                                    std::uint64_t max_instructions_per_frame,
+                                    ConsoleStepStats stats) {
     const auto env = blockIdx.x * blockDim.x + threadIdx.x;
     if (env >= num_envs) {
         return;
     }
 
     auto state = load_cpu_state(buffers, env);
+    std::uint64_t total_instructions = 0;
+    std::uint32_t total_frames_completed = 0;
+    std::uint32_t budget_hits = 0;
     for (std::uint32_t frame = 0; frame < frameskip; ++frame) {
         std::uint64_t instructions = 0;
         std::uint32_t frames_completed = 0;
@@ -34,10 +38,24 @@ __global__ void console_step_kernel(BatchBuffers buffers,
             ++instructions;
             frames_completed += step.frames_completed;
         }
+        total_instructions += instructions;
+        total_frames_completed += frames_completed;
+        if (frames_completed == 0 && instructions >= max_instructions_per_frame) {
+            ++budget_hits;
+        }
     }
     store_cpu_state(buffers, env, state);
 
     apply_batch_reward_env(buffers, env);
+    if (stats.instructions != nullptr) {
+        stats.instructions[env] = total_instructions;
+    }
+    if (stats.frames_completed != nullptr) {
+        stats.frames_completed[env] = total_frames_completed;
+    }
+    if (stats.budget_hits != nullptr) {
+        stats.budget_hits[env] = budget_hits;
+    }
 }
 
 __global__ void render_rgb_kernel(BatchBuffers buffers, std::uint32_t num_envs) {
@@ -58,6 +76,7 @@ void launch_step_kernel(const BatchBuffers& buffers, StepConfig config, cudaStre
 void launch_console_step_kernel(const BatchBuffers& buffers,
                                 StepConfig config,
                                 std::uint64_t max_instructions_per_frame,
+                                ConsoleStepStats stats,
                                 cudaStream_t stream) {
     constexpr int kThreads = 128;
     const int blocks = static_cast<int>((config.num_envs + kThreads - 1) / kThreads);
@@ -65,7 +84,8 @@ void launch_console_step_kernel(const BatchBuffers& buffers,
         buffers,
         config.num_envs,
         config.frameskip,
-        max_instructions_per_frame);
+        max_instructions_per_frame,
+        stats);
 }
 
 void launch_render_kernel(const BatchBuffers& buffers, StepConfig config, cudaStream_t stream) {
