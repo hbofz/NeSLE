@@ -110,6 +110,16 @@ __global__ void apply_actions_kernel(nesle::cuda::BatchBuffers buffers,
     }
 }
 
+__global__ void poke_cpu_ram_kernel(nesle::cuda::BatchBuffers buffers,
+                                    std::uint32_t num_envs,
+                                    std::uint16_t address,
+                                    std::uint8_t value) {
+    const auto env = blockIdx.x * blockDim.x + threadIdx.x;
+    if (env < num_envs) {
+        nesle::cuda::env_cpu_ram(buffers, env)[address & 0x07FF] = value;
+    }
+}
+
 class CudaBatchBinding {
 public:
     CudaBatchBinding(std::uint32_t num_envs, std::uint32_t frameskip)
@@ -454,6 +464,14 @@ public:
         check_cuda(cudaDeviceSynchronize(), "reset_envs synchronize");
     }
 
+    void poke_ram(std::uint16_t address, std::uint8_t value) {
+        constexpr int kThreads = 256;
+        const auto blocks = static_cast<int>((num_env_ + kThreads - 1) / kThreads);
+        poke_cpu_ram_kernel<<<blocks, kThreads>>>(buffers_, num_env_, address, value);
+        check_cuda(cudaGetLastError(), "poke_cpu_ram_kernel");
+        check_cuda(cudaDeviceSynchronize(), "poke_ram synchronize");
+    }
+
     std::string name() const {
         return use_console_ ? "cuda-console" : "cuda";
     }
@@ -787,5 +805,6 @@ PYBIND11_MODULE(_cuda_core, m) {
         .def("render", &CudaBatchBinding::render)
         .def("ram", &CudaBatchBinding::ram)
         .def("reset_envs", &CudaBatchBinding::reset_envs, py::arg("mask"))
+        .def("poke_ram", &CudaBatchBinding::poke_ram, py::arg("address"), py::arg("value"))
         .def_property_readonly("name", &CudaBatchBinding::name);
 }

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import time
 
 import nesle
 
@@ -20,10 +21,17 @@ def main() -> None:
     parser.add_argument("--policy", default="auto", choices=["auto", "MlpPolicy", "CnnPolicy"])
     parser.add_argument("--sb3-device", default="auto")
     parser.add_argument("--model-path", default="nesle_ppo")
+    parser.add_argument("--start-on-reset", action="store_true", help="Boot each reset into controllable gameplay.")
+    parser.add_argument("--reset-wait-steps", type=int, default=10)
+    parser.add_argument("--reset-start-steps", type=int, default=2)
+    parser.add_argument("--reset-post-start-steps", type=int, default=60)
+    parser.add_argument("--progress-bar", action="store_true")
+    parser.add_argument("--progress-interval", type=float, default=1.0)
     args = parser.parse_args()
 
     try:
         from stable_baselines3 import PPO
+        from stable_baselines3.common.callbacks import BaseCallback
     except ImportError as exc:
         raise SystemExit("Install the 'rl' extra to run this example: pip install -e '.[rl]'") from exc
     try:
@@ -41,6 +49,60 @@ def main() -> None:
             "Install a CUDA-enabled PyTorch build or use --sb3-device cpu."
         )
 
+    class ProgressCallback(BaseCallback):
+        def __init__(self, total_timesteps: int, interval_sec: float) -> None:
+            super().__init__()
+            self.total_timesteps = max(1, int(total_timesteps))
+            self.interval_sec = max(0.1, float(interval_sec))
+            self.last_update = 0.0
+            self.bar = None
+
+        def _on_training_start(self) -> None:
+            self.last_update = time.monotonic()
+            try:
+                from tqdm.auto import tqdm
+            except ImportError:
+                self._print_progress()
+                return
+            self.bar = tqdm(total=self.total_timesteps, desc="training", unit="steps")
+
+        def _on_step(self) -> bool:
+            current = min(self.num_timesteps, self.total_timesteps)
+            if self.bar is not None:
+                delta = current - self.bar.n
+                if delta > 0:
+                    self.bar.update(delta)
+                return True
+            now = time.monotonic()
+            if now - self.last_update >= self.interval_sec or current >= self.total_timesteps:
+                self._print_progress()
+                self.last_update = now
+            return True
+
+        def _on_training_end(self) -> None:
+            current = min(self.num_timesteps, self.total_timesteps)
+            if self.bar is not None:
+                delta = current - self.bar.n
+                if delta > 0:
+                    self.bar.update(delta)
+                self.bar.close()
+            else:
+                self._print_progress()
+                print()
+
+        def _print_progress(self) -> None:
+            current = min(self.num_timesteps, self.total_timesteps)
+            frac = current / self.total_timesteps
+            width = 32
+            filled = int(width * frac)
+            bar = "#" * filled + "-" * (width - filled)
+            print(
+                f"\rtraining [{bar}] {frac * 100:6.2f}% "
+                f"{current}/{self.total_timesteps}",
+                end="",
+                flush=True,
+            )
+
     env = nesle.make_vec(
         rom_path=args.rom_path,
         num_envs=args.num_envs,
@@ -50,6 +112,10 @@ def main() -> None:
         backend=args.backend,
         render_mode="rgb_array",
         observation_mode=args.observation_mode,
+        start_on_reset=args.start_on_reset,
+        reset_wait_steps=args.reset_wait_steps,
+        reset_start_steps=args.reset_start_steps,
+        reset_post_start_steps=args.reset_post_start_steps,
     )
     env_backend = "unknown"
     if getattr(env, "_cuda_batch", None) is not None:
@@ -83,7 +149,8 @@ def main() -> None:
         batch_size=args.batch_size,
         device=args.sb3_device,
     )
-    model.learn(total_timesteps=args.timesteps)
+    callback = ProgressCallback(args.timesteps, args.progress_interval) if args.progress_bar else None
+    model.learn(total_timesteps=args.timesteps, callback=callback)
     model.save(args.model_path)
     env.close()
 

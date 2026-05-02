@@ -151,6 +151,24 @@ class EnvTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             env.step([1])
 
+    def test_start_on_reset_marks_infos_and_preserves_episode_count(self):
+        env = NesleVecEnv(
+            str(self.rom_path),
+            num_envs=2,
+            backend="synthetic",
+            observation_mode="ram",
+            start_on_reset=True,
+            reset_wait_steps=1,
+            reset_start_steps=1,
+            reset_post_start_steps=1,
+            max_episode_steps=1,
+        )
+        obs = env.reset()
+        self.assertEqual(obs.shape, (2, CPU_RAM_BYTES))
+        self.assertTrue(env.reset_infos[0]["start_on_reset"])
+        _, _, dones, _ = env.step([1, 1])
+        self.assertTrue(dones.all())
+
 
 if __name__ == "__main__":
     unittest.main()
