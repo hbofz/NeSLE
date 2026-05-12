@@ -293,7 +293,9 @@ python examples/eval_smoke.py --model nesle_ppo_curriculum --steps 200
 Important: `backend="cuda"` means NeSLE's emulator runs on CUDA. It does not
 guarantee that SB3/PyTorch policy training runs on the GPU. Check
 `torch.cuda.is_available()` and use `--sb3-device cuda` only after installing a
-CUDA-enabled PyTorch wheel. See [Training](docs/training.md).
+CUDA-enabled PyTorch wheel. For RAM observations with `MlpPolicy`,
+`--sb3-device cpu` can still be faster because NeSLE returns CPU NumPy rollout
+buffers and the policy network is small. See [Training](docs/training.md).
 
 For Colab/A100, use
 [notebooks/nesle_colab_a100_training.ipynb](notebooks/nesle_colab_a100_training.ipynb).

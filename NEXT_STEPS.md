@@ -62,6 +62,10 @@ There are two separate GPU pieces:
 That means both environment stepping and PPO's neural network placement can run
 on GPU when training is launched with `--sb3-device cuda`.
 
+For the current RAM-observation `MlpPolicy` setup, keep `backend cuda` but
+measure `--sb3-device cpu` versus `--sb3-device cuda`. CPU policy placement can
+be faster because SB3 rollouts are CPU NumPy arrays and the MLP is tiny.
+
 Check with:
 
 ```powershell
