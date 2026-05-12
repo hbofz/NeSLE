@@ -19,6 +19,7 @@ def main() -> None:
     p.add_argument("--model", default="nesle_ppo_smoke3")
     p.add_argument("--state", default="docs/data/smb_level1_1.state")
     p.add_argument("--steps", type=int, default=200)
+    p.add_argument("--device", default="auto", help="Device used when loading the PPO model.")
     args = p.parse_args()
 
     env = nesle.make_vec(
@@ -29,7 +30,7 @@ def main() -> None:
         action_space="simple",
         reset_state_path=args.state,
     )
-    model = PPO.load(args.model, env=env, device="cpu")
+    model = PPO.load(args.model, env=env, device=args.device)
     print(f"loaded {args.model}.zip; rolling out {args.steps} steps on cuda-console + snapshot reset")
 
     obs = env.reset()
