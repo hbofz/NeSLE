@@ -523,6 +523,17 @@ def write_json(path: Path, payload: Any) -> None:
     path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n")
 
 
+def read_result_rows(path: Path) -> list[dict[str, Any]]:
+    if not path.is_file():
+        return []
+    try:
+        payload = json.loads(path.read_text())
+    except json.JSONDecodeError:
+        return []
+    results = payload.get("results", [])
+    return results if isinstance(results, list) else []
+
+
 def write_csv(path: Path, rows: Sequence[dict[str, Any]]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     flat_rows = [flatten(row) for row in rows]
@@ -686,11 +697,15 @@ def main() -> None:
         write_json(output_dir / "nesle_a100_native_ppo_stress.json", {"metadata": metadata, "results": result_dicts(ppo_results)})
 
     if args.command in {"env-sweep", "ppo-sweep", "stress", "all"}:
+        env_rows = result_dicts(env_results) or read_result_rows(output_dir / "nesle_a100_limits.json")
+        ppo_rows = result_dicts(ppo_results) or read_result_rows(output_dir / "nesle_a100_native_ppo.json")
+        if args.command == "stress" and result_dicts(ppo_results):
+            ppo_rows = result_dicts(ppo_results)
         write_report(
             output_dir / "nesle_a100_report.md",
             metadata,
-            result_dicts(env_results),
-            result_dicts(ppo_results),
+            env_rows,
+            ppo_rows,
         )
 
 
