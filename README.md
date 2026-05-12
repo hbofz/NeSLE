@@ -11,12 +11,14 @@ PPU, input, rendering, and OpenEmu reference gates. Phase 3 moved the emulator
 correctness contract into CUDA batch execution. Phase 4 added the Gymnasium/SB3
 Python API. Phases 5 and 6 package the ROM-backed CUDA console backend,
 benchmarks, A100 results, and high-throughput RAM-observation training path.
+The current training branch adds Stable Retro/FCEUX snapshot resets, multi-level
+curriculum startup, render freshness fixes, and SB3 logging/evaluation helpers.
 
 ## Current Status
 
 The current path covers the completed CPU emulator, CUDA batch execution,
-Gymnasium/SB3 Python API, ROM-backed CUDA console backend, and Phase 6
-benchmark package:
+Gymnasium/SB3 Python API, ROM-backed CUDA console backend, Phase 6 benchmark
+package, and the first practical training unblock:
 
 - 2A03/6502 state and official-opcode execution core
 - Flat 64 KB test bus, NROM memory-map smoke tests, and NES console CPU bus
@@ -41,12 +43,33 @@ benchmark package:
   CUDA
 - `observation_mode="ram"` for normal vector stepping without full RGB host
   copies, plus `render()` for explicit RGB frame capture
+- FCEUX/Stable Retro `.state` snapshot reset through `reset_state_path`, which
+  starts episodes directly in playable SMB levels instead of relying on the
+  fragile title-screen boot path
+- Multi-level curriculum reset through `reset_state_paths` and optional
+  `env_to_level`, with bundled World 1-1 through World 8-1 snapshots in
+  `docs/data/`
+- CUDA render freshness regression coverage: explicit `render()` now launches
+  the render kernel after no-copy throughput steps
+- SB3 training helper wraps `VecMonitor`, exposes snapshot/curriculum flags, and
+  prints the NeSLE backend plus the PyTorch device
+- GPU-vs-CPU throughput and falsifiability checks for the local GTX 1050 Ti
 
 ## Quick Verification
 
 ```sh
 sh scripts/verify.sh
 ```
+
+On Windows, the Python tests are the most reliable first gate:
+
+```powershell
+.\.venv\Scripts\python.exe -m pytest tests -q
+```
+
+The shell scripts under `scripts/` are POSIX-oriented and expect `sh`, `c++`,
+and `/tmp`; use Git Bash/WSL or translate the individual commands when running
+on plain PowerShell.
 
 Phase 4 API checks can also be run directly:
 
@@ -147,6 +170,19 @@ PYTHONPATH=src python benchmarks/phase5_benchmark.py \
 Current A100 calibration notes are tracked in
 [docs/phase5-results.md](docs/phase5-results.md).
 
+Local GTX 1050 Ti benchmark:
+
+```sh
+python benchmarks/gpu_vs_cpu.py
+python benchmarks/verify_correctness.py
+```
+
+The benchmark compares native CPU single-env stepping with batched
+`cuda-console` stepping from the W1-1 snapshot. The correctness script verifies
+different actions diverge, each env runs plausible CPU work, and randomized
+envs evolve into distinct RAM states. Latest local numbers are tracked in
+[docs/benchmark-gpu-vs-cpu.md](docs/benchmark-gpu-vs-cpu.md).
+
 ## Target API
 
 The end state is:
@@ -161,6 +197,7 @@ env = nesle.make_vec(
     backend="cuda",
     render_mode="rgb_array",
     observation_mode="ram",
+    reset_state_path="docs/data/smb_level1_1.state",
 )
 
 obs = env.reset()
@@ -172,6 +209,31 @@ frames = env.render()
 while returning compact 2 KB CPU RAM observations instead of copying full RGB
 frames every step. RGB frames remain available through `render()` for debugging,
 evaluation, and video capture.
+
+For curriculum training, pass multiple snapshot paths:
+
+```python
+env = nesle.make_vec(
+    rom_path="Super Mario Bros. (World).nes",
+    num_envs=4096,
+    action_space="simple",
+    backend="cuda",
+    observation_mode="ram",
+    reset_state_paths=[
+        "docs/data/smb_level1_1.state",
+        "docs/data/smb_level2_1.state",
+        "docs/data/smb_level3_1.state",
+        "docs/data/smb_level4_1.state",
+        "docs/data/smb_level5_1.state",
+        "docs/data/smb_level6_1.state",
+        "docs/data/smb_level7_1.state",
+        "docs/data/smb_level8_1.state",
+    ],
+)
+```
+
+By default envs are assigned round-robin across the provided snapshots. Pass
+`env_to_level` for explicit per-env assignment.
 
 For custom CUDA loops that only need rewards and done flags:
 
@@ -191,6 +253,7 @@ python -m pip install -e '.[rl]'
 python examples/sb3_train.py "Super Mario Bros. (World).nes" \
   --backend cuda \
   --observation-mode ram \
+  --reset-state-path docs/data/smb_level1_1.state \
   --num-envs 512 \
   --n-steps 128
 ```
@@ -199,6 +262,35 @@ The starter defaults to `observation_mode="ram"` and `MlpPolicy` so SB3 does
 not build giant CPU rollout buffers from stacked RGB frames. Use
 `--observation-mode rgb_array --policy CnnPolicy` only for explicit visual-policy
 experiments; that path copies RGB frames back to host RAM every step.
+
+For multi-level curriculum training:
+
+```sh
+python examples/sb3_train.py "Super Mario Bros. (World).nes" \
+  --backend cuda \
+  --observation-mode ram \
+  --reset-state-paths \
+    docs/data/smb_level1_1.state docs/data/smb_level2_1.state \
+    docs/data/smb_level3_1.state docs/data/smb_level4_1.state \
+    docs/data/smb_level5_1.state docs/data/smb_level6_1.state \
+    docs/data/smb_level7_1.state docs/data/smb_level8_1.state \
+  --num-envs 4096 \
+  --timesteps 10000000 \
+  --n-steps 128 \
+  --batch-size 256 \
+  --model-path nesle_ppo_curriculum
+```
+
+After training, run a quick rollout:
+
+```sh
+python examples/eval_smoke.py --model nesle_ppo_curriculum --steps 200
+```
+
+Important: `backend="cuda"` means NeSLE's emulator runs on CUDA. It does not
+guarantee that SB3/PyTorch policy training runs on the GPU. Check
+`torch.cuda.is_available()` and use `--sb3-device cuda` only after installing a
+CUDA-enabled PyTorch wheel. See [Training](docs/training.md).
 
 Legacy `nes-py` and `gym-super-mario-bros` comparison dependencies are kept in
 the `legacy-mario` extra for benchmark work.
@@ -214,3 +306,4 @@ the `legacy-mario` extra for benchmark work.
 - [Headless runner](docs/headless-runner.md)
 - [Phase 5 results](docs/phase5-results.md)
 - [GPU vs CPU benchmark (GTX 1050 Ti)](docs/benchmark-gpu-vs-cpu.md)
+- [Training](docs/training.md)
