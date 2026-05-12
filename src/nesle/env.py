@@ -16,6 +16,7 @@ except ImportError:  # pragma: no cover - only hit in broken local installs
 from .actions import (
     COMPLEX_MOVEMENT_MASKS,
     RIGHT_ONLY_MASKS,
+    MARIO_MOVEMENT_MASKS,
     SIMPLE_MOVEMENT_MASKS,
     SIMPLE_MOVEMENT_WITH_START_MASKS,
 )
@@ -126,6 +127,8 @@ def _action_masks(action_space: str | Sequence[int]) -> tuple[int, ...]:
             return SIMPLE_MOVEMENT_WITH_START_MASKS
         if key == "complex":
             return COMPLEX_MOVEMENT_MASKS
+        if key == "mario":
+            return MARIO_MOVEMENT_MASKS
         if key in {"full", "raw"}:
             return tuple(range(256))
         raise ValueError(f"unknown action space: {action_space!r}")
