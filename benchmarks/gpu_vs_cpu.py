@@ -2,14 +2,14 @@
 
 Both backends:
 - Run the same SMB ROM
-- Use frameskip=4 (4 emulator frames per step call) — same as RL default
+- Use frameskip=4 (4 emulator frames per step call) - same as RL default
 - Use RIGHT for every action (eliminates random-policy noise)
 - Are warmed up before timing (no first-step JIT / cuMemcpyAsync penalty)
 - Are timed over a fixed step budget
 
 Reports:
 - env-steps/sec (one step = one env.step call advancing one env by frameskip frames)
-- frame-steps/sec (one step × frameskip = N effective NES frames simulated)
+- frame-steps/sec (one step x frameskip = N effective NES frames simulated)
 - relative speedup vs the single-env CPU baseline
 """
 from __future__ import annotations
@@ -23,9 +23,11 @@ import numpy as np
 import nesle
 from nesle._cuda_core import CudaBatch
 
-REPO = Path(__file__).resolve().parent
-ROM_BYTES = (REPO / "Super Mario Bros. (World).nes").read_bytes()
-STATE_BYTES = gzip.decompress((REPO / "docs/data/smb_level1_1.state").read_bytes())
+REPO_ROOT = Path(__file__).resolve().parents[1]
+ROM_PATH = REPO_ROOT / "Super Mario Bros. (World).nes"
+STATE_PATH = REPO_ROOT / "docs" / "data" / "smb_level1_1.state"
+ROM_BYTES = ROM_PATH.read_bytes()
+STATE_BYTES = gzip.decompress(STATE_PATH.read_bytes())
 FRAMESKIP = 4
 WARMUP_STEPS = 30
 TIMED_STEPS = 200
@@ -34,7 +36,7 @@ RIGHT_RAW = 0x80
 
 def bench_cpu_single() -> dict:
     env = nesle.make(
-        rom_path=str(REPO / "Super Mario Bros. (World).nes"),
+        rom_path=str(ROM_PATH),
         backend="native",
         observation_mode="ram",
         action_space="raw",
@@ -49,7 +51,7 @@ def bench_cpu_single() -> dict:
         env.step(RIGHT_RAW)
     elapsed = time.perf_counter() - t0
     env.close()
-    env_steps = TIMED_STEPS  # 1 env × N step calls
+    env_steps = TIMED_STEPS  # 1 env x N step calls
     return {
         "label": "native CPU (1 env)",
         "num_envs": 1,
@@ -97,7 +99,7 @@ def fmt_row(r: dict, baseline_eps: float) -> str:
 
 
 def main() -> None:
-    print(f"NeSLE benchmark — frameskip={FRAMESKIP}, action=RIGHT, "
+    print(f"NeSLE benchmark - frameskip={FRAMESKIP}, action=RIGHT, "
           f"warmup={WARMUP_STEPS}, timed={TIMED_STEPS} steps per run")
     print(f"ROM:    Super Mario Bros. (World).nes ({len(ROM_BYTES):,} bytes)")
     print(f"Reset:  Stable Retro Level 1-1 snapshot (start of W1-1)")
