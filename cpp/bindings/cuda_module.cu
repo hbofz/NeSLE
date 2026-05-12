@@ -24,6 +24,65 @@ namespace {
 constexpr std::uint32_t kFrameBytes =
     nesle::cuda::kFrameWidth * nesle::cuda::kFrameHeight * nesle::cuda::kRgbChannels;
 
+enum DLDeviceType : std::int32_t {
+    kDLCUDA = 2,
+};
+
+enum DLDataTypeCode : std::uint8_t {
+    kDLUInt = 1,
+    kDLFloat = 2,
+};
+
+struct DLDevice {
+    DLDeviceType device_type;
+    std::int32_t device_id;
+};
+
+struct DLDataType {
+    std::uint8_t code;
+    std::uint8_t bits;
+    std::uint16_t lanes;
+};
+
+struct DLTensor {
+    void* data;
+    DLDevice device;
+    std::int32_t ndim;
+    DLDataType dtype;
+    std::int64_t* shape;
+    std::int64_t* strides;
+    std::uint64_t byte_offset;
+};
+
+struct DLManagedTensor {
+    DLTensor dl_tensor;
+    void* manager_ctx;
+    void (*deleter)(DLManagedTensor* self);
+};
+
+struct DLManagedTensorContext {
+    DLManagedTensor managed{};
+    std::vector<std::int64_t> shape;
+};
+
+DLDataType dlpack_dtype(const std::string& typestr) {
+    if (typestr == "|u1" || typestr == "<u1") {
+        return DLDataType{kDLUInt, 8, 1};
+    }
+    if (typestr == "<f4") {
+        return DLDataType{kDLFloat, 32, 1};
+    }
+    throw std::invalid_argument("unsupported DLPack dtype: " + typestr);
+}
+
+void dlpack_deleter(DLManagedTensor* self) {
+    if (self == nullptr) {
+        return;
+    }
+    auto* ctx = static_cast<DLManagedTensorContext*>(self->manager_ctx);
+    delete ctx;
+}
+
 class CudaDeviceArrayView {
 public:
     CudaDeviceArrayView(std::uintptr_t ptr,
@@ -48,7 +107,40 @@ public:
         return out;
     }
 
+    py::tuple dlpack_device() const {
+        return py::make_tuple(static_cast<std::int32_t>(kDLCUDA), 0);
+    }
+
+    py::capsule dlpack(py::object stream = py::none()) const {
+        del_stream(stream);
+        auto* ctx = new DLManagedTensorContext();
+        ctx->shape.reserve(shape_.size());
+        for (const auto dim : shape_) {
+            ctx->shape.push_back(static_cast<std::int64_t>(dim));
+        }
+        ctx->managed.dl_tensor.data = reinterpret_cast<void*>(ptr_);
+        ctx->managed.dl_tensor.device = DLDevice{kDLCUDA, 0};
+        ctx->managed.dl_tensor.ndim = static_cast<std::int32_t>(ctx->shape.size());
+        ctx->managed.dl_tensor.dtype = dlpack_dtype(typestr_);
+        ctx->managed.dl_tensor.shape = ctx->shape.data();
+        ctx->managed.dl_tensor.strides = nullptr;
+        ctx->managed.dl_tensor.byte_offset = 0;
+        ctx->managed.manager_ctx = ctx;
+        ctx->managed.deleter = dlpack_deleter;
+        return py::capsule(&ctx->managed, "dltensor", [](PyObject* capsule) {
+            if (PyCapsule_IsValid(capsule, "dltensor")) {
+                auto* managed =
+                    static_cast<DLManagedTensor*>(PyCapsule_GetPointer(capsule, "dltensor"));
+                if (managed != nullptr && managed->deleter != nullptr) {
+                    managed->deleter(managed);
+                }
+            }
+        });
+    }
+
 private:
+    static void del_stream(const py::object&) {}
+
     std::uintptr_t ptr_ = 0;
     std::vector<py::ssize_t> shape_;
     std::string typestr_;
@@ -111,6 +203,32 @@ std::uint16_t reset_vector_from_prg(const std::vector<std::uint8_t>& prg_rom) {
 std::uintptr_t cuda_array_pointer(const py::object& object,
                                   std::uint32_t expected_len,
                                   std::string* typestr_out) {
+    if (py::hasattr(object, "data_ptr") && py::hasattr(object, "is_cuda")) {
+        if (!object.attr("is_cuda").cast<bool>()) {
+            throw std::invalid_argument("expected CUDA actions, got a CPU tensor");
+        }
+        if (py::hasattr(object, "is_contiguous") &&
+            !object.attr("is_contiguous")().cast<bool>()) {
+            throw std::invalid_argument("CUDA action tensor must be contiguous");
+        }
+        const auto shape = object.attr("shape").cast<py::tuple>();
+        if (shape.size() != 1 || shape[0].cast<std::uint32_t>() != expected_len) {
+            std::ostringstream msg;
+            msg << "CUDA action tensor must have shape (" << expected_len << ",)";
+            throw std::invalid_argument(msg.str());
+        }
+        const auto dtype = py::str(object.attr("dtype")).cast<std::string>();
+        if (typestr_out != nullptr) {
+            if (dtype == "torch.uint8") {
+                *typestr_out = "|u1";
+            } else if (dtype == "torch.int64") {
+                *typestr_out = "<i8";
+            } else {
+                throw std::invalid_argument("CUDA actions must have dtype torch.uint8 or torch.int64");
+            }
+        }
+        return object.attr("data_ptr")().cast<std::uintptr_t>();
+    }
     if (!py::hasattr(object, "__cuda_array_interface__")) {
         throw std::invalid_argument(
             "expected a CUDA tensor/array exposing __cuda_array_interface__");
@@ -1284,7 +1402,9 @@ PYBIND11_MODULE(_cuda_core, m) {
 
     py::class_<CudaDeviceArrayView>(m, "CudaDeviceArrayView")
         .def_property_readonly("__cuda_array_interface__",
-                               &CudaDeviceArrayView::cuda_array_interface);
+                               &CudaDeviceArrayView::cuda_array_interface)
+        .def("__dlpack__", &CudaDeviceArrayView::dlpack, py::arg("stream") = py::none())
+        .def("__dlpack_device__", &CudaDeviceArrayView::dlpack_device);
 
     m.def(
         "parse_fcs_state",
