@@ -33,6 +33,7 @@ class NativePPOConfig:
     vf_coef: float = 0.5
     max_grad_norm: float = 0.5
     hidden_size: int = 256
+    reward_mode: str = "minimal"
     seed: int = 1
     checkpoint_path: str = "nesle_native_ppo.pt"
     log_interval: int = 1
@@ -94,6 +95,215 @@ def _device_tensor(view):
     if hasattr(view, "__dlpack__"):
         return torch.utils.dlpack.from_dlpack(view)
     return torch.as_tensor(view, device=torch.device("cuda"))
+
+
+def _read_bcd(ram, address: int, length: int):
+    torch, _, _ = _require_torch()
+    value = (ram[:, address] & 0x0F).to(dtype=torch.int32)
+    for offset in range(1, length):
+        value = value * 10 + (ram[:, address + offset] & 0x0F).to(dtype=torch.int32)
+    return value
+
+
+class TorchSmartMarioReward:
+    """GPU RAM reward shaped like mario_rl.rewards.SmartMarioReward for SMB 1-1."""
+
+    x_page = 0x006D
+    x_screen = 0x0086
+    y_viewport = 0x00B5
+    player_state = 0x000E
+    lives = 0x075A
+    world = 0x075F
+    stage = 0x075C
+    area = 0x0760
+    game_mode = 0x0770
+    coins_digits = 0x07ED
+    score_digits = 0x07DE
+
+    progress_scale = 0.18
+    backtrack_scale = 0.03
+    checkpoint_bonus = 3.0
+    checkpoint_width = 128.0
+    score_scale = 0.04
+    coin_bonus = 3.0
+    kill_bonus = 8.0
+    finish_zone_x = 3100.0
+    finish_zone_bonus = 100.0
+    flag_zone_x = 3300.0
+    flag_bonus = 100.0
+    death_penalty = 75.0
+    time_penalty = 0.005
+    stall_penalty = 0.02
+    stall_window = 40
+    max_stall_penalty = 0.5
+    jump_penalty = 0.005
+    neutral_jump_penalty = 0.02
+    repeated_jump_penalty = 0.02
+    repeated_jump_window = 6
+    max_repeated_jump_penalty = 0.25
+    left_penalty = 0.01
+    bad_button_penalty = 0.25
+
+    def __init__(self, num_envs: int) -> None:
+        torch, _, _ = _require_torch()
+        device = torch.device("cuda")
+        self.last_x = torch.zeros(num_envs, dtype=torch.float32, device=device)
+        self.max_x = torch.zeros(num_envs, dtype=torch.float32, device=device)
+        self.checkpoint_index = torch.zeros(num_envs, dtype=torch.int32, device=device)
+        self.last_score = torch.zeros(num_envs, dtype=torch.float32, device=device)
+        self.last_coins = torch.zeros(num_envs, dtype=torch.int32, device=device)
+        self.last_lives = torch.zeros(num_envs, dtype=torch.int32, device=device)
+        self.last_level = torch.zeros(num_envs, dtype=torch.int32, device=device)
+        self.stall_steps = torch.zeros(num_envs, dtype=torch.int32, device=device)
+        self.jump_streak = torch.zeros(num_envs, dtype=torch.int32, device=device)
+        self.finish_awarded = torch.zeros(num_envs, dtype=torch.bool, device=device)
+        self.flag_awarded = torch.zeros(num_envs, dtype=torch.bool, device=device)
+
+    def reset(self, ram) -> None:
+        self.reset_where(None, ram)
+
+    def reset_where(self, mask, ram) -> None:
+        torch, _, _ = _require_torch()
+        x = self._x_pos(ram)
+        score = self._score(ram).float()
+        coins = self._coins(ram)
+        lives = ram[:, self.lives].to(torch.int32)
+        level = self._level(ram)
+        if mask is None:
+            self.last_x.copy_(x)
+            self.max_x.copy_(x)
+            self.checkpoint_index.zero_()
+            self.last_score.copy_(score)
+            self.last_coins.copy_(coins)
+            self.last_lives.copy_(lives)
+            self.last_level.copy_(level)
+            self.stall_steps.zero_()
+            self.jump_streak.zero_()
+            self.finish_awarded.zero_()
+            self.flag_awarded.zero_()
+            return
+        self.last_x[mask] = x[mask]
+        self.max_x[mask] = x[mask]
+        self.checkpoint_index[mask] = 0
+        self.last_score[mask] = score[mask]
+        self.last_coins[mask] = coins[mask]
+        self.last_lives[mask] = lives[mask]
+        self.last_level[mask] = level[mask]
+        self.stall_steps[mask] = 0
+        self.jump_streak[mask] = 0
+        self.finish_awarded[mask] = False
+        self.flag_awarded[mask] = False
+
+    def compute(self, ram, action_masks, done):
+        torch, _, _ = _require_torch()
+        x = self._x_pos(ram)
+        delta_x = x - self.last_x
+        forward = delta_x > 0
+        progress = torch.where(
+            forward,
+            torch.clamp(delta_x, max=16.0) * self.progress_scale,
+            torch.clamp(delta_x, min=-16.0) * self.backtrack_scale,
+        )
+        self.stall_steps = torch.where(
+            forward,
+            torch.zeros_like(self.stall_steps),
+            self.stall_steps + 1,
+        )
+        self.max_x = torch.maximum(self.max_x, x)
+        new_checkpoint_index = torch.floor(self.max_x / self.checkpoint_width).to(torch.int32)
+        checkpoint_delta = torch.clamp(new_checkpoint_index - self.checkpoint_index, min=0)
+        checkpoint = checkpoint_delta.float() * self.checkpoint_bonus
+        self.checkpoint_index = torch.maximum(self.checkpoint_index, new_checkpoint_index)
+
+        score = self._score(ram).float()
+        score_delta = torch.clamp(score - self.last_score, min=0.0)
+        coins = self._coins(ram)
+        coin_delta = coins - self.last_coins
+        coin_delta = torch.where(coin_delta < 0, coin_delta + 100, coin_delta)
+        coin_delta = torch.clamp(coin_delta, min=0)
+        score_reward = score_delta * self.score_scale
+        kill_score = score_delta - coin_delta.float() * 200.0
+        kill_reward = torch.where(kill_score >= 100.0, torch.full_like(score_reward, self.kill_bonus), torch.zeros_like(score_reward))
+        coin_reward = coin_delta.float() * self.coin_bonus
+
+        finish_hit = (~self.finish_awarded) & (self.max_x >= self.finish_zone_x)
+        finish_reward = torch.where(finish_hit, torch.full_like(score_reward, self.finish_zone_bonus), torch.zeros_like(score_reward))
+        self.finish_awarded |= finish_hit
+
+        is_death = self._is_death(ram)
+        flag_hit = (~self.flag_awarded) & (
+            (ram[:, self.game_mode] == 2)
+            | ((self.max_x >= self.flag_zone_x) & done & (~is_death))
+        )
+        flag_reward = torch.where(flag_hit, torch.full_like(score_reward, self.flag_bonus), torch.zeros_like(score_reward))
+        self.flag_awarded |= flag_hit
+
+        stall_over = torch.clamp((self.stall_steps - self.stall_window + 1).float(), min=0.0)
+        stall_reward = -torch.clamp(stall_over * self.stall_penalty, max=self.max_stall_penalty)
+
+        action_reward = self._action_reward(action_masks)
+        death_reward = torch.where(done & is_death, torch.full_like(score_reward, -self.death_penalty), torch.zeros_like(score_reward))
+        time_reward = torch.full_like(score_reward, -self.time_penalty)
+
+        self.last_x.copy_(x)
+        self.last_score.copy_(score)
+        self.last_coins.copy_(coins)
+        self.last_lives.copy_(ram[:, self.lives].to(torch.int32))
+        self.last_level.copy_(self._level(ram))
+
+        return (
+            progress
+            + checkpoint
+            + score_reward
+            + kill_reward
+            + coin_reward
+            + finish_reward
+            + flag_reward
+            + stall_reward
+            + action_reward
+            + death_reward
+            + time_reward
+        )
+
+    def _x_pos(self, ram):
+        torch, _, _ = _require_torch()
+        return (ram[:, self.x_page].to(torch.float32) * 256.0) + ram[:, self.x_screen].to(torch.float32)
+
+    def _coins(self, ram):
+        return _read_bcd(ram, self.coins_digits, 2)
+
+    def _score(self, ram):
+        return _read_bcd(ram, self.score_digits, 6)
+
+    def _level(self, ram):
+        torch, _, _ = _require_torch()
+        return (
+            ram[:, self.world].to(torch.int32) * 65536
+            + ram[:, self.stage].to(torch.int32) * 256
+            + ram[:, self.area].to(torch.int32)
+        )
+
+    def _is_death(self, ram):
+        state = ram[:, self.player_state]
+        return (state == 0x0B) | (state == 0x06) | (ram[:, self.y_viewport] > 1) | (ram[:, self.lives] == 0xFF)
+
+    def _action_reward(self, action_masks):
+        torch, _, _ = _require_torch()
+        reward = torch.zeros(action_masks.shape[0], dtype=torch.float32, device=action_masks.device)
+        jump = (action_masks & 0x01) != 0
+        right = (action_masks & 0x80) != 0
+        left = (action_masks & 0x40) != 0
+        start = (action_masks & 0x08) != 0
+        select = (action_masks & 0x04) != 0
+        self.jump_streak = torch.where(jump, self.jump_streak + 1, torch.zeros_like(self.jump_streak))
+        reward -= jump.float() * self.jump_penalty
+        reward -= (jump & (~right)).float() * self.neutral_jump_penalty
+        repeated = torch.clamp((self.jump_streak - self.repeated_jump_window).float(), min=0.0)
+        reward -= torch.clamp(repeated * self.repeated_jump_penalty, max=self.max_repeated_jump_penalty)
+        reward -= left.float() * self.left_penalty
+        reward -= (left & right).float() * self.bad_button_penalty
+        reward -= (start | select).float() * self.bad_button_penalty
+        return reward
 
 
 def _load_checkpoint(path: str | None, model, optimizer) -> int:
@@ -195,6 +405,12 @@ def train_native_ppo(config: NativePPOConfig, resume_from: str | None = None) ->
             f"GPU memory out of bounds."
         )
     obs = _device_tensor(batch.ram_device())
+    rewarder = None
+    if config.reward_mode == "smart":
+        rewarder = TorchSmartMarioReward(config.num_envs)
+        rewarder.reset(obs)
+    elif config.reward_mode != "minimal":
+        raise ValueError(f"unknown reward mode: {config.reward_mode!r}")
     num_updates = max(1, math.ceil(config.total_timesteps / rollout_timesteps))
     planned_timesteps = num_updates * rollout_timesteps
 
@@ -216,6 +432,7 @@ def train_native_ppo(config: NativePPOConfig, resume_from: str | None = None) ->
         "native_ppo "
         f"backend={batch.name} envs={config.num_envs} n_steps={config.n_steps} "
         f"batch={config.batch_size} action_space={config.action_space} "
+        f"reward_mode={config.reward_mode} "
         f"target_steps={config.total_timesteps} planned_steps={planned_timesteps}"
     )
 
@@ -236,22 +453,36 @@ def train_native_ppo(config: NativePPOConfig, resume_from: str | None = None) ->
                 values_buf[step].copy_(value)
 
                 action_masks = action_mask_table[action].contiguous()
-                step_out = batch.step_device(action_masks, auto_reset=True, synchronize=True)
-                reward = _device_tensor(step_out["rewards"])
-                done_u8 = _device_tensor(step_out["dones"])
+                step_out = batch.step_device(action_masks, auto_reset=False, synchronize=True)
+                raw_done = _device_tensor(step_out["dones"]).bool()
+                ram = _device_tensor(step_out["ram"])
+                if rewarder is None:
+                    reward = _device_tensor(step_out["rewards"])
+                else:
+                    reward = rewarder.compute(ram, action_masks, raw_done)
+                episode_lengths += 1.0
+                if config.max_episode_steps > 0:
+                    timeout_done = episode_lengths >= float(config.max_episode_steps)
+                    done_bool = raw_done | timeout_done
+                else:
+                    done_bool = raw_done
                 rewards_buf[step].copy_(reward)
-                next_done = done_u8.float()
+                next_done = done_bool.float()
 
                 episode_returns += reward
-                episode_lengths += 1.0
-                if bool(done_u8.any().item()):
-                    done_indices = done_u8.nonzero().flatten()
+                if bool(done_bool.any().item()):
+                    done_indices = done_bool.nonzero().flatten()
                     recent_returns.extend(episode_returns[done_indices].detach().cpu().tolist())
                     recent_lengths.extend(episode_lengths[done_indices].detach().cpu().tolist())
+                    reset_mask = done_bool.detach().to(torch.uint8).cpu().numpy()
+                    batch.reset_envs(reset_mask)
+                    obs = _device_tensor(batch.ram_device())
+                    if rewarder is not None:
+                        rewarder.reset_where(done_bool, obs)
                     episode_returns[done_indices] = 0.0
                     episode_lengths[done_indices] = 0.0
-
-                obs = _device_tensor(step_out["ram"])
+                else:
+                    obs = ram
                 if progress is not None:
                     progress.update(config.num_envs)
 
@@ -404,6 +635,7 @@ def parse_args() -> tuple[NativePPOConfig, str | None]:
     parser.add_argument("--vf-coef", type=float, default=0.5)
     parser.add_argument("--max-grad-norm", type=float, default=0.5)
     parser.add_argument("--hidden-size", type=int, default=256)
+    parser.add_argument("--reward-mode", default="minimal", choices=["minimal", "smart"])
     parser.add_argument("--seed", type=int, default=1)
     parser.add_argument("--checkpoint-path", default="nesle_native_ppo.pt")
     parser.add_argument("--resume-from", default=None)
@@ -430,6 +662,7 @@ def parse_args() -> tuple[NativePPOConfig, str | None]:
         vf_coef=args.vf_coef,
         max_grad_norm=args.max_grad_norm,
         hidden_size=args.hidden_size,
+        reward_mode=args.reward_mode,
         seed=args.seed,
         checkpoint_path=args.checkpoint_path,
         log_interval=args.log_interval,

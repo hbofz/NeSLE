@@ -72,6 +72,10 @@ def test_parser_accepts_all_command_defaults() -> None:
     assert "65536" in args.env_counts
     assert "65536" in args.ppo_env_counts
     assert args.ppo_action_space == "mario"
+    assert args.ppo_reward_mode == "minimal"
+
+    smart_args = build_parser().parse_args(["ppo-sweep", "--ppo-reward-mode", "smart"])
+    assert smart_args.ppo_reward_mode == "smart"
 
 
 def test_parse_native_ppo_stdout_last_update() -> None:
