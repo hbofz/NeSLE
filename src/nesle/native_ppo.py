@@ -103,23 +103,38 @@ def _load_checkpoint(path: str | None, model, optimizer) -> int:
     if not checkpoint_path.exists():
         return 0
     torch, _, _ = _require_torch()
-    payload = torch.load(checkpoint_path, map_location="cuda")
+    # weights_only=False is required because we store NumPy RNG state (a numpy ndarray
+    # tuple) alongside the tensors. PyTorch 2.6+ defaults to weights_only=True, which
+    # disallows arbitrary pickled types. The checkpoints come from this codebase only —
+    # we trust them — so explicitly disable the restriction.
+    payload = torch.load(checkpoint_path, map_location="cuda", weights_only=False)
     model.load_state_dict(payload["model"])
     optimizer.load_state_dict(payload["optimizer"])
+    # Restore RNG state so a resumed run continues the same sample trajectory. Older
+    # checkpoints predate this, so each field is optional and the absence is silently
+    # tolerated; new checkpoints round-trip exactly.
+    if "torch_rng_state" in payload:
+        torch.set_rng_state(payload["torch_rng_state"].cpu())
+    if "cuda_rng_state" in payload and torch.cuda.is_available():
+        torch.cuda.set_rng_state(payload["cuda_rng_state"].cpu())
+    if "numpy_rng_state" in payload:
+        np.random.set_state(payload["numpy_rng_state"])
     return int(payload.get("global_step", 0))
 
 
 def _save_checkpoint(path: str, model, optimizer, config: NativePPOConfig, global_step: int) -> None:
     torch, _, _ = _require_torch()
-    torch.save(
-        {
-            "model": model.state_dict(),
-            "optimizer": optimizer.state_dict(),
-            "config": asdict(config),
-            "global_step": int(global_step),
-        },
-        path,
-    )
+    payload = {
+        "model": model.state_dict(),
+        "optimizer": optimizer.state_dict(),
+        "config": asdict(config),
+        "global_step": int(global_step),
+        "torch_rng_state": torch.get_rng_state(),
+        "numpy_rng_state": np.random.get_state(),
+    }
+    if torch.cuda.is_available():
+        payload["cuda_rng_state"] = torch.cuda.get_rng_state()
+    torch.save(payload, path)
 
 
 def _make_env(config: NativePPOConfig):
@@ -148,6 +163,18 @@ def _make_env(config: NativePPOConfig):
 
 def train_native_ppo(config: NativePPOConfig, resume_from: str | None = None) -> None:
     torch, _, Categorical = _require_torch()
+
+    # Cheap config validation BEFORE we open a ROM or talk to CUDA — fails fast on
+    # misconfigurations without spending the env setup cost.
+    rollout_timesteps = config.num_envs * config.n_steps
+    if rollout_timesteps < config.batch_size:
+        raise ValueError(
+            f"rollout produces {rollout_timesteps} samples per update "
+            f"(num_envs={config.num_envs} * n_steps={config.n_steps}) but "
+            f"batch_size={config.batch_size} is larger. Either lower --batch-size, "
+            f"raise --num-envs, or raise --n-steps."
+        )
+
     torch.manual_seed(config.seed)
     np.random.seed(config.seed)
     torch.backends.cudnn.deterministic = True
@@ -155,13 +182,19 @@ def train_native_ppo(config: NativePPOConfig, resume_from: str | None = None) ->
     env, batch = _make_env(config)
     obs_dim = 2048
     action_dim = int(env.action_space.n)
+
     model = _make_model(obs_dim, action_dim, config.hidden_size)
     optimizer = torch.optim.Adam(model.parameters(), lr=config.learning_rate, eps=1e-5)
     global_step = _load_checkpoint(resume_from, model, optimizer)
 
     action_mask_table = torch.tensor(tuple(env.action_masks), dtype=torch.uint8, device="cuda")
+    if action_mask_table.shape[0] != action_dim:
+        raise AssertionError(
+            f"action mask table length {action_mask_table.shape[0]} does not match "
+            f"env.action_space.n={action_dim}; misconfigured action space would index "
+            f"GPU memory out of bounds."
+        )
     obs = _device_tensor(batch.ram_device())
-    rollout_timesteps = config.num_envs * config.n_steps
     num_updates = max(1, math.ceil(config.total_timesteps / rollout_timesteps))
     planned_timesteps = num_updates * rollout_timesteps
 
