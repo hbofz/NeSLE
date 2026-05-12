@@ -90,6 +90,12 @@ Each case defaults to two PPO updates with `n_steps=128`, `batch_size=8192`,
 `hidden_size=256`, and NeSLE's `mario` action space, which mirrors this
 project's 11 curated Mario controls.
 
+Use `--ppo-reward-mode smart` for the learning-quality pass.  This keeps the
+reward computation on the GPU from RAM tensors and ports the World 1-1 profile
+from `SmartMarioReward`: forward progress, checkpoints, score/coins/kills,
+finish bonuses, death penalties, stall pressure, and light action-quality
+penalties.
+
 ## Individual Commands
 
 Preflight only:
@@ -113,7 +119,8 @@ Native PPO short sweep:
 ```bash
 mario-nesle-bench ppo-sweep \
   --rom "roms/Super Mario Bros. (World).nes" \
-  --snapshot ../../docs/data/smb_level1_1.state
+  --snapshot ../../docs/data/smb_level1_1.state \
+  --ppo-reward-mode smart
 ```
 
 Long stress run:
@@ -123,7 +130,8 @@ mario-nesle-bench stress \
   --stress-envs 65536 \
   --stress-timesteps 75000000 \
   --rom "roms/Super Mario Bros. (World).nes" \
-  --snapshot ../../docs/data/smb_level1_1.state
+  --snapshot ../../docs/data/smb_level1_1.state \
+  --ppo-reward-mode smart
 ```
 
 ## Current Scope

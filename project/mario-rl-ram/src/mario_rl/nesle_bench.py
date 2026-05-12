@@ -424,7 +424,10 @@ def run_ppo_sweep(args: argparse.Namespace) -> list[CaseResult]:
 
 def run_ppo_case(args: argparse.Namespace, num_envs: int, updates: int) -> CaseResult:
     output_dir = Path(args.output_dir)
-    ckpt = output_dir / "checkpoints" / f"native_ppo_envs_{num_envs}.pt"
+    checkpoint_stem = f"native_ppo_envs_{num_envs}"
+    if args.ppo_reward_mode != "minimal":
+        checkpoint_stem = f"native_ppo_{args.ppo_reward_mode}_envs_{num_envs}"
+    ckpt = output_dir / "checkpoints" / f"{checkpoint_stem}.pt"
     ckpt.parent.mkdir(parents=True, exist_ok=True)
     total_timesteps = num_envs * args.n_steps * updates
     cmd = [
@@ -436,6 +439,8 @@ def run_ppo_case(args: argparse.Namespace, num_envs: int, updates: int) -> CaseR
         str(args.snapshot),
         "--action-space",
         args.ppo_action_space,
+        "--reward-mode",
+        args.ppo_reward_mode,
         "--num-envs",
         str(num_envs),
         "--total-timesteps",
@@ -467,7 +472,7 @@ def run_ppo_case(args: argparse.Namespace, num_envs: int, updates: int) -> CaseR
     status = "ok" if proc.returncode == 0 else "error"
     return CaseResult(
         suite="ppo",
-        mode="native-ppo-minimal-reward",
+        mode=f"native-ppo-{args.ppo_reward_mode}-reward",
         status=status,
         num_envs=num_envs,
         frameskip=args.frameskip,
@@ -662,6 +667,7 @@ def build_parser() -> argparse.ArgumentParser:
             sub.add_argument("--hidden-size", type=int, default=256)
             sub.add_argument("--max-episode-steps", type=int, default=512)
             sub.add_argument("--ppo-action-space", default="mario")
+            sub.add_argument("--ppo-reward-mode", default="minimal", choices=["minimal", "smart"])
         if name == "stress":
             sub.add_argument("--stress-envs", type=int, default=65536)
             sub.add_argument("--stress-timesteps", type=int, default=75_000_000)
