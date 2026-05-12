@@ -14,7 +14,8 @@ There are two GPU layers:
   `--sb3-device`. This controls where PPO's neural net runs.
 
 These are independent. You can have NeSLE stepping envs on CUDA while PyTorch is
-CPU-only. That is the current local situation:
+CPU-only if the wrong PyTorch wheel is installed. The current local venv has now
+been switched to a CUDA wheel that works on the GTX 1050 Ti:
 
 ```powershell
 .\.venv\Scripts\python.exe -c "import torch; print(torch.__version__); print(torch.cuda.is_available()); print(torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'no cuda')"
@@ -23,13 +24,14 @@ CPU-only. That is the current local situation:
 Observed locally:
 
 ```text
-2.11.0+cpu
-False
-no cuda
+2.11.0+cu126
+12.6
+True
+NVIDIA GeForce GTX 1050 Ti
 ```
 
-So `backend="cuda"` is working, but `--sb3-device cuda` is not available until
-the venv has a CUDA-enabled PyTorch build.
+So `backend="cuda"` runs the emulator on CUDA, and `--sb3-device cuda` places
+SB3/PyTorch policy work on CUDA too.
 
 ## PyTorch CUDA Setup
 
@@ -51,6 +53,16 @@ Then install the command shown by the selector for:
 - Package: Pip
 - Language: Python
 - Compute platform: CUDA
+
+For the local GTX 1050 Ti, `cu126` works:
+
+```powershell
+.\.venv\Scripts\python.exe -m pip install --force-reinstall torch --index-url https://download.pytorch.org/whl/cu126
+```
+
+`cu128` was tested and is not compatible with this Pascal card: it detects the
+GPU, but CUDA tensor ops fail with `no kernel image is available for execution
+on the device` because the wheel does not include `sm_61` kernels.
 
 If CUDA wheels are not available for the Python version in `.venv`, create a
 Python 3.12 venv and install `.[dev,rl]` there. This project currently works in
