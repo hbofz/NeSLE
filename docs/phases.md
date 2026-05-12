@@ -203,3 +203,43 @@ data and plots are tracked under `docs/data` and `docs/assets`, and
 limitations. The public vector API retains SB3-compatible RGB stepping, adds
 `observation_mode="ram"` for normal high-throughput vector stepping, and keeps
 `NesleVecEnv.step_reward(actions)` for CUDA-only no-observation-copy loops.
+
+## Phase 7: Training Unblock And Curriculum
+
+Success criteria:
+
+- Reset can land directly in playable SMB gameplay without relying on a brittle
+  title-screen START sequence.
+- Multiple level starts can be assigned across one CUDA batch for curriculum
+  training.
+- CUDA `render()` returns a fresh frame even after no-copy throughput steps.
+- Training logs expose SB3 rollout metrics so learning can be judged from
+  `ep_rew_mean`, `ep_len_mean`, and evaluation rollouts.
+- Local GPU throughput claims are backed by falsifiability checks that would
+  fail if CUDA skipped work or synchronized envs incorrectly.
+
+Status: implemented. `reset_state_path` loads a Stable Retro/FCEUX `.state`
+snapshot, parses it through `cpp/include/nesle/fcs.hpp`, uploads it into the
+CUDA binding, and restores env state directly on reset and auto-reset. This
+bypasses the earlier title-screen transition issue and starts episodes in
+gameplay. `reset_state_paths` uploads a bank of snapshots and uses round-robin
+or explicit `env_to_level` assignment, enabling bundled World 1-1 through
+World 8-1 curriculum starts under `docs/data/`.
+
+The CUDA binding now exposes snapshot metadata such as `has_snapshot` and
+`num_levels`; tests cover FCS parsing, single-snapshot reset, multi-level
+assignment, per-env reset preservation, and render freshness. The render path
+was fixed so explicit `render()` launches the render kernel before copying
+frames back, matching the inline `step(render_frame=True)` path.
+
+`examples/sb3_train.py` adds snapshot and curriculum flags, `max_episode_steps`
+for short smoke runs, and `VecMonitor` so PPO logs episode reward and episode
+length. `examples/eval_smoke.py` loads a PPO checkpoint and reports x-position,
+reward, episode summaries, and action histograms. `benchmarks/gpu_vs_cpu.py`
+measures native CPU versus batched `cuda-console` throughput on the local GTX
+1050 Ti, while `benchmarks/verify_correctness.py` verifies independent
+per-env work through action divergence, instruction counts, and RAM hashes.
+
+Remaining training work is policy-side: local PyTorch is currently CPU-only, so
+the emulator runs on CUDA but PPO network updates run on CPU unless a
+CUDA-enabled PyTorch wheel is installed and `--sb3-device cuda` is used.

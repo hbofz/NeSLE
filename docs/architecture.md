@@ -11,7 +11,7 @@ on GPU.
 ```text
 nesle/
   python API: Gymnasium Env and SB3 VecEnv facade
-  native bridge: pybind11 extension, later CUDA/PyTorch tensor interop
+  native bridge: pybind11 extension and CUDA console binding
 
 cpp/
   core: ROM parsing, CPU/PPU/APU/input state, mapper interfaces
@@ -19,7 +19,8 @@ cpp/
   bindings: Python extension
 
 benchmarks/
-  nes-py comparison, FPS scaling, frame-skip and render/no-render modes
+  nes-py comparison, FPS scaling, frame-skip, render/no-render modes,
+  GPU-vs-CPU smoke, and correctness falsifiability checks
 ```
 
 ## Execution Model
@@ -38,7 +39,7 @@ Per RL step:
 4. Render selected frames with a separate PPU kernel only when observation output
    requires pixels.
 5. Launch reward/info kernel that reads Mario RAM addresses into compact arrays.
-6. Auto-reset completed envs from cached initial states.
+6. Auto-reset completed envs from cached initial states or FCEUX snapshot banks.
 7. Return GPU tensors directly where possible; copy to NumPy only for Gym/SB3
    compatibility paths that require CPU arrays.
 
@@ -105,10 +106,20 @@ Deferred until needed:
 
 ## Reset Strategy
 
-Follow CuLE's reset-cache idea. Run deterministic boot/start-stage sequences
-once per seed, store complete emulator snapshots on GPU, and reset done envs by
-copying a cached snapshot rather than replaying startup frames. Cache entries can
-encode random no-op starts for exploration while keeping GPU work uniform.
+Follow CuLE's reset-cache idea, but the practical training path now uses
+Stable Retro/FCEUX `.state` files as reset templates. Python loads raw or
+gzip-wrapped FCS files, `cpp/include/nesle/fcs.hpp` parses CPU RAM, PRG RAM,
+CPU registers, PPU registers, nametable RAM, palette RAM, and OAM, and the CUDA
+binding uploads one or more snapshot templates to device memory.
+
+For a single level, `reset_state_path` restores every env from the same
+snapshot. For curriculum training, `reset_state_paths` uploads a snapshot bank
+and `env_to_level[env]` selects the template used by each env. If no explicit
+assignment is provided, Python assigns envs round-robin across the snapshots.
+
+This avoids replaying fragile title-screen/start sequences and makes done-env
+auto-reset cheap: the reset kernel copies the selected snapshot directly into
+the env's device-resident emulator state.
 
 ## Python API
 
@@ -121,6 +132,13 @@ Expose two layers:
   `terminal_observation`.
 
 The vector API is the important performance path. The single env is a debugger.
+For training, prefer `observation_mode="ram"` and `reset_state_path` or
+`reset_state_paths`. RGB observations still work, but they copy full frames back
+to host memory and should be reserved for debugging, videos, or visual-policy
+experiments.
+
+`backend="cuda"` controls NeSLE's emulator backend. SB3/PyTorch policy placement
+is separate and is controlled by `--sb3-device` in `examples/sb3_train.py`.
 
 ## Benchmark Plan
 
@@ -151,3 +169,9 @@ Use `scripts/build_cuda_extension.sh` to build the optional `nesle._cuda_core`
 module; once present, `NesleVecEnv(..., backend="cuda")` runs the ROM-backed
 CUDA batch CPU/PPU console loop through the public Python vector API. The
 lower-level CUDA reward/render kernels remain available for calibration runs.
+
+The local practical smoke is `benchmarks/gpu_vs_cpu.py`, which compares native
+CPU single-env throughput against batched `cuda-console` stepping from the W1-1
+snapshot. `benchmarks/verify_correctness.py` checks that the benchmark is doing
+real per-env work by verifying action divergence, plausible instruction counts,
+and independent RAM evolution.
