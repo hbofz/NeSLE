@@ -182,6 +182,75 @@ NESLE_CUDA_HD inline void cold_reset_console_env(BatchBuffers& buffers, std::uin
     buffers.done[env] = 0;
 }
 
+NESLE_CUDA_HD inline void warm_reset_console_env(BatchBuffers& buffers,
+                                                 std::uint32_t env,
+                                                 const SnapshotTemplate& snap) {
+    // CPU registers — restored verbatim from the snapshot.
+    buffers.cpu.pc[env] = snap.pc;
+    buffers.cpu.a[env] = snap.a;
+    buffers.cpu.x[env] = snap.x;
+    buffers.cpu.y[env] = snap.y;
+    buffers.cpu.sp[env] = snap.sp;
+    buffers.cpu.p[env] = snap.p;
+    buffers.cpu.cycles[env] = snap.cycles;
+    buffers.cpu.nmi_pending[env] = 0;
+    buffers.cpu.irq_pending[env] = 0;
+    buffers.cpu.controller1_shift[env] = 0;
+    buffers.cpu.controller1_shift_count[env] = 8;
+    buffers.cpu.controller1_strobe[env] = 0;
+    buffers.cpu.pending_dma_cycles[env] = 0;
+
+    auto* ram = env_cpu_ram(buffers, env);
+    for (int i = 0; i < kCpuRamBytes; ++i) {
+        ram[i] = snap.cpu_ram[i];
+    }
+    auto* prg_ram = buffers.cpu.prg_ram + static_cast<std::uint64_t>(env) * kPrgRamBytes;
+    for (int i = 0; i < kPrgRamBytes; ++i) {
+        prg_ram[i] = snap.prg_ram[i];
+    }
+
+    // PPU registers + memory.
+    buffers.ppu.ctrl[env] = snap.ppu_ctrl;
+    buffers.ppu.mask[env] = snap.ppu_mask;
+    buffers.ppu.status[env] = snap.ppu_status;
+    buffers.ppu.oam_addr[env] = snap.ppu_oam_addr;
+    buffers.ppu.nmi_pending[env] = 0;
+    buffers.ppu.scanline[env] = 0;
+    buffers.ppu.dot[env] = 0;
+    buffers.ppu.frame[env] = 0;
+    buffers.ppu.v[env] = snap.ppu_v;
+    buffers.ppu.t[env] = snap.ppu_t;
+    buffers.ppu.x[env] = snap.ppu_x;
+    buffers.ppu.w[env] = snap.ppu_w;
+    buffers.ppu.open_bus[env] = snap.ppu_open_bus;
+    buffers.ppu.read_buffer[env] = snap.ppu_read_buffer;
+    buffers.ppu.scroll_x[env] = 0;
+    buffers.ppu.scroll_y[env] = 0;
+
+    auto* nt = buffers.ppu.nametable_ram + static_cast<std::uint64_t>(env) * kNametableRamBytes;
+    for (int i = 0; i < kNametableRamBytes; ++i) {
+        nt[i] = snap.nametable_ram[i];
+    }
+    auto* pal = buffers.ppu.palette_ram + static_cast<std::uint64_t>(env) * kPaletteRamBytes;
+    for (int i = 0; i < kPaletteRamBytes; ++i) {
+        pal[i] = snap.palette_ram[i];
+    }
+    auto* oam = env_oam(buffers, env);
+    for (int i = 0; i < kOamBytes; ++i) {
+        oam[i] = snap.oam[i];
+    }
+
+    // Reward baselines — seed previous_x and previous_time from the snapshot's RAM so the
+    // first step's reward calculation doesn't see a synthetic large delta from zero.
+    const int x_pos = static_cast<int>(snap.cpu_ram[kMarioXPage]) * 0x100 +
+                      static_cast<int>(snap.cpu_ram[kMarioXScreen]);
+    const int time_val = read_bcd_digits(snap.cpu_ram, kMarioTimeDigits, 3);
+    buffers.previous_mario_x[env] = x_pos;
+    buffers.previous_mario_time[env] = time_val;
+    buffers.rewards[env] = 0.0F;
+    buffers.done[env] = 0;
+}
+
 NESLE_CUDA_HD inline void cold_reset_synthetic_env(BatchBuffers& buffers, std::uint32_t env) {
     auto* ram = env_cpu_ram(buffers, env);
     for (int i = 0; i < kCpuRamBytes; ++i) {

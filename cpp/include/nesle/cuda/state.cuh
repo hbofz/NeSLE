@@ -83,6 +83,36 @@ struct BatchBuffers {
     std::uint8_t* frames_rgb;
 };
 
+// Read-only template used by snapshot-based env resets. Array pointers reference device-side
+// "template" buffers populated once from a parsed FCEUX FCS snapshot. The kernel copies them
+// into each env's slice on reset, bypassing the cold-boot title-screen sequence entirely.
+struct SnapshotTemplate {
+    const std::uint8_t* cpu_ram = nullptr;        // kCpuRamBytes
+    const std::uint8_t* prg_ram = nullptr;        // kPrgRamBytes
+    const std::uint8_t* nametable_ram = nullptr;  // kNametableRamBytes
+    const std::uint8_t* palette_ram = nullptr;    // kPaletteRamBytes
+    const std::uint8_t* oam = nullptr;            // kOamBytes
+
+    std::uint16_t pc = 0;
+    std::uint8_t a = 0;
+    std::uint8_t x = 0;
+    std::uint8_t y = 0;
+    std::uint8_t sp = 0xFD;
+    std::uint8_t p = 0x24;
+    std::uint64_t cycles = 0;
+
+    std::uint8_t ppu_ctrl = 0;
+    std::uint8_t ppu_mask = 0;
+    std::uint8_t ppu_status = 0;
+    std::uint8_t ppu_oam_addr = 0;
+    std::uint8_t ppu_open_bus = 0;
+    std::uint8_t ppu_read_buffer = 0;
+    std::uint8_t ppu_x = 0;
+    std::uint8_t ppu_w = 0;
+    std::uint16_t ppu_v = 0;
+    std::uint16_t ppu_t = 0;
+};
+
 NESLE_CUDA_STATE_HD inline const std::uint8_t* env_cpu_ram(const BatchBuffers& buffers,
                                                            std::uint32_t env) {
     return buffers.cpu.ram + static_cast<std::uint64_t>(env) * kCpuRamBytes;

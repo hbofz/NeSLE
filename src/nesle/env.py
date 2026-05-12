@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import gzip
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, Iterable, Sequence
@@ -91,6 +92,15 @@ def _load_rom(rom_path: str | Path) -> tuple[bytes, INESRom]:
     return data, parse_ines(data)
 
 
+def _load_reset_state(state_path: str | Path) -> bytes:
+    """Read an FCEUX FCS reset state from disk. Transparently gunzips Stable Retro / Gym
+    Retro `.state` files (gzip-wrapped); pass through raw FCS bytes otherwise."""
+    raw = Path(state_path).read_bytes()
+    if len(raw) >= 2 and raw[0] == 0x1F and raw[1] == 0x8B:
+        return gzip.decompress(raw)
+    return raw
+
+
 def _action_masks(action_space: str | Sequence[int]) -> tuple[int, ...]:
     if isinstance(action_space, str):
         key = action_space.lower().replace("-", "_")
@@ -180,6 +190,7 @@ class BackendConfig:
     reset_wait_steps: int = 10
     reset_start_steps: int = 2
     reset_post_start_steps: int = 60
+    reset_state_path: str | None = None
 
 
 class _SyntheticBackend:
@@ -307,11 +318,20 @@ def _make_backend(
     return _SyntheticBackend(rom, seed=seed, max_episode_steps=max_episode_steps)
 
 
-def _make_cuda_batch(num_envs: int, frameskip: int, rom_bytes: bytes | None = None) -> Any:
+def _make_cuda_batch(
+    num_envs: int,
+    frameskip: int,
+    rom_bytes: bytes | None = None,
+    snapshot_bytes: bytes | None = None,
+) -> Any:
     from . import _cuda_core  # type: ignore[attr-defined]
 
     if not hasattr(_cuda_core, "CudaBatch"):
         raise RuntimeError("installed nesle._cuda_core does not expose CudaBatch")
+    if snapshot_bytes is not None:
+        if rom_bytes is None:
+            raise ValueError("snapshot_bytes requires rom_bytes (cuda-console path)")
+        return _cuda_core.CudaBatch(num_envs, frameskip, rom_bytes, snapshot_bytes)
     if rom_bytes is not None:
         return _cuda_core.CudaBatch(num_envs, frameskip, rom_bytes)
     return _cuda_core.CudaBatch(num_envs, frameskip)
@@ -348,6 +368,7 @@ class NesleVecEnv(_VecEnvBase):
         reset_wait_steps: int = 10,
         reset_start_steps: int = 2,
         reset_post_start_steps: int = 60,
+        reset_state_path: str | Path | None = None,
     ) -> None:
         numpy = _require_numpy()
         if num_envs <= 0:
@@ -362,6 +383,13 @@ class NesleVecEnv(_VecEnvBase):
             raise ValueError("render_mode must be None or 'rgb_array'")
         observation_mode = _normalize_observation_mode(observation_mode)
         rom_bytes, rom = _load_rom(rom_path)
+        snapshot_bytes: bytes | None = None
+        if reset_state_path is not None:
+            snapshot_bytes = _load_reset_state(reset_state_path)
+            if start_on_reset:
+                # Snapshot reset already lands us in gameplay; the NOOP+START+poke warmup
+                # is redundant and would corrupt the snapshot's state.
+                start_on_reset = False
         self.config = BackendConfig(
             rom_path=str(rom_path),
             num_envs=num_envs,
@@ -376,6 +404,7 @@ class NesleVecEnv(_VecEnvBase):
             reset_wait_steps=reset_wait_steps,
             reset_start_steps=reset_start_steps,
             reset_post_start_steps=reset_post_start_steps,
+            reset_state_path=None if reset_state_path is None else str(reset_state_path),
         )
         self.rom = rom
         self.render_mode = render_mode
@@ -405,10 +434,17 @@ class NesleVecEnv(_VecEnvBase):
         cuda_requested = backend.lower() == "cuda" or (
             backend.lower() == "auto" and device.lower() == "cuda"
         )
+        if snapshot_bytes is not None and not cuda_requested:
+            raise ValueError(
+                "reset_state_path is only supported with backend='cuda' "
+                "(the cuda-console snapshot path)"
+            )
         self._cuda_batch = None
         if cuda_requested:
             try:
-                self._cuda_batch = _make_cuda_batch(num_envs, frameskip, rom_bytes)
+                self._cuda_batch = _make_cuda_batch(
+                    num_envs, frameskip, rom_bytes, snapshot_bytes
+                )
             except Exception:
                 if backend.lower() == "cuda":
                     raise
@@ -840,6 +876,7 @@ class NesleEnv(_EnvBase):
         reset_wait_steps: int = 10,
         reset_start_steps: int = 2,
         reset_post_start_steps: int = 60,
+        reset_state_path: str | Path | None = None,
     ) -> None:
         if gym is not None:
             super().__init__()
@@ -858,6 +895,7 @@ class NesleEnv(_EnvBase):
             reset_wait_steps=reset_wait_steps,
             reset_start_steps=reset_start_steps,
             reset_post_start_steps=reset_post_start_steps,
+            reset_state_path=reset_state_path,
         )
         self.render_mode = render_mode
         self.observation_space = self.vector_env.observation_space

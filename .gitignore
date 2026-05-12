@@ -13,3 +13,9 @@ benchmarks/results/
 .venv/
 venv/
 *.nes
+
+# Trained model artifacts from local smokes (PPO .zip checkpoints).
+nesle_*ppo*.zip
+
+# Local Claude Code project config.
+.claude/

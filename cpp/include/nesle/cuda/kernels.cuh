@@ -37,6 +37,11 @@ void launch_reset_envs_kernel(const BatchBuffers& buffers,
                               std::uint32_t num_envs,
                               bool console_mode,
                               cudaStream_t stream);
+void launch_snapshot_reset_envs_kernel(const BatchBuffers& buffers,
+                                       const SnapshotTemplate& snapshot,
+                                       const std::uint8_t* device_mask,
+                                       std::uint32_t num_envs,
+                                       cudaStream_t stream);
 #endif
 
 }  // namespace nesle::cuda
