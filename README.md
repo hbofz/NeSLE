@@ -297,6 +297,27 @@ CUDA-enabled PyTorch wheel. For RAM observations with `MlpPolicy`,
 `--sb3-device cpu` can still be faster because NeSLE returns CPU NumPy rollout
 buffers and the policy network is small. See [Training](docs/training.md).
 
+### CUDA-Native PPO
+
+For a custom PPO loop that keeps NeSLE RAM observations, rollout buffers, PPO
+loss computation, and the policy network on the GPU, build the CUDA extension
+and run:
+
+```sh
+python examples/native_ppo_train.py "Super Mario Bros. (World).nes" \
+  --reset-state-path docs/data/smb_level1_1.state \
+  --num-envs 4096 \
+  --total-timesteps 10000000 \
+  --n-steps 128 \
+  --batch-size 8192 \
+  --checkpoint-path nesle_native_ppo.pt
+```
+
+This path uses `_cuda_core.CudaBatch.step_device(...)` and PyTorch's CUDA array
+interface support to avoid the SB3 VecEnv/RolloutBuffer host-copy loop. It is
+RAM-observation PPO only for now; RGB policy training should stay on the SB3
+path until the renderer has a device-side frame stack and CNN input bridge.
+
 For Colab/A100, use
 [notebooks/nesle_colab_a100_training.ipynb](notebooks/nesle_colab_a100_training.ipynb).
 It mounts Google Drive, uses your ROM from Drive, builds the CUDA extension for
