@@ -14,14 +14,34 @@ notebooks/nesle_a100_benchmark.ipynb
 ```
 
 The notebook is the easiest path: set the GitHub URL, Drive ROM path, and run
-the cells from top to bottom.
+the cells from top to bottom.  Before running it, put your legal ROM in Drive
+at exactly:
+
+```text
+MyDrive/mario_rl/roms/Super Mario Bros. (World).nes
+```
+
+The notebook creates the output folders automatically:
+
+```text
+MyDrive/mario_rl/nesle_a100/
+MyDrive/mario_rl/nesle_a100/checkpoints/
+```
+
+You do not need to upload snapshot files.  The benchmark uses the NeSLE repo
+snapshot at `docs/data/smb_level1_1.state`.
 
 For a shell-only Colab setup:
 
 ```bash
 git clone https://github.com/hbofz/Nesle-codex.git /content/Nesle-codex
-cd /content/Nesle-codex/project/mario-rl-ram
+cd /content/Nesle-codex
+python -m pip install -U pip setuptools wheel pybind11 numpy
 python -m pip install -e .
+cd /content/Nesle-codex/project/mario-rl-ram
+python -m pip install -e . --no-deps
+cd /content/Nesle-codex
+NESLE_REQUIRE_CUDA=1 NESLE_CUDA_ARCH=sm_80 PYTHON=$(which python) sh scripts/build_cuda_extension.sh
 ```
 
 The benchmark CLI auto-discovers the NeSLE root when this repo is nested under
@@ -30,8 +50,8 @@ The benchmark CLI auto-discovers the NeSLE root when this repo is nested under
 ## One-Command Campaign
 
 ```bash
+cd /content/Nesle-codex/project/mario-rl-ram
 mario-nesle-bench all \
-  --setup \
   --run-correctness \
   --cuda-arch sm_80 \
   --rom "roms/Super Mario Bros. (World).nes" \

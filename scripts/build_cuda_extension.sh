@@ -13,12 +13,18 @@ if [ -z "$nvcc_bin" ]; then
 fi
 
 if ! command -v "$nvcc_bin" >/dev/null 2>&1; then
-  echo "nvcc is not available; skipping CUDA extension build."
+  echo "nvcc is not available; cannot build nesle._cuda_core."
+  if [ "${NESLE_REQUIRE_CUDA:-0}" = "1" ]; then
+    exit 1
+  fi
   exit 0
 fi
 
 if ! "$python_bin" -m pybind11 --includes >/tmp/nesle_cuda_pybind11_includes.txt 2>/dev/null; then
-  echo "pybind11 is not available for $python_bin; skipping CUDA extension build."
+  echo "pybind11 is not available for $python_bin; cannot build nesle._cuda_core."
+  if [ "${NESLE_REQUIRE_CUDA:-0}" = "1" ]; then
+    exit 1
+  fi
   exit 0
 fi
 
