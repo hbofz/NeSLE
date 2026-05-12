@@ -1,0 +1,32 @@
+[project]
+name = "mario-ram-rl"
+version = "0.1.0"
+description = "Reinforcement learning agents for Super Mario Bros using Stable-Retro RAM and pixel observations."
+readme = "README.md"
+requires-python = ">=3.10,<3.13"
+dependencies = [
+    "stable-retro==1.0.0; platform_system != 'Darwin' or platform_machine != 'arm64'",
+    "stable-retro-apple-silicon==0.9.9.post2; platform_system == 'Darwin' and platform_machine == 'arm64'",
+    "stable-baselines3[extra]==2.8.0",
+    "sb3-contrib==2.8.0",
+    "gymnasium==1.1.1",
+    "numpy>=1.26,<3",
+    "torch>=2.6",
+    "tensorboard>=2.18",
+    "moviepy>=1.0.3",
+    "rich>=13.9",
+]
+
+[project.scripts]
+mario-doctor = "mario_rl.scripts.doctor:main"
+mario-smoke = "mario_rl.scripts.smoke:main"
+mario-train = "mario_rl.scripts.train_ppo:main"
+mario-eval = "mario_rl.scripts.evaluate:main"
+mario-nesle-bench = "mario_rl.nesle_bench:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/mario_rl"]

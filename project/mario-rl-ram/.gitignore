@@ -1,0 +1,15 @@
+.DS_Store
+.venv/
+__pycache__/
+*.py[cod]
+.ipynb_checkpoints/
+
+# Training artifacts can get huge.
+models/
+runs/
+videos/
+benchmarks/results/
+*.zip
+*.pkl
+*.mp4
+*.bk2
