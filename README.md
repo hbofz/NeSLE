@@ -71,6 +71,9 @@ The shell scripts under `scripts/` are POSIX-oriented and expect `sh`, `c++`,
 and `/tmp`; use Git Bash/WSL or translate the individual commands when running
 on plain PowerShell.
 
+The ROM is not vendored in the repository. Keep your local `.nes` file outside
+Git or in Google Drive, then pass its path to the scripts/notebook.
+
 Phase 4 API checks can also be run directly:
 
 ```sh
@@ -292,6 +295,13 @@ guarantee that SB3/PyTorch policy training runs on the GPU. Check
 `torch.cuda.is_available()` and use `--sb3-device cuda` only after installing a
 CUDA-enabled PyTorch wheel. See [Training](docs/training.md).
 
+For Colab/A100, use
+[notebooks/nesle_colab_a100_training.ipynb](notebooks/nesle_colab_a100_training.ipynb).
+It mounts Google Drive, uses your ROM from Drive, builds the CUDA extension for
+`sm_80`, trains with checkpoints saved back to Drive, supports resume, and opens
+TensorBoard. For a private GitHub repo, add a Colab secret named `GITHUB_TOKEN`
+with read access before running the clone cell.
+
 Legacy `nes-py` and `gym-super-mario-bros` comparison dependencies are kept in
 the `legacy-mario` extra for benchmark work.
 
@@ -307,3 +317,4 @@ the `legacy-mario` extra for benchmark work.
 - [Phase 5 results](docs/phase5-results.md)
 - [GPU vs CPU benchmark (GTX 1050 Ti)](docs/benchmark-gpu-vs-cpu.md)
 - [Training](docs/training.md)
+- [Colab A100 training notebook](notebooks/nesle_colab_a100_training.ipynb)
