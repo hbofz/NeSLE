@@ -21,10 +21,24 @@ def main() -> None:
     parser.add_argument("--policy", default="auto", choices=["auto", "MlpPolicy", "CnnPolicy"])
     parser.add_argument("--sb3-device", default="auto")
     parser.add_argument("--model-path", default="nesle_ppo")
-    parser.add_argument("--start-on-reset", action="store_true", help="Boot each reset into controllable gameplay.")
+    parser.add_argument("--start-on-reset", action="store_true", help="Boot each reset into controllable gameplay (legacy poke workaround; prefer --reset-state-path).")
     parser.add_argument("--reset-wait-steps", type=int, default=10)
     parser.add_argument("--reset-start-steps", type=int, default=2)
     parser.add_argument("--reset-post-start-steps", type=int, default=60)
+    parser.add_argument(
+        "--reset-state-path",
+        default=None,
+        help="Path to an FCEUX FCS reset state (e.g. docs/data/smb_level1_1.state). Each "
+        "env reset restores this snapshot, bypassing the broken title-screen transition. "
+        "Requires --backend cuda.",
+    )
+    parser.add_argument(
+        "--max-episode-steps",
+        type=int,
+        default=0,
+        help="Truncate episodes after this many env.step calls (0 = no cap). Useful "
+        "to surface ep_rew_mean/ep_len_mean in PPO logs on short smokes.",
+    )
     parser.add_argument("--progress-bar", action="store_true")
     parser.add_argument("--progress-interval", type=float, default=1.0)
     args = parser.parse_args()
@@ -116,6 +130,8 @@ def main() -> None:
         reset_wait_steps=args.reset_wait_steps,
         reset_start_steps=args.reset_start_steps,
         reset_post_start_steps=args.reset_post_start_steps,
+        reset_state_path=args.reset_state_path,
+        max_episode_steps=args.max_episode_steps,
     )
     env_backend = "unknown"
     if getattr(env, "_cuda_batch", None) is not None:

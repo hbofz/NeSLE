@@ -9,8 +9,11 @@
 #include <string>
 #include <vector>
 
+#include <optional>
+
 #include "nesle/cuda/batch_step.cuh"
 #include "nesle/cuda/kernels.cuh"
+#include "nesle/fcs.hpp"
 #include "nesle/rom.hpp"
 
 namespace py = pybind11;
@@ -157,6 +160,34 @@ public:
         reset();
     }
 
+    CudaBatchBinding(std::uint32_t num_envs,
+                     std::uint32_t frameskip,
+                     const py::bytes& rom_bytes,
+                     const py::bytes& snapshot_bytes)
+        : num_env_(num_envs),
+          frameskip_(frameskip),
+          rom_(nesle::parse_ines(bytes_to_vector(rom_bytes))),
+          use_console_(true) {
+        if (num_env_ == 0) {
+            throw std::invalid_argument("num_envs must be positive");
+        }
+        if (frameskip_ == 0) {
+            throw std::invalid_argument("frameskip must be positive");
+        }
+        if (!rom_.metadata.is_nrom()) {
+            throw std::invalid_argument("CUDA console mode currently supports mapper 0/NROM ROMs");
+        }
+        if (rom_.prg_rom.empty()) {
+            throw std::invalid_argument("CUDA console mode requires PRG ROM bytes");
+        }
+        const std::string snapshot_raw = snapshot_bytes;
+        snapshot_ = nesle::fcs::parse(snapshot_raw);
+        allocate();
+        upload_rom();
+        upload_snapshot();
+        reset();
+    }
+
     CudaBatchBinding(const CudaBatchBinding&) = delete;
     CudaBatchBinding& operator=(const CudaBatchBinding&) = delete;
 
@@ -166,7 +197,11 @@ public:
 
     py::array_t<std::uint8_t> reset() {
         if (use_console_) {
-            reset_console();
+            if (snapshot_) {
+                reset_console_from_snapshot();
+            } else {
+                reset_console();
+            }
             render_device();
             return render();
         }
@@ -458,9 +493,15 @@ public:
                               static_cast<std::size_t>(num_env_) * sizeof(std::uint8_t),
                               cudaMemcpyHostToDevice),
                    "copy reset mask");
-        nesle::cuda::launch_reset_envs_kernel(
-            buffers_, device_reset_mask_, num_env_, use_console_, nullptr);
-        check_cuda(cudaGetLastError(), "launch_reset_envs_kernel");
+        if (snapshot_) {
+            nesle::cuda::launch_snapshot_reset_envs_kernel(
+                buffers_, snapshot_template_, device_reset_mask_, num_env_, nullptr);
+            check_cuda(cudaGetLastError(), "launch_snapshot_reset_envs_kernel");
+        } else {
+            nesle::cuda::launch_reset_envs_kernel(
+                buffers_, device_reset_mask_, num_env_, use_console_, nullptr);
+            check_cuda(cudaGetLastError(), "launch_reset_envs_kernel");
+        }
         check_cuda(cudaDeviceSynchronize(), "reset_envs synchronize");
     }
 
@@ -474,6 +515,10 @@ public:
 
     std::string name() const {
         return use_console_ ? "cuda-console" : "cuda";
+    }
+
+    bool has_snapshot() const noexcept {
+        return snapshot_.has_value();
     }
 
 private:
@@ -637,6 +682,11 @@ private:
         cudaFree(device_stat_budget_hits_);
         cudaFree(device_profile_opcode_counts_);
         cudaFree(device_profile_pc_counts_);
+        cudaFree(device_snapshot_cpu_ram_);
+        cudaFree(device_snapshot_prg_ram_);
+        cudaFree(device_snapshot_nametable_);
+        cudaFree(device_snapshot_palette_);
+        cudaFree(device_snapshot_oam_);
     }
 
     void upload_rom() {
@@ -722,6 +772,80 @@ private:
         copy_to_device(device_oam_, oam, "reset oam");
     }
 
+    void upload_snapshot() {
+        if (!snapshot_) {
+            return;
+        }
+        const auto& snap = *snapshot_;
+        device_snapshot_cpu_ram_ =
+            cuda_alloc<std::uint8_t>(nesle::cuda::kCpuRamBytes, "cudaMalloc snapshot cpu_ram");
+        device_snapshot_prg_ram_ =
+            cuda_alloc<std::uint8_t>(nesle::cuda::kPrgRamBytes, "cudaMalloc snapshot prg_ram");
+        device_snapshot_nametable_ =
+            cuda_alloc<std::uint8_t>(nesle::cuda::kNametableRamBytes, "cudaMalloc snapshot nametable");
+        device_snapshot_palette_ =
+            cuda_alloc<std::uint8_t>(nesle::cuda::kPaletteRamBytes, "cudaMalloc snapshot palette");
+        device_snapshot_oam_ =
+            cuda_alloc<std::uint8_t>(nesle::cuda::kOamBytes, "cudaMalloc snapshot oam");
+
+        check_cuda(cudaMemcpy(device_snapshot_cpu_ram_, snap.cpu_ram.data(),
+                              snap.cpu_ram.size(), cudaMemcpyHostToDevice),
+                   "copy snapshot cpu_ram");
+        check_cuda(cudaMemcpy(device_snapshot_prg_ram_, snap.prg_ram.data(),
+                              snap.prg_ram.size(), cudaMemcpyHostToDevice),
+                   "copy snapshot prg_ram");
+        check_cuda(cudaMemcpy(device_snapshot_nametable_, snap.nametable_ram.data(),
+                              snap.nametable_ram.size(), cudaMemcpyHostToDevice),
+                   "copy snapshot nametable");
+        check_cuda(cudaMemcpy(device_snapshot_palette_, snap.palette_ram.data(),
+                              snap.palette_ram.size(), cudaMemcpyHostToDevice),
+                   "copy snapshot palette");
+        check_cuda(cudaMemcpy(device_snapshot_oam_, snap.oam.data(),
+                              snap.oam.size(), cudaMemcpyHostToDevice),
+                   "copy snapshot oam");
+
+        snapshot_template_.cpu_ram = device_snapshot_cpu_ram_;
+        snapshot_template_.prg_ram = device_snapshot_prg_ram_;
+        snapshot_template_.nametable_ram = device_snapshot_nametable_;
+        snapshot_template_.palette_ram = device_snapshot_palette_;
+        snapshot_template_.oam = device_snapshot_oam_;
+        snapshot_template_.pc = snap.pc;
+        snapshot_template_.a = snap.a;
+        snapshot_template_.x = snap.x;
+        snapshot_template_.y = snap.y;
+        snapshot_template_.sp = snap.sp;
+        snapshot_template_.p = snap.p;
+        snapshot_template_.cycles = snap.cycles;
+        snapshot_template_.ppu_ctrl = snap.ppu_ctrl;
+        snapshot_template_.ppu_mask = snap.ppu_mask;
+        snapshot_template_.ppu_status = snap.ppu_status;
+        snapshot_template_.ppu_oam_addr = snap.ppu_oam_addr;
+        snapshot_template_.ppu_open_bus = snap.ppu_open_bus;
+        snapshot_template_.ppu_read_buffer = snap.ppu_read_buffer;
+        snapshot_template_.ppu_x = snap.ppu_x;
+        snapshot_template_.ppu_w = snap.ppu_w;
+        snapshot_template_.ppu_v = snap.ppu_v;
+        snapshot_template_.ppu_t = snap.ppu_t;
+    }
+
+    void reset_console_from_snapshot() {
+        // Use the snapshot-restore kernel with an all-1s mask so every env is restored
+        // in a single launch — no host-side replication of snapshot arrays needed.
+        std::vector<std::uint8_t> mask(num_env_, 1);
+        check_cuda(cudaMemcpy(device_reset_mask_, mask.data(),
+                              mask.size(), cudaMemcpyHostToDevice),
+                   "upload snapshot reset mask");
+        // Also clear per-step bookkeeping that the kernel doesn't touch.
+        std::vector<std::uint8_t> zeros(num_env_, 0);
+        std::vector<std::uint32_t> step_counts(num_env_, 0);
+        copy_to_device(device_actions_, zeros, "reset actions (snapshot)");
+        copy_to_device(device_step_counts_, step_counts, "reset step_counts (snapshot)");
+        nesle::cuda::launch_snapshot_reset_envs_kernel(
+            buffers_, snapshot_template_, device_reset_mask_, num_env_, nullptr);
+        check_cuda(cudaGetLastError(), "launch_snapshot_reset_envs_kernel (initial)");
+        check_cuda(cudaDeviceSynchronize(), "snapshot reset synchronize");
+    }
+
     void render_device() const {
         nesle::cuda::launch_render_kernel(buffers_, nesle::cuda::StepConfig{num_env_, frameskip_, true}, nullptr);
         check_cuda(cudaGetLastError(), "launch_render_kernel");
@@ -784,6 +908,13 @@ private:
     unsigned long long* device_profile_pc_counts_ = nullptr;
     static constexpr std::size_t kOpcodeProfileBytes = 256 * sizeof(unsigned long long);
     static constexpr std::size_t kPcProfileBytes = 65536 * sizeof(unsigned long long);
+    std::optional<nesle::fcs::StateSnapshot> snapshot_;
+    nesle::cuda::SnapshotTemplate snapshot_template_{};
+    std::uint8_t* device_snapshot_cpu_ram_ = nullptr;
+    std::uint8_t* device_snapshot_prg_ram_ = nullptr;
+    std::uint8_t* device_snapshot_nametable_ = nullptr;
+    std::uint8_t* device_snapshot_palette_ = nullptr;
+    std::uint8_t* device_snapshot_oam_ = nullptr;
 };
 
 }  // namespace
@@ -791,9 +922,57 @@ private:
 PYBIND11_MODULE(_cuda_core, m) {
     m.doc() = "CUDA NeSLE batch helpers";
 
+    m.def(
+        "parse_fcs_state",
+        [](const py::bytes& data) {
+            const std::string raw = data;
+            const auto snapshot = nesle::fcs::parse(raw);
+            py::dict out;
+            out["pc"] = snapshot.pc;
+            out["a"] = snapshot.a;
+            out["x"] = snapshot.x;
+            out["y"] = snapshot.y;
+            out["sp"] = snapshot.sp;
+            out["p"] = snapshot.p;
+            out["cycles"] = snapshot.cycles;
+            out["ppu_ctrl"] = snapshot.ppu_ctrl;
+            out["ppu_mask"] = snapshot.ppu_mask;
+            out["ppu_status"] = snapshot.ppu_status;
+            out["ppu_oam_addr"] = snapshot.ppu_oam_addr;
+            out["ppu_open_bus"] = snapshot.ppu_open_bus;
+            out["ppu_read_buffer"] = snapshot.ppu_read_buffer;
+            out["ppu_x"] = snapshot.ppu_x;
+            out["ppu_w"] = snapshot.ppu_w;
+            out["ppu_v"] = snapshot.ppu_v;
+            out["ppu_t"] = snapshot.ppu_t;
+            out["cpu_ram"] = py::bytes(
+                reinterpret_cast<const char*>(snapshot.cpu_ram.data()),
+                snapshot.cpu_ram.size());
+            out["prg_ram"] = py::bytes(
+                reinterpret_cast<const char*>(snapshot.prg_ram.data()),
+                snapshot.prg_ram.size());
+            out["nametable_ram"] = py::bytes(
+                reinterpret_cast<const char*>(snapshot.nametable_ram.data()),
+                snapshot.nametable_ram.size());
+            out["palette_ram"] = py::bytes(
+                reinterpret_cast<const char*>(snapshot.palette_ram.data()),
+                snapshot.palette_ram.size());
+            out["oam"] = py::bytes(
+                reinterpret_cast<const char*>(snapshot.oam.data()),
+                snapshot.oam.size());
+            return out;
+        },
+        py::arg("data"),
+        "Parse an already-decompressed FCEUX FCS save state into a dict of fields.");
+
     py::class_<CudaBatchBinding>(m, "CudaBatch")
         .def(py::init<std::uint32_t, std::uint32_t>())
         .def(py::init<std::uint32_t, std::uint32_t, const py::bytes&>())
+        .def(py::init<std::uint32_t, std::uint32_t, const py::bytes&, const py::bytes&>(),
+             py::arg("num_envs"),
+             py::arg("frameskip"),
+             py::arg("rom_bytes"),
+             py::arg("snapshot_bytes"))
         .def("reset", &CudaBatchBinding::reset)
         .def("step",
              &CudaBatchBinding::step,
@@ -806,5 +985,7 @@ PYBIND11_MODULE(_cuda_core, m) {
         .def("ram", &CudaBatchBinding::ram)
         .def("reset_envs", &CudaBatchBinding::reset_envs, py::arg("mask"))
         .def("poke_ram", &CudaBatchBinding::poke_ram, py::arg("address"), py::arg("value"))
-        .def_property_readonly("name", &CudaBatchBinding::name);
+        .def_property_readonly("name", &CudaBatchBinding::name)
+        .def_property_readonly("has_snapshot",
+                               [](const CudaBatchBinding& self) { return self.has_snapshot(); });
 }
