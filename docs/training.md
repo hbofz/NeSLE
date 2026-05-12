@@ -44,7 +44,8 @@ configuration.
 The custom native path bypasses SB3's CPU rollout buffer:
 
 - `nesle._cuda_core.CudaBatch.step_device(...)` consumes CUDA action-mask tensors.
-- `_cuda_core` exposes RAM/reward/done buffers with `__cuda_array_interface__`.
+- `_cuda_core` exposes RAM/reward/done buffers through DLPack and
+  `__cuda_array_interface__`.
 - `nesle.native_ppo` converts those buffers to PyTorch CUDA tensors and keeps the
   PPO rollout buffer, GAE, clipped policy loss, value loss, entropy term, and
   optimizer step on CUDA.

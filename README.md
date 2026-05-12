@@ -313,10 +313,11 @@ python examples/native_ppo_train.py "Super Mario Bros. (World).nes" \
   --checkpoint-path nesle_native_ppo.pt
 ```
 
-This path uses `_cuda_core.CudaBatch.step_device(...)` and PyTorch's CUDA array
-interface support to avoid the SB3 VecEnv/RolloutBuffer host-copy loop. It is
-RAM-observation PPO only for now; RGB policy training should stay on the SB3
-path until the renderer has a device-side frame stack and CNN input bridge.
+This path uses `_cuda_core.CudaBatch.step_device(...)` and DLPack-backed PyTorch
+views of CUDA RAM/reward/done buffers to avoid the SB3 VecEnv/RolloutBuffer
+host-copy loop. It is RAM-observation PPO only for now; RGB policy training
+should stay on the SB3 path until the renderer has a device-side frame stack
+and CNN input bridge.
 
 For Colab/A100, use
 [notebooks/nesle_colab_a100_training.ipynb](notebooks/nesle_colab_a100_training.ipynb).

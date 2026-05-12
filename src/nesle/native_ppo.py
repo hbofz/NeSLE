@@ -89,6 +89,8 @@ def _make_model(obs_dim: int, action_dim: int, hidden_size: int):
 
 def _device_tensor(view):
     torch, _, _ = _require_torch()
+    if hasattr(view, "__dlpack__"):
+        return torch.utils.dlpack.from_dlpack(view)
     return torch.as_tensor(view, device=torch.device("cuda"))
 
 
