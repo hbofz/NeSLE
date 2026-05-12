@@ -33,6 +33,14 @@ def main() -> None:
         "Requires --backend cuda.",
     )
     parser.add_argument(
+        "--reset-state-paths",
+        nargs="+",
+        default=None,
+        help="Multiple FCS reset states for curriculum training (e.g. all 8 SMB levels). "
+        "Envs are round-robin-assigned across the listed snapshots. Requires --backend cuda. "
+        "Mutually exclusive with --reset-state-path.",
+    )
+    parser.add_argument(
         "--max-episode-steps",
         type=int,
         default=0,
@@ -131,6 +139,7 @@ def main() -> None:
         reset_start_steps=args.reset_start_steps,
         reset_post_start_steps=args.reset_post_start_steps,
         reset_state_path=args.reset_state_path,
+        reset_state_paths=args.reset_state_paths,
         max_episode_steps=args.max_episode_steps,
     )
     env_backend = "unknown"
@@ -138,6 +147,11 @@ def main() -> None:
         env_backend = str(env._cuda_batch.name)
     elif hasattr(env, "config"):
         env_backend = str(env.config.backend)
+    # VecMonitor populates SB3's ep_info_buffer so PPO logs ep_rew_mean / ep_len_mean.
+    # Without it the rollout/ section is empty and you can't tell whether the agent is
+    # actually learning. Wrap before any observation-stacking wrappers.
+    from stable_baselines3.common.vec_env import VecMonitor
+    env = VecMonitor(env)
     if args.observation_mode == "rgb_array":
         from stable_baselines3.common.vec_env import VecFrameStack, VecTransposeImage
 

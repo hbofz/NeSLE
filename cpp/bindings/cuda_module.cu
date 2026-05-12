@@ -168,23 +168,54 @@ public:
           frameskip_(frameskip),
           rom_(nesle::parse_ines(bytes_to_vector(rom_bytes))),
           use_console_(true) {
-        if (num_env_ == 0) {
-            throw std::invalid_argument("num_envs must be positive");
-        }
-        if (frameskip_ == 0) {
-            throw std::invalid_argument("frameskip must be positive");
-        }
-        if (!rom_.metadata.is_nrom()) {
-            throw std::invalid_argument("CUDA console mode currently supports mapper 0/NROM ROMs");
-        }
-        if (rom_.prg_rom.empty()) {
-            throw std::invalid_argument("CUDA console mode requires PRG ROM bytes");
-        }
+        validate_basics();
         const std::string snapshot_raw = snapshot_bytes;
-        snapshot_ = nesle::fcs::parse(snapshot_raw);
+        snapshots_.push_back(nesle::fcs::parse(snapshot_raw));
+        std::vector<std::uint8_t> env_to_level(num_env_, 0);  // all envs use slot 0
         allocate();
         upload_rom();
-        upload_snapshot();
+        upload_snapshot_bank(env_to_level);
+        reset();
+    }
+
+    CudaBatchBinding(std::uint32_t num_envs,
+                     std::uint32_t frameskip,
+                     const py::bytes& rom_bytes,
+                     const std::vector<py::bytes>& snapshot_bytes_list,
+                     py::array_t<std::uint8_t, py::array::c_style | py::array::forcecast>
+                         env_to_level)
+        : num_env_(num_envs),
+          frameskip_(frameskip),
+          rom_(nesle::parse_ines(bytes_to_vector(rom_bytes))),
+          use_console_(true) {
+        validate_basics();
+        if (snapshot_bytes_list.empty()) {
+            throw std::invalid_argument("snapshot_bytes_list must contain at least one snapshot");
+        }
+        if (snapshot_bytes_list.size() > 255) {
+            throw std::invalid_argument("at most 255 snapshot levels supported per CudaBatch");
+        }
+        for (const auto& sb : snapshot_bytes_list) {
+            const std::string raw = sb;
+            snapshots_.push_back(nesle::fcs::parse(raw));
+        }
+        const auto view = env_to_level.request();
+        if (view.ndim != 1 || static_cast<std::uint32_t>(view.shape[0]) != num_env_) {
+            throw std::invalid_argument("env_to_level must have shape (num_envs,)");
+        }
+        std::vector<std::uint8_t> env_to_level_host(num_env_);
+        const auto* src = static_cast<const std::uint8_t*>(view.ptr);
+        for (std::uint32_t e = 0; e < num_env_; ++e) {
+            if (src[e] >= snapshots_.size()) {
+                throw std::invalid_argument(
+                    "env_to_level[" + std::to_string(e) + "]=" + std::to_string(src[e]) +
+                    " out of range (have " + std::to_string(snapshots_.size()) + " levels)");
+            }
+            env_to_level_host[e] = src[e];
+        }
+        allocate();
+        upload_rom();
+        upload_snapshot_bank(env_to_level_host);
         reset();
     }
 
@@ -197,7 +228,7 @@ public:
 
     py::array_t<std::uint8_t> reset() {
         if (use_console_) {
-            if (snapshot_) {
+            if (!snapshots_.empty()) {
                 reset_console_from_snapshot();
             } else {
                 reset_console();
@@ -512,7 +543,7 @@ public:
                               static_cast<std::size_t>(num_env_) * sizeof(std::uint8_t),
                               cudaMemcpyHostToDevice),
                    "copy reset mask");
-        if (snapshot_) {
+        if (!snapshots_.empty()) {
             nesle::cuda::launch_snapshot_reset_envs_kernel(
                 buffers_, snapshot_template_, device_reset_mask_, num_env_, nullptr);
             check_cuda(cudaGetLastError(), "launch_snapshot_reset_envs_kernel");
@@ -537,8 +568,30 @@ public:
     }
 
     bool has_snapshot() const noexcept {
-        return snapshot_.has_value();
+        return !snapshots_.empty();
     }
+
+    std::uint32_t num_levels() const noexcept {
+        return snapshot_template_.num_levels;
+    }
+
+private:
+    void validate_basics() {
+        if (num_env_ == 0) {
+            throw std::invalid_argument("num_envs must be positive");
+        }
+        if (frameskip_ == 0) {
+            throw std::invalid_argument("frameskip must be positive");
+        }
+        if (!rom_.metadata.is_nrom()) {
+            throw std::invalid_argument("CUDA console mode currently supports mapper 0/NROM ROMs");
+        }
+        if (rom_.prg_rom.empty()) {
+            throw std::invalid_argument("CUDA console mode requires PRG ROM bytes");
+        }
+    }
+
+public:
 
 private:
     void allocate() {
@@ -706,6 +759,24 @@ private:
         cudaFree(device_snapshot_nametable_);
         cudaFree(device_snapshot_palette_);
         cudaFree(device_snapshot_oam_);
+        cudaFree(device_snap_pc_);
+        cudaFree(device_snap_a_);
+        cudaFree(device_snap_x_);
+        cudaFree(device_snap_y_);
+        cudaFree(device_snap_sp_);
+        cudaFree(device_snap_p_);
+        cudaFree(device_snap_cycles_);
+        cudaFree(device_snap_ppu_ctrl_);
+        cudaFree(device_snap_ppu_mask_);
+        cudaFree(device_snap_ppu_status_);
+        cudaFree(device_snap_ppu_oam_addr_);
+        cudaFree(device_snap_ppu_open_bus_);
+        cudaFree(device_snap_ppu_read_buffer_);
+        cudaFree(device_snap_ppu_x_);
+        cudaFree(device_snap_ppu_w_);
+        cudaFree(device_snap_ppu_v_);
+        cudaFree(device_snap_ppu_t_);
+        cudaFree(device_env_to_level_);
     }
 
     void upload_rom() {
@@ -791,60 +862,130 @@ private:
         copy_to_device(device_oam_, oam, "reset oam");
     }
 
-    void upload_snapshot() {
-        if (!snapshot_) {
+    void upload_snapshot_bank(const std::vector<std::uint8_t>& env_to_level_host) {
+        if (snapshots_.empty()) {
             return;
         }
-        const auto& snap = *snapshot_;
-        device_snapshot_cpu_ram_ =
-            cuda_alloc<std::uint8_t>(nesle::cuda::kCpuRamBytes, "cudaMalloc snapshot cpu_ram");
-        device_snapshot_prg_ram_ =
-            cuda_alloc<std::uint8_t>(nesle::cuda::kPrgRamBytes, "cudaMalloc snapshot prg_ram");
-        device_snapshot_nametable_ =
-            cuda_alloc<std::uint8_t>(nesle::cuda::kNametableRamBytes, "cudaMalloc snapshot nametable");
-        device_snapshot_palette_ =
-            cuda_alloc<std::uint8_t>(nesle::cuda::kPaletteRamBytes, "cudaMalloc snapshot palette");
-        device_snapshot_oam_ =
-            cuda_alloc<std::uint8_t>(nesle::cuda::kOamBytes, "cudaMalloc snapshot oam");
+        const auto n = static_cast<std::uint32_t>(snapshots_.size());
 
-        check_cuda(cudaMemcpy(device_snapshot_cpu_ram_, snap.cpu_ram.data(),
-                              snap.cpu_ram.size(), cudaMemcpyHostToDevice),
-                   "copy snapshot cpu_ram");
-        check_cuda(cudaMemcpy(device_snapshot_prg_ram_, snap.prg_ram.data(),
-                              snap.prg_ram.size(), cudaMemcpyHostToDevice),
-                   "copy snapshot prg_ram");
-        check_cuda(cudaMemcpy(device_snapshot_nametable_, snap.nametable_ram.data(),
-                              snap.nametable_ram.size(), cudaMemcpyHostToDevice),
-                   "copy snapshot nametable");
-        check_cuda(cudaMemcpy(device_snapshot_palette_, snap.palette_ram.data(),
-                              snap.palette_ram.size(), cudaMemcpyHostToDevice),
-                   "copy snapshot palette");
-        check_cuda(cudaMemcpy(device_snapshot_oam_, snap.oam.data(),
-                              snap.oam.size(), cudaMemcpyHostToDevice),
-                   "copy snapshot oam");
+        // Bulk array buffers: num_levels * kind_bytes, contiguous.
+        device_snapshot_cpu_ram_ =
+            cuda_alloc<std::uint8_t>(n * nesle::cuda::kCpuRamBytes, "snap cpu_ram");
+        device_snapshot_prg_ram_ =
+            cuda_alloc<std::uint8_t>(n * nesle::cuda::kPrgRamBytes, "snap prg_ram");
+        device_snapshot_nametable_ =
+            cuda_alloc<std::uint8_t>(n * nesle::cuda::kNametableRamBytes, "snap nametable");
+        device_snapshot_palette_ =
+            cuda_alloc<std::uint8_t>(n * nesle::cuda::kPaletteRamBytes, "snap palette");
+        device_snapshot_oam_ =
+            cuda_alloc<std::uint8_t>(n * nesle::cuda::kOamBytes, "snap oam");
+
+        // Per-level scalar arrays.
+        device_snap_pc_ = cuda_alloc<std::uint16_t>(n, "snap pc");
+        device_snap_a_ = cuda_alloc<std::uint8_t>(n, "snap a");
+        device_snap_x_ = cuda_alloc<std::uint8_t>(n, "snap x");
+        device_snap_y_ = cuda_alloc<std::uint8_t>(n, "snap y");
+        device_snap_sp_ = cuda_alloc<std::uint8_t>(n, "snap sp");
+        device_snap_p_ = cuda_alloc<std::uint8_t>(n, "snap p");
+        device_snap_cycles_ = cuda_alloc<std::uint64_t>(n, "snap cycles");
+        device_snap_ppu_ctrl_ = cuda_alloc<std::uint8_t>(n, "snap ppu_ctrl");
+        device_snap_ppu_mask_ = cuda_alloc<std::uint8_t>(n, "snap ppu_mask");
+        device_snap_ppu_status_ = cuda_alloc<std::uint8_t>(n, "snap ppu_status");
+        device_snap_ppu_oam_addr_ = cuda_alloc<std::uint8_t>(n, "snap ppu_oam_addr");
+        device_snap_ppu_open_bus_ = cuda_alloc<std::uint8_t>(n, "snap ppu_open_bus");
+        device_snap_ppu_read_buffer_ = cuda_alloc<std::uint8_t>(n, "snap ppu_read_buffer");
+        device_snap_ppu_x_ = cuda_alloc<std::uint8_t>(n, "snap ppu_x");
+        device_snap_ppu_w_ = cuda_alloc<std::uint8_t>(n, "snap ppu_w");
+        device_snap_ppu_v_ = cuda_alloc<std::uint16_t>(n, "snap ppu_v");
+        device_snap_ppu_t_ = cuda_alloc<std::uint16_t>(n, "snap ppu_t");
+
+        // Per-env level map.
+        device_env_to_level_ = cuda_alloc<std::uint8_t>(num_env_, "snap env_to_level");
+
+        // Stage host-side per-level arrays then memcpy to device.
+        std::vector<std::uint16_t> h_pc(n);
+        std::vector<std::uint8_t> h_a(n), h_x(n), h_y(n), h_sp(n), h_p(n);
+        std::vector<std::uint64_t> h_cycles(n);
+        std::vector<std::uint8_t> h_ppu_ctrl(n), h_ppu_mask(n), h_ppu_status(n);
+        std::vector<std::uint8_t> h_ppu_oam_addr(n), h_ppu_open_bus(n), h_ppu_read_buffer(n);
+        std::vector<std::uint8_t> h_ppu_x(n), h_ppu_w(n);
+        std::vector<std::uint16_t> h_ppu_v(n), h_ppu_t(n);
+
+        for (std::uint32_t i = 0; i < n; ++i) {
+            const auto& s = snapshots_[i];
+            check_cuda(cudaMemcpy(device_snapshot_cpu_ram_ + i * nesle::cuda::kCpuRamBytes,
+                                  s.cpu_ram.data(), nesle::cuda::kCpuRamBytes,
+                                  cudaMemcpyHostToDevice),
+                       "copy snap cpu_ram slot");
+            check_cuda(cudaMemcpy(device_snapshot_prg_ram_ + i * nesle::cuda::kPrgRamBytes,
+                                  s.prg_ram.data(), nesle::cuda::kPrgRamBytes,
+                                  cudaMemcpyHostToDevice),
+                       "copy snap prg_ram slot");
+            check_cuda(cudaMemcpy(device_snapshot_nametable_ + i * nesle::cuda::kNametableRamBytes,
+                                  s.nametable_ram.data(), nesle::cuda::kNametableRamBytes,
+                                  cudaMemcpyHostToDevice),
+                       "copy snap nametable slot");
+            check_cuda(cudaMemcpy(device_snapshot_palette_ + i * nesle::cuda::kPaletteRamBytes,
+                                  s.palette_ram.data(), nesle::cuda::kPaletteRamBytes,
+                                  cudaMemcpyHostToDevice),
+                       "copy snap palette slot");
+            check_cuda(cudaMemcpy(device_snapshot_oam_ + i * nesle::cuda::kOamBytes,
+                                  s.oam.data(), nesle::cuda::kOamBytes,
+                                  cudaMemcpyHostToDevice),
+                       "copy snap oam slot");
+            h_pc[i] = s.pc;
+            h_a[i] = s.a; h_x[i] = s.x; h_y[i] = s.y; h_sp[i] = s.sp; h_p[i] = s.p;
+            h_cycles[i] = s.cycles;
+            h_ppu_ctrl[i] = s.ppu_ctrl; h_ppu_mask[i] = s.ppu_mask; h_ppu_status[i] = s.ppu_status;
+            h_ppu_oam_addr[i] = s.ppu_oam_addr;
+            h_ppu_open_bus[i] = s.ppu_open_bus;
+            h_ppu_read_buffer[i] = s.ppu_read_buffer;
+            h_ppu_x[i] = s.ppu_x; h_ppu_w[i] = s.ppu_w;
+            h_ppu_v[i] = s.ppu_v; h_ppu_t[i] = s.ppu_t;
+        }
+        copy_to_device(device_snap_pc_, h_pc, "snap pc upload");
+        copy_to_device(device_snap_a_, h_a, "snap a upload");
+        copy_to_device(device_snap_x_, h_x, "snap x upload");
+        copy_to_device(device_snap_y_, h_y, "snap y upload");
+        copy_to_device(device_snap_sp_, h_sp, "snap sp upload");
+        copy_to_device(device_snap_p_, h_p, "snap p upload");
+        copy_to_device(device_snap_cycles_, h_cycles, "snap cycles upload");
+        copy_to_device(device_snap_ppu_ctrl_, h_ppu_ctrl, "snap ppu_ctrl upload");
+        copy_to_device(device_snap_ppu_mask_, h_ppu_mask, "snap ppu_mask upload");
+        copy_to_device(device_snap_ppu_status_, h_ppu_status, "snap ppu_status upload");
+        copy_to_device(device_snap_ppu_oam_addr_, h_ppu_oam_addr, "snap ppu_oam_addr upload");
+        copy_to_device(device_snap_ppu_open_bus_, h_ppu_open_bus, "snap ppu_open_bus upload");
+        copy_to_device(device_snap_ppu_read_buffer_, h_ppu_read_buffer, "snap ppu_read_buffer upload");
+        copy_to_device(device_snap_ppu_x_, h_ppu_x, "snap ppu_x upload");
+        copy_to_device(device_snap_ppu_w_, h_ppu_w, "snap ppu_w upload");
+        copy_to_device(device_snap_ppu_v_, h_ppu_v, "snap ppu_v upload");
+        copy_to_device(device_snap_ppu_t_, h_ppu_t, "snap ppu_t upload");
+        copy_to_device(device_env_to_level_, env_to_level_host, "snap env_to_level upload");
 
         snapshot_template_.cpu_ram = device_snapshot_cpu_ram_;
         snapshot_template_.prg_ram = device_snapshot_prg_ram_;
         snapshot_template_.nametable_ram = device_snapshot_nametable_;
         snapshot_template_.palette_ram = device_snapshot_palette_;
         snapshot_template_.oam = device_snapshot_oam_;
-        snapshot_template_.pc = snap.pc;
-        snapshot_template_.a = snap.a;
-        snapshot_template_.x = snap.x;
-        snapshot_template_.y = snap.y;
-        snapshot_template_.sp = snap.sp;
-        snapshot_template_.p = snap.p;
-        snapshot_template_.cycles = snap.cycles;
-        snapshot_template_.ppu_ctrl = snap.ppu_ctrl;
-        snapshot_template_.ppu_mask = snap.ppu_mask;
-        snapshot_template_.ppu_status = snap.ppu_status;
-        snapshot_template_.ppu_oam_addr = snap.ppu_oam_addr;
-        snapshot_template_.ppu_open_bus = snap.ppu_open_bus;
-        snapshot_template_.ppu_read_buffer = snap.ppu_read_buffer;
-        snapshot_template_.ppu_x = snap.ppu_x;
-        snapshot_template_.ppu_w = snap.ppu_w;
-        snapshot_template_.ppu_v = snap.ppu_v;
-        snapshot_template_.ppu_t = snap.ppu_t;
+        snapshot_template_.pc = device_snap_pc_;
+        snapshot_template_.a = device_snap_a_;
+        snapshot_template_.x = device_snap_x_;
+        snapshot_template_.y = device_snap_y_;
+        snapshot_template_.sp = device_snap_sp_;
+        snapshot_template_.p = device_snap_p_;
+        snapshot_template_.cycles = device_snap_cycles_;
+        snapshot_template_.ppu_ctrl = device_snap_ppu_ctrl_;
+        snapshot_template_.ppu_mask = device_snap_ppu_mask_;
+        snapshot_template_.ppu_status = device_snap_ppu_status_;
+        snapshot_template_.ppu_oam_addr = device_snap_ppu_oam_addr_;
+        snapshot_template_.ppu_open_bus = device_snap_ppu_open_bus_;
+        snapshot_template_.ppu_read_buffer = device_snap_ppu_read_buffer_;
+        snapshot_template_.ppu_x = device_snap_ppu_x_;
+        snapshot_template_.ppu_w = device_snap_ppu_w_;
+        snapshot_template_.ppu_v = device_snap_ppu_v_;
+        snapshot_template_.ppu_t = device_snap_ppu_t_;
+        snapshot_template_.env_to_level = device_env_to_level_;
+        snapshot_template_.num_levels = n;
     }
 
     void reset_console_from_snapshot() {
@@ -927,13 +1068,31 @@ private:
     unsigned long long* device_profile_pc_counts_ = nullptr;
     static constexpr std::size_t kOpcodeProfileBytes = 256 * sizeof(unsigned long long);
     static constexpr std::size_t kPcProfileBytes = 65536 * sizeof(unsigned long long);
-    std::optional<nesle::fcs::StateSnapshot> snapshot_;
+    std::vector<nesle::fcs::StateSnapshot> snapshots_;
     nesle::cuda::SnapshotTemplate snapshot_template_{};
     std::uint8_t* device_snapshot_cpu_ram_ = nullptr;
     std::uint8_t* device_snapshot_prg_ram_ = nullptr;
     std::uint8_t* device_snapshot_nametable_ = nullptr;
     std::uint8_t* device_snapshot_palette_ = nullptr;
     std::uint8_t* device_snapshot_oam_ = nullptr;
+    std::uint16_t* device_snap_pc_ = nullptr;
+    std::uint8_t* device_snap_a_ = nullptr;
+    std::uint8_t* device_snap_x_ = nullptr;
+    std::uint8_t* device_snap_y_ = nullptr;
+    std::uint8_t* device_snap_sp_ = nullptr;
+    std::uint8_t* device_snap_p_ = nullptr;
+    std::uint64_t* device_snap_cycles_ = nullptr;
+    std::uint8_t* device_snap_ppu_ctrl_ = nullptr;
+    std::uint8_t* device_snap_ppu_mask_ = nullptr;
+    std::uint8_t* device_snap_ppu_status_ = nullptr;
+    std::uint8_t* device_snap_ppu_oam_addr_ = nullptr;
+    std::uint8_t* device_snap_ppu_open_bus_ = nullptr;
+    std::uint8_t* device_snap_ppu_read_buffer_ = nullptr;
+    std::uint8_t* device_snap_ppu_x_ = nullptr;
+    std::uint8_t* device_snap_ppu_w_ = nullptr;
+    std::uint16_t* device_snap_ppu_v_ = nullptr;
+    std::uint16_t* device_snap_ppu_t_ = nullptr;
+    std::uint8_t* device_env_to_level_ = nullptr;
 };
 
 }  // namespace
@@ -992,6 +1151,14 @@ PYBIND11_MODULE(_cuda_core, m) {
              py::arg("frameskip"),
              py::arg("rom_bytes"),
              py::arg("snapshot_bytes"))
+        .def(py::init<std::uint32_t, std::uint32_t, const py::bytes&,
+                      const std::vector<py::bytes>&,
+                      py::array_t<std::uint8_t, py::array::c_style | py::array::forcecast>>(),
+             py::arg("num_envs"),
+             py::arg("frameskip"),
+             py::arg("rom_bytes"),
+             py::arg("snapshot_bytes_list"),
+             py::arg("env_to_level"))
         .def("reset", &CudaBatchBinding::reset)
         .def("step",
              &CudaBatchBinding::step,
@@ -1007,5 +1174,7 @@ PYBIND11_MODULE(_cuda_core, m) {
         .def("poke_ram", &CudaBatchBinding::poke_ram, py::arg("address"), py::arg("value"))
         .def_property_readonly("name", &CudaBatchBinding::name)
         .def_property_readonly("has_snapshot",
-                               [](const CudaBatchBinding& self) { return self.has_snapshot(); });
+                               [](const CudaBatchBinding& self) { return self.has_snapshot(); })
+        .def_property_readonly("num_levels",
+                               [](const CudaBatchBinding& self) { return self.num_levels(); });
 }

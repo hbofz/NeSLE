@@ -83,34 +83,42 @@ struct BatchBuffers {
     std::uint8_t* frames_rgb;
 };
 
-// Read-only template used by snapshot-based env resets. Array pointers reference device-side
-// "template" buffers populated once from a parsed FCEUX FCS snapshot. The kernel copies them
-// into each env's slice on reset, bypassing the cold-boot title-screen sequence entirely.
+// Read-only "bank" of N snapshot templates used by snapshot-based env resets. Each top-level
+// array is num_levels copies of a single snapshot's array data, laid out contiguously.
+// `env_to_level[env]` selects which slot each env restores from — letting different envs in
+// the same batch start at different levels (curriculum training). For the single-level case
+// num_levels is 1 and env_to_level is all zeros.
 struct SnapshotTemplate {
-    const std::uint8_t* cpu_ram = nullptr;        // kCpuRamBytes
-    const std::uint8_t* prg_ram = nullptr;        // kPrgRamBytes
-    const std::uint8_t* nametable_ram = nullptr;  // kNametableRamBytes
-    const std::uint8_t* palette_ram = nullptr;    // kPaletteRamBytes
-    const std::uint8_t* oam = nullptr;            // kOamBytes
+    // Per-level array buffers (concatenated, length = num_levels * <kind>_Bytes).
+    const std::uint8_t* cpu_ram = nullptr;
+    const std::uint8_t* prg_ram = nullptr;
+    const std::uint8_t* nametable_ram = nullptr;
+    const std::uint8_t* palette_ram = nullptr;
+    const std::uint8_t* oam = nullptr;
 
-    std::uint16_t pc = 0;
-    std::uint8_t a = 0;
-    std::uint8_t x = 0;
-    std::uint8_t y = 0;
-    std::uint8_t sp = 0xFD;
-    std::uint8_t p = 0x24;
-    std::uint64_t cycles = 0;
+    // Per-level scalar fields (length = num_levels).
+    const std::uint16_t* pc = nullptr;
+    const std::uint8_t* a = nullptr;
+    const std::uint8_t* x = nullptr;
+    const std::uint8_t* y = nullptr;
+    const std::uint8_t* sp = nullptr;
+    const std::uint8_t* p = nullptr;
+    const std::uint64_t* cycles = nullptr;
+    const std::uint8_t* ppu_ctrl = nullptr;
+    const std::uint8_t* ppu_mask = nullptr;
+    const std::uint8_t* ppu_status = nullptr;
+    const std::uint8_t* ppu_oam_addr = nullptr;
+    const std::uint8_t* ppu_open_bus = nullptr;
+    const std::uint8_t* ppu_read_buffer = nullptr;
+    const std::uint8_t* ppu_x = nullptr;
+    const std::uint8_t* ppu_w = nullptr;
+    const std::uint16_t* ppu_v = nullptr;
+    const std::uint16_t* ppu_t = nullptr;
 
-    std::uint8_t ppu_ctrl = 0;
-    std::uint8_t ppu_mask = 0;
-    std::uint8_t ppu_status = 0;
-    std::uint8_t ppu_oam_addr = 0;
-    std::uint8_t ppu_open_bus = 0;
-    std::uint8_t ppu_read_buffer = 0;
-    std::uint8_t ppu_x = 0;
-    std::uint8_t ppu_w = 0;
-    std::uint16_t ppu_v = 0;
-    std::uint16_t ppu_t = 0;
+    // Per-env level assignment (length = num_envs).
+    const std::uint8_t* env_to_level = nullptr;
+
+    std::uint32_t num_levels = 0;
 };
 
 NESLE_CUDA_STATE_HD inline const std::uint8_t* env_cpu_ram(const BatchBuffers& buffers,

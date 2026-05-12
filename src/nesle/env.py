@@ -101,6 +101,21 @@ def _load_reset_state(state_path: str | Path) -> bytes:
     return raw
 
 
+def _resolve_reset_state_paths(
+    reset_state_path: str | Path | None,
+    reset_state_paths: Sequence[str | Path] | None,
+) -> list[Path] | None:
+    if reset_state_path is not None and reset_state_paths is not None:
+        raise ValueError("Pass exactly one of reset_state_path or reset_state_paths, not both")
+    if reset_state_paths is not None:
+        if len(reset_state_paths) == 0:
+            raise ValueError("reset_state_paths must contain at least one path")
+        return [Path(p) for p in reset_state_paths]
+    if reset_state_path is not None:
+        return [Path(reset_state_path)]
+    return None
+
+
 def _action_masks(action_space: str | Sequence[int]) -> tuple[int, ...]:
     if isinstance(action_space, str):
         key = action_space.lower().replace("-", "_")
@@ -322,16 +337,25 @@ def _make_cuda_batch(
     num_envs: int,
     frameskip: int,
     rom_bytes: bytes | None = None,
-    snapshot_bytes: bytes | None = None,
+    snapshot_bytes_list: list[bytes] | None = None,
+    env_to_level: np.ndarray | None = None,
 ) -> Any:
     from . import _cuda_core  # type: ignore[attr-defined]
 
     if not hasattr(_cuda_core, "CudaBatch"):
         raise RuntimeError("installed nesle._cuda_core does not expose CudaBatch")
-    if snapshot_bytes is not None:
+    if snapshot_bytes_list is not None:
         if rom_bytes is None:
-            raise ValueError("snapshot_bytes requires rom_bytes (cuda-console path)")
-        return _cuda_core.CudaBatch(num_envs, frameskip, rom_bytes, snapshot_bytes)
+            raise ValueError("snapshot_bytes_list requires rom_bytes (cuda-console path)")
+        if len(snapshot_bytes_list) == 1:
+            # Single-snapshot fast path — uses the 4-arg ctor for backward compat with
+            # any external callers that introspect the binding.
+            return _cuda_core.CudaBatch(num_envs, frameskip, rom_bytes, snapshot_bytes_list[0])
+        if env_to_level is None:
+            raise ValueError("env_to_level required when more than one snapshot is provided")
+        return _cuda_core.CudaBatch(
+            num_envs, frameskip, rom_bytes, snapshot_bytes_list, env_to_level
+        )
     if rom_bytes is not None:
         return _cuda_core.CudaBatch(num_envs, frameskip, rom_bytes)
     return _cuda_core.CudaBatch(num_envs, frameskip)
@@ -369,6 +393,8 @@ class NesleVecEnv(_VecEnvBase):
         reset_start_steps: int = 2,
         reset_post_start_steps: int = 60,
         reset_state_path: str | Path | None = None,
+        reset_state_paths: Sequence[str | Path] | None = None,
+        env_to_level: Sequence[int] | np.ndarray | None = None,
     ) -> None:
         numpy = _require_numpy()
         if num_envs <= 0:
@@ -383,9 +409,28 @@ class NesleVecEnv(_VecEnvBase):
             raise ValueError("render_mode must be None or 'rgb_array'")
         observation_mode = _normalize_observation_mode(observation_mode)
         rom_bytes, rom = _load_rom(rom_path)
-        snapshot_bytes: bytes | None = None
-        if reset_state_path is not None:
-            snapshot_bytes = _load_reset_state(reset_state_path)
+        snapshot_bytes_list: list[bytes] | None = None
+        env_to_level_arr: np.ndarray | None = None
+        resolved_paths = _resolve_reset_state_paths(reset_state_path, reset_state_paths)
+        if resolved_paths is not None:
+            snapshot_bytes_list = [_load_reset_state(p) for p in resolved_paths]
+            if len(snapshot_bytes_list) > 1:
+                if env_to_level is None:
+                    # Default: round-robin assignment across levels.
+                    env_to_level_arr = numpy.arange(num_envs, dtype=numpy.uint8) % len(
+                        snapshot_bytes_list
+                    )
+                else:
+                    env_to_level_arr = numpy.asarray(env_to_level, dtype=numpy.uint8)
+                    if env_to_level_arr.shape != (num_envs,):
+                        raise ValueError(
+                            f"env_to_level shape must be ({num_envs},), got "
+                            f"{env_to_level_arr.shape}"
+                        )
+                    if int(env_to_level_arr.max(initial=0)) >= len(snapshot_bytes_list):
+                        raise ValueError("env_to_level contains index >= number of snapshots")
+            elif env_to_level is not None:
+                raise ValueError("env_to_level requires more than one snapshot")
             if start_on_reset:
                 # Snapshot reset already lands us in gameplay; the NOOP+START+poke warmup
                 # is redundant and would corrupt the snapshot's state.
@@ -434,16 +479,16 @@ class NesleVecEnv(_VecEnvBase):
         cuda_requested = backend.lower() == "cuda" or (
             backend.lower() == "auto" and device.lower() == "cuda"
         )
-        if snapshot_bytes is not None and not cuda_requested:
+        if snapshot_bytes_list is not None and not cuda_requested:
             raise ValueError(
-                "reset_state_path is only supported with backend='cuda' "
+                "reset_state_path / reset_state_paths is only supported with backend='cuda' "
                 "(the cuda-console snapshot path)"
             )
         self._cuda_batch = None
         if cuda_requested:
             try:
                 self._cuda_batch = _make_cuda_batch(
-                    num_envs, frameskip, rom_bytes, snapshot_bytes
+                    num_envs, frameskip, rom_bytes, snapshot_bytes_list, env_to_level_arr
                 )
             except Exception:
                 if backend.lower() == "cuda":
@@ -877,6 +922,8 @@ class NesleEnv(_EnvBase):
         reset_start_steps: int = 2,
         reset_post_start_steps: int = 60,
         reset_state_path: str | Path | None = None,
+        reset_state_paths: Sequence[str | Path] | None = None,
+        env_to_level: Sequence[int] | np.ndarray | None = None,
     ) -> None:
         if gym is not None:
             super().__init__()
@@ -896,6 +943,8 @@ class NesleEnv(_EnvBase):
             reset_start_steps=reset_start_steps,
             reset_post_start_steps=reset_post_start_steps,
             reset_state_path=reset_state_path,
+            reset_state_paths=reset_state_paths,
+            env_to_level=env_to_level,
         )
         self.render_mode = render_mode
         self.observation_space = self.vector_env.observation_space
