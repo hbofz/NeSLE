@@ -169,6 +169,16 @@ Then rerun the local smoke with `--sb3-device cuda`. Expect:
 - `sb3_device=cuda`
 - `torch_cuda=<GPU name>`
 
+For Colab A100 specifically, open:
+
+```text
+notebooks/nesle_colab_a100_training.ipynb
+```
+
+The notebook mounts Google Drive, uses your ROM from Drive, builds with
+`NESLE_CUDA_ARCH=sm_80`, trains with periodic checkpoints to Drive, supports
+resume, and runs evaluation/TensorBoard cells.
+
 ---
 
 ## 7. File Reference
@@ -184,6 +194,7 @@ Then rerun the local smoke with `--sb3-device cuda`. Expect:
 | `docs/data/smb_level*_1.state` | Bundled Stable Retro level snapshots |
 | `examples/sb3_train.py` | SB3 training script |
 | `examples/eval_smoke.py` | Trained-model rollout smoke |
+| `notebooks/nesle_colab_a100_training.ipynb` | Drive-backed Colab/A100 training notebook |
 | `benchmarks/gpu_vs_cpu.py` | Local CPU-vs-GPU throughput benchmark |
 | `benchmarks/verify_correctness.py` | Falsifiability checks for GPU throughput |
 | `docs/training.md` | Training and PyTorch GPU setup notes |

@@ -189,3 +189,34 @@ If `--sb3-device cuda` fails, check PyTorch first, not NeSLE:
 ```powershell
 .\.venv\Scripts\python.exe -c "import torch; print(torch.__version__); print(torch.cuda.is_available())"
 ```
+
+## Colab A100 Notebook
+
+Use the checked-in notebook for the A100 run:
+
+```text
+notebooks/nesle_colab_a100_training.ipynb
+```
+
+It does the standard Colab flow:
+
+- mounts Google Drive,
+- clones or updates the repo,
+- installs `.[dev,rl]`,
+- builds `_cuda_core` with `NESLE_CUDA_ARCH=sm_80`,
+- verifies snapshot reset,
+- trains W1-1 and multi-level curriculum PPO,
+- writes checkpoints, final models, and TensorBoard logs to Drive,
+- resumes from the latest checkpoint,
+- runs `examples/eval_smoke.py`.
+
+If the GitHub repo is private, create a Colab secret named `GITHUB_TOKEN` with
+read access to the repo before running the clone cell.
+
+The notebook expects your ROM in Drive, by default:
+
+```text
+/content/drive/MyDrive/nesle/roms/Super Mario Bros. (World).nes
+```
+
+The ROM is intentionally not committed to Git.

@@ -21,6 +21,16 @@ def main() -> None:
     parser.add_argument("--policy", default="auto", choices=["auto", "MlpPolicy", "CnnPolicy"])
     parser.add_argument("--sb3-device", default="auto")
     parser.add_argument("--model-path", default="nesle_ppo")
+    parser.add_argument("--resume-from", default=None, help="Optional PPO .zip checkpoint to resume from.")
+    parser.add_argument("--checkpoint-dir", default=None, help="Directory for periodic PPO checkpoints.")
+    parser.add_argument(
+        "--checkpoint-freq",
+        type=int,
+        default=0,
+        help="Save a checkpoint every N environment timesteps (0 disables periodic checkpoints).",
+    )
+    parser.add_argument("--checkpoint-prefix", default="nesle_ppo", help="Filename prefix for checkpoints.")
+    parser.add_argument("--tensorboard-log", default=None, help="Optional TensorBoard log directory.")
     parser.add_argument("--start-on-reset", action="store_true", help="Boot each reset into controllable gameplay (legacy poke workaround; prefer --reset-state-path).")
     parser.add_argument("--reset-wait-steps", type=int, default=10)
     parser.add_argument("--reset-start-steps", type=int, default=2)
@@ -53,7 +63,7 @@ def main() -> None:
 
     try:
         from stable_baselines3 import PPO
-        from stable_baselines3.common.callbacks import BaseCallback
+        from stable_baselines3.common.callbacks import BaseCallback, CallbackList, CheckpointCallback
     except ImportError as exc:
         raise SystemExit("Install the 'rl' extra to run this example: pip install -e '.[rl]'") from exc
     try:
@@ -171,15 +181,38 @@ def main() -> None:
         f"sb3_device={torch_device} torch={torch.__version__} torch_cuda={cuda_name}"
     )
 
-    model = PPO(
-        policy,
-        env,
-        verbose=1,
-        n_steps=args.n_steps,
-        batch_size=args.batch_size,
-        device=args.sb3_device,
-    )
-    callback = ProgressCallback(args.timesteps, args.progress_interval) if args.progress_bar else None
+    if args.resume_from:
+        model = PPO.load(args.resume_from, env=env, device=args.sb3_device)
+    else:
+        model = PPO(
+            policy,
+            env,
+            verbose=1,
+            n_steps=args.n_steps,
+            batch_size=args.batch_size,
+            device=args.sb3_device,
+            tensorboard_log=args.tensorboard_log,
+        )
+
+    callbacks = []
+    if args.progress_bar:
+        callbacks.append(ProgressCallback(args.timesteps, args.progress_interval))
+    if args.checkpoint_dir and args.checkpoint_freq > 0:
+        save_freq = max(1, args.checkpoint_freq // max(1, args.num_envs))
+        callbacks.append(
+            CheckpointCallback(
+                save_freq=save_freq,
+                save_path=args.checkpoint_dir,
+                name_prefix=args.checkpoint_prefix,
+                save_replay_buffer=False,
+                save_vecnormalize=False,
+            )
+        )
+    callback = None
+    if len(callbacks) == 1:
+        callback = callbacks[0]
+    elif callbacks:
+        callback = CallbackList(callbacks)
     model.learn(total_timesteps=args.timesteps, callback=callback)
     model.save(args.model_path)
     env.close()

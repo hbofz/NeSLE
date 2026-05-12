@@ -7,6 +7,13 @@ __pycache__/
 build/
 dist/
 benchmarks/results/
+checkpoints/
+models/
+runs/
+tb_logs/
+wandb/
+.ipynb_checkpoints/
+notebooks/.ipynb_checkpoints/
 .pytest_cache/
 .ruff_cache/
 .mypy_cache/
@@ -16,6 +23,7 @@ venv/
 
 # Trained model artifacts from local smokes (PPO .zip checkpoints).
 nesle_*ppo*.zip
+*_steps.zip
 
 # Local Claude Code project config.
 .claude/
