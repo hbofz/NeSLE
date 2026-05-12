@@ -3,6 +3,8 @@
 from .actions import (
     COMPLEX_MOVEMENT,
     COMPLEX_MOVEMENT_MASKS,
+    MARIO_MOVEMENT,
+    MARIO_MOVEMENT_MASKS,
     RIGHT_ONLY,
     RIGHT_ONLY_MASKS,
     SIMPLE_MOVEMENT,
@@ -21,6 +23,8 @@ __all__ = [
     "COMPLEX_MOVEMENT_MASKS",
     "INESRom",
     "MarioRamState",
+    "MARIO_MOVEMENT",
+    "MARIO_MOVEMENT_MASKS",
     "RIGHT_ONLY",
     "RIGHT_ONLY_MASKS",
     "RewardComponents",

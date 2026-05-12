@@ -391,7 +391,7 @@ def parse_args() -> tuple[NativePPOConfig, str | None]:
     parser.add_argument(
         "--action-space",
         default="simple_with_start",
-        choices=["right_only", "simple", "simple_with_start", "complex", "raw"],
+        choices=["right_only", "simple", "simple_with_start", "complex", "mario", "raw"],
     )
     parser.add_argument("--reset-state-path", default=None)
     parser.add_argument("--reset-state-paths", nargs="+", default=())

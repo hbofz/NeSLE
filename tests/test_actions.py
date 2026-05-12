@@ -3,6 +3,7 @@ import unittest
 from nesle.actions import (
     Button,
     COMPLEX_MOVEMENT_MASKS,
+    MARIO_MOVEMENT_MASKS,
     RIGHT_ONLY_MASKS,
     SIMPLE_MOVEMENT_MASKS,
     encode_action,
@@ -21,7 +22,9 @@ class ActionTests(unittest.TestCase):
         self.assertEqual(len(RIGHT_ONLY_MASKS), 5)
         self.assertEqual(len(SIMPLE_MOVEMENT_MASKS), 7)
         self.assertEqual(len(COMPLEX_MOVEMENT_MASKS), 12)
+        self.assertEqual(len(MARIO_MOVEMENT_MASKS), 11)
         self.assertEqual(SIMPLE_MOVEMENT_MASKS[1], encode_action(["right"]))
+        self.assertEqual(MARIO_MOVEMENT_MASKS[4], encode_action(["right", "B", "A"]))
 
     def test_unknown_button_fails(self):
         with self.assertRaises(ValueError):
