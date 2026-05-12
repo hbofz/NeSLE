@@ -213,3 +213,4 @@ the `legacy-mario` extra for benchmark work.
 - [CPU validation](docs/cpu-validation.md)
 - [Headless runner](docs/headless-runner.md)
 - [Phase 5 results](docs/phase5-results.md)
+- [GPU vs CPU benchmark (GTX 1050 Ti)](docs/benchmark-gpu-vs-cpu.md)
