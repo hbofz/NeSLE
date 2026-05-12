@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import csv
 import gzip
+import importlib
 import json
 import math
 import os
@@ -180,10 +181,18 @@ def setup_nesle(nesle_root: Path, cuda_arch: str) -> None:
     ensure_nesle_on_path(nesle_root)
     env = dict(os.environ)
     env["NESLE_CUDA_ARCH"] = cuda_arch
+    env["NESLE_REQUIRE_CUDA"] = "1"
     env["PYTHON"] = sys.executable
     build = run_command(["sh", "scripts/build_cuda_extension.sh"], cwd=nesle_root, env=env)
     if build.returncode != 0:
         raise RuntimeError(f"NeSLE CUDA build failed:\n{build.stdout}\n{build.stderr}")
+    try:
+        import_cuda_core(nesle_root)
+    except ImportError as exc:
+        raise ImportError(
+            "NeSLE CUDA build finished, but nesle._cuda_core is still not importable.\n"
+            f"Build stdout:\n{build.stdout}\n\nBuild stderr:\n{build.stderr}"
+        ) from exc
 
 
 def ensure_nesle_on_path(nesle_root: Path | None) -> None:
@@ -192,6 +201,24 @@ def ensure_nesle_on_path(nesle_root: Path | None) -> None:
     src = str(nesle_root / "src")
     if src not in sys.path:
         sys.path.insert(0, src)
+
+
+def import_cuda_core(nesle_root: Path | None = None) -> Any:
+    ensure_nesle_on_path(nesle_root)
+    try:
+        return importlib.import_module("nesle._cuda_core")
+    except Exception as exc:
+        extension_candidates: list[str] = []
+        if nesle_root is not None:
+            extension_candidates = [str(path) for path in sorted((nesle_root / "src" / "nesle").glob("_cuda_core*.so"))]
+        raise ImportError(
+            "Cannot import nesle._cuda_core. Build it first with:\n"
+            "  NESLE_REQUIRE_CUDA=1 NESLE_CUDA_ARCH=sm_80 sh scripts/build_cuda_extension.sh\n"
+            f"Python: {sys.executable}\n"
+            f"NeSLE root: {nesle_root}\n"
+            f"Built extension candidates: {extension_candidates}\n"
+            f"sys.path head: {sys.path[:5]}"
+        ) from exc
 
 
 def git_sha(path: Path | None) -> str | None:
@@ -264,7 +291,7 @@ def preflight(args: argparse.Namespace) -> dict[str, Any]:
 
     import nesle  # noqa: F401
     import torch
-    from nesle import _cuda_core  # type: ignore[attr-defined]
+    _cuda_core = import_cuda_core(nesle_root)
 
     rom_path = Path(args.rom)
     snapshot_path = Path(args.snapshot)
@@ -310,7 +337,7 @@ def preflight(args: argparse.Namespace) -> dict[str, Any]:
 
 
 def run_env_sweep(args: argparse.Namespace) -> list[CaseResult]:
-    from nesle import _cuda_core  # type: ignore[attr-defined]
+    _cuda_core = import_cuda_core(find_nesle_root(args.nesle_root))
 
     rom_bytes = Path(args.rom).read_bytes()
     snapshot_bytes = load_reset_state(Path(args.snapshot))
@@ -428,7 +455,12 @@ def run_ppo_case(args: argparse.Namespace, num_envs: int, updates: int) -> CaseR
     ]
     before = gpu_snapshot()
     started = time.perf_counter()
-    proc = run_command(cmd)
+    env = dict(os.environ)
+    nesle_root = find_nesle_root(args.nesle_root)
+    if nesle_root is not None:
+        src = str(nesle_root / "src")
+        env["PYTHONPATH"] = src if not env.get("PYTHONPATH") else f"{src}{os.pathsep}{env['PYTHONPATH']}"
+    proc = run_command(cmd, env=env)
     duration = max(time.perf_counter() - started, 1e-12)
     after = gpu_snapshot()
     metrics = parse_native_ppo_stdout(proc.stdout)
