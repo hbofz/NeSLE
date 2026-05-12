@@ -12,7 +12,7 @@ Three independent checks that would all FAIL if the kernel were silently skippin
       total work (kernel scales).
 
   (3) Snapshot drift. After many random steps, sample RAM across envs and confirm
-      hashes are diverse — i.e., emulators actually evolve independently with
+      hashes are diverse - i.e., emulators actually evolve independently with
       different action streams.
 """
 from __future__ import annotations
@@ -26,9 +26,11 @@ import numpy as np
 
 from nesle._cuda_core import CudaBatch
 
-REPO = Path(__file__).resolve().parent
-ROM = (REPO / "Super Mario Bros. (World).nes").read_bytes()
-STATE = gzip.decompress((REPO / "docs/data/smb_level1_1.state").read_bytes())
+REPO_ROOT = Path(__file__).resolve().parents[1]
+ROM_PATH = REPO_ROOT / "Super Mario Bros. (World).nes"
+STATE_PATH = REPO_ROOT / "docs" / "data" / "smb_level1_1.state"
+ROM = ROM_PATH.read_bytes()
+STATE = gzip.decompress(STATE_PATH.read_bytes())
 
 
 def test_actions_diverge(num_envs: int = 4096, steps: int = 60) -> None:
@@ -43,7 +45,7 @@ def test_actions_diverge(num_envs: int = 4096, steps: int = 60) -> None:
     ram = batch.ram()
     # x_pos per env
     x_positions = ram[:, 0x006D].astype(np.int32) * 0x100 + ram[:, 0x0086].astype(np.int32)
-    # Group by action class — envs with the same action should have similar (not identical
+    # Group by action class - envs with the same action should have similar (not identical
     # because of timing jitter) x_pos; envs with different actions should diverge.
     per_action_x = {int(m): x_positions[actions == m] for m in base_masks}
     print(f"  per-action mean x_pos (n_envs each):")
@@ -56,7 +58,7 @@ def test_actions_diverge(num_envs: int = 4096, steps: int = 60) -> None:
         f"RIGHT envs (x={right_mean:.1f}) should significantly outpace NOOP envs "
         f"(x={noop_mean:.1f})"
     )
-    # Sanity: at least 5 distinct x_pos values across the batch — proves envs aren't all
+    # Sanity: at least 5 distinct x_pos values across the batch - proves envs aren't all
     # synchronized to env 0.
     distinct = len(np.unique(x_positions))
     assert distinct >= 5, f"only {distinct} distinct x_pos values; envs may be synced"
@@ -87,7 +89,7 @@ def test_cycle_accounting(num_envs_list: tuple[int, ...] = (32, 256, 2048)) -> N
     # earlier from probe_pc_profile.py). If we see < 5000, kernel is no-op'ing.
     for n, mean_instrs, _, mean_frames, _ in rows:
         assert mean_instrs > 5000, (
-            f"{n} envs only ran {mean_instrs} instructions/step — kernel skipping work?"
+            f"{n} envs only ran {mean_instrs} instructions/step - kernel skipping work?"
         )
         assert mean_frames == 4, f"frameskip=4 but frames_completed reports {mean_frames}"
     print(f"  ==> PASS: all batch sizes ran plausible CPU work, frames_completed=4 each [ok]")
@@ -107,7 +109,7 @@ def test_state_diversity(num_envs: int = 256, steps: int = 100) -> None:
     hashes = {hashlib.md5(ram[e].tobytes()).digest()[:6] for e in range(num_envs)}
     print(f"  distinct RAM hashes across {num_envs} envs: {len(hashes)}")
     assert len(hashes) >= num_envs // 2, (
-        f"only {len(hashes)} distinct RAM hashes for {num_envs} envs — envs may be syncing"
+        f"only {len(hashes)} distinct RAM hashes for {num_envs} envs - envs may be syncing"
     )
     print(f"  ==> PASS: state evolution is independent across envs [ok]")
 
