@@ -455,7 +455,13 @@ public:
         return out;
     }
 
-    py::array_t<std::uint8_t> render() const {
+    py::array_t<std::uint8_t> render() {
+        // Always re-rasterize before the memcpy. Previously this was a const memcpy of
+        // device_frames_, which silently returned whatever was last written by a step()
+        // with render_frame=True — turning the high-throughput step(render_frame=False)
+        // path into a "frozen frame" footgun. Re-rendering is one kernel launch; cheap.
+        render_device();
+        check_cuda(cudaDeviceSynchronize(), "render synchronize");
         py::array_t<std::uint8_t> out(std::vector<py::ssize_t>{
             static_cast<py::ssize_t>(num_env_),
             nesle::cuda::kFrameHeight,
@@ -480,6 +486,19 @@ public:
                               static_cast<std::size_t>(num_env_) * nesle::cuda::kCpuRamBytes,
                               cudaMemcpyDeviceToHost),
                    "copy ram");
+        return out;
+    }
+
+    py::array_t<std::uint8_t> oam() const {
+        py::array_t<std::uint8_t> out(std::vector<py::ssize_t>{
+            static_cast<py::ssize_t>(num_env_),
+            nesle::cuda::kOamBytes,
+        });
+        check_cuda(cudaMemcpy(out.mutable_data(),
+                              device_oam_,
+                              static_cast<std::size_t>(num_env_) * nesle::cuda::kOamBytes,
+                              cudaMemcpyDeviceToHost),
+                   "copy oam");
         return out;
     }
 
@@ -983,6 +1002,7 @@ PYBIND11_MODULE(_cuda_core, m) {
         .def("step_profile", &CudaBatchBinding::step_profile, py::arg("actions"))
         .def("render", &CudaBatchBinding::render)
         .def("ram", &CudaBatchBinding::ram)
+        .def("oam", &CudaBatchBinding::oam)
         .def("reset_envs", &CudaBatchBinding::reset_envs, py::arg("mask"))
         .def("poke_ram", &CudaBatchBinding::poke_ram, py::arg("address"), py::arg("value"))
         .def_property_readonly("name", &CudaBatchBinding::name)
