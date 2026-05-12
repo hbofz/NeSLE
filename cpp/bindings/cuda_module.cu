@@ -83,6 +83,20 @@ void dlpack_deleter(DLManagedTensor* self) {
     delete ctx;
 }
 
+// Forward declaration so CudaDeviceArrayView::dlpack() can call check_cuda() before its
+// definition appears below. Body is unchanged at line ~150.
+void check_cuda(cudaError_t error, const char* label);
+
+// Read-only view into a device buffer owned by CudaBatchBinding. The view holds a bare
+// device pointer with no ownership — it is the *binding's* responsibility (via pybind
+// `py::keep_alive<0, 1>()` annotations on every method that returns a view) to keep the
+// owning CudaBatch alive as long as any Python caller might dereference the pointer.
+//
+// All kernel launches in this module go to the default stream (0). To make tensors
+// produced from these views safe to consume on any stream (PyTorch may bind them to a
+// non-default stream), `dlpack()` synchronizes the device before handing the capsule out
+// — i.e., we trade a tiny per-handoff cost for race-free interop. Callers chasing
+// max throughput should batch up `step_device` calls between DLPack conversions.
 class CudaDeviceArrayView {
 public:
     CudaDeviceArrayView(std::uintptr_t ptr,
@@ -113,6 +127,12 @@ public:
 
     py::capsule dlpack(py::object stream = py::none()) const {
         del_stream(stream);
+        // Synchronize the default stream before producing the capsule. All kernels in
+        // this module run on stream 0; if the consumer (e.g., PyTorch) is bound to a
+        // different stream, in-flight writes from the producer side would otherwise race
+        // the consumer's first read. One sync per handoff is cheap; consumers should
+        // amortize by batching step_device calls between conversions.
+        check_cuda(cudaDeviceSynchronize(), "dlpack synchronize before handoff");
         auto* ctx = new DLManagedTensorContext();
         ctx->shape.reserve(shape_.size());
         for (const auto dim : shape_) {
@@ -533,6 +553,11 @@ public:
     }
 
     py::dict step_device(const py::object& actions, bool auto_reset = true, bool synchronize = true) {
+        // auto_reset launches the snapshot/cold-reset kernel on the default stream right
+        // before returning. If we didn't synchronize, a back-to-back step_device call's
+        // host-to-device action copy could race with that reset kernel writing to the
+        // same device_ram_ slots. Force sync whenever a reset just ran.
+        const bool sync_required = synchronize || auto_reset;
         std::string typestr;
         const auto ptr = cuda_array_pointer(actions, num_env_, &typestr);
         if (typestr == "|u1" || typestr == "<u1") {
@@ -590,7 +615,7 @@ public:
                 check_cuda(cudaGetLastError(), "launch_reset_envs_kernel");
             }
         }
-        if (synchronize) {
+        if (sync_required) {
             check_cuda(cudaDeviceSynchronize(), "cuda device step synchronize");
         }
 
@@ -1466,12 +1491,23 @@ PYBIND11_MODULE(_cuda_core, m) {
              py::arg("snapshot_bytes_list"),
              py::arg("env_to_level"))
         .def("reset", &CudaBatchBinding::reset)
-        .def("reset_device", &CudaBatchBinding::reset_device)
+        // py::keep_alive<0, 1>() keeps `self` (the CudaBatch) alive as long as the
+        // returned view (or any view inside a returned dict) exists. Without this,
+        // letting the CudaBatch be GC'd while a torch tensor still references its
+        // device buffers would be a use-after-free.
+        .def("reset_device", &CudaBatchBinding::reset_device, py::keep_alive<0, 1>())
         .def("step",
              &CudaBatchBinding::step,
              py::arg("actions"),
              py::arg("render_frame") = true,
              py::arg("copy_obs") = true)
+        // step_device returns a py::dict, not a CudaDeviceArrayView, so we can't put
+        // keep_alive on the dict itself. But the views *inside* the dict are constructed
+        // by ram_device() / rewards_device() / last_done_device(), each of which carries
+        // its own keep_alive<0, 1>(). That means as long as Python holds onto any view
+        // pulled out of the dict (or a torch tensor built from one), the parent CudaBatch
+        // stays alive. Letting the dict itself go but keeping a view is the common
+        // pattern in native_ppo and stays correct.
         .def("step_device",
              &CudaBatchBinding::step_device,
              py::arg("actions"),
@@ -1481,7 +1517,9 @@ PYBIND11_MODULE(_cuda_core, m) {
         .def("step_profile", &CudaBatchBinding::step_profile, py::arg("actions"))
         .def("render", &CudaBatchBinding::render)
         .def("ram", &CudaBatchBinding::ram)
-        .def("ram_device", &CudaBatchBinding::ram_device)
+        .def("ram_device", &CudaBatchBinding::ram_device, py::keep_alive<0, 1>())
+        .def("rewards_device", &CudaBatchBinding::rewards_device, py::keep_alive<0, 1>())
+        .def("last_done_device", &CudaBatchBinding::last_done_device, py::keep_alive<0, 1>())
         .def("oam", &CudaBatchBinding::oam)
         .def("reset_envs", &CudaBatchBinding::reset_envs, py::arg("mask"))
         .def("poke_ram", &CudaBatchBinding::poke_ram, py::arg("address"), py::arg("value"))

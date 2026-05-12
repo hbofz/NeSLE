@@ -31,10 +31,6 @@ def main() -> None:
     )
     parser.add_argument("--checkpoint-prefix", default="nesle_ppo", help="Filename prefix for checkpoints.")
     parser.add_argument("--tensorboard-log", default=None, help="Optional TensorBoard log directory.")
-    parser.add_argument("--start-on-reset", action="store_true", help="Boot each reset into controllable gameplay (legacy poke workaround; prefer --reset-state-path).")
-    parser.add_argument("--reset-wait-steps", type=int, default=10)
-    parser.add_argument("--reset-start-steps", type=int, default=2)
-    parser.add_argument("--reset-post-start-steps", type=int, default=60)
     parser.add_argument(
         "--reset-state-path",
         default=None,
@@ -144,10 +140,6 @@ def main() -> None:
         backend=args.backend,
         render_mode="rgb_array",
         observation_mode=args.observation_mode,
-        start_on_reset=args.start_on_reset,
-        reset_wait_steps=args.reset_wait_steps,
-        reset_start_steps=args.reset_start_steps,
-        reset_post_start_steps=args.reset_post_start_steps,
         reset_state_path=args.reset_state_path,
         reset_state_paths=args.reset_state_paths,
         max_episode_steps=args.max_episode_steps,
