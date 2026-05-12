@@ -185,14 +185,22 @@ NESLE_CUDA_HD inline void cold_reset_console_env(BatchBuffers& buffers, std::uin
 NESLE_CUDA_HD inline void warm_reset_console_env(BatchBuffers& buffers,
                                                  std::uint32_t env,
                                                  const SnapshotTemplate& snap) {
+    // Pick this env's source level. For the single-snapshot case env_to_level is all zeros.
+    const auto level = static_cast<std::uint32_t>(snap.env_to_level[env]);
+    const auto cpu_ram_base = static_cast<std::uint64_t>(level) * kCpuRamBytes;
+    const auto prg_ram_base = static_cast<std::uint64_t>(level) * kPrgRamBytes;
+    const auto nt_base = static_cast<std::uint64_t>(level) * kNametableRamBytes;
+    const auto pal_base = static_cast<std::uint64_t>(level) * kPaletteRamBytes;
+    const auto oam_base = static_cast<std::uint64_t>(level) * kOamBytes;
+
     // CPU registers — restored verbatim from the snapshot.
-    buffers.cpu.pc[env] = snap.pc;
-    buffers.cpu.a[env] = snap.a;
-    buffers.cpu.x[env] = snap.x;
-    buffers.cpu.y[env] = snap.y;
-    buffers.cpu.sp[env] = snap.sp;
-    buffers.cpu.p[env] = snap.p;
-    buffers.cpu.cycles[env] = snap.cycles;
+    buffers.cpu.pc[env] = snap.pc[level];
+    buffers.cpu.a[env] = snap.a[level];
+    buffers.cpu.x[env] = snap.x[level];
+    buffers.cpu.y[env] = snap.y[level];
+    buffers.cpu.sp[env] = snap.sp[level];
+    buffers.cpu.p[env] = snap.p[level];
+    buffers.cpu.cycles[env] = snap.cycles[level];
     buffers.cpu.nmi_pending[env] = 0;
     buffers.cpu.irq_pending[env] = 0;
     buffers.cpu.controller1_shift[env] = 0;
@@ -202,49 +210,50 @@ NESLE_CUDA_HD inline void warm_reset_console_env(BatchBuffers& buffers,
 
     auto* ram = env_cpu_ram(buffers, env);
     for (int i = 0; i < kCpuRamBytes; ++i) {
-        ram[i] = snap.cpu_ram[i];
+        ram[i] = snap.cpu_ram[cpu_ram_base + i];
     }
     auto* prg_ram = buffers.cpu.prg_ram + static_cast<std::uint64_t>(env) * kPrgRamBytes;
     for (int i = 0; i < kPrgRamBytes; ++i) {
-        prg_ram[i] = snap.prg_ram[i];
+        prg_ram[i] = snap.prg_ram[prg_ram_base + i];
     }
 
     // PPU registers + memory.
-    buffers.ppu.ctrl[env] = snap.ppu_ctrl;
-    buffers.ppu.mask[env] = snap.ppu_mask;
-    buffers.ppu.status[env] = snap.ppu_status;
-    buffers.ppu.oam_addr[env] = snap.ppu_oam_addr;
+    buffers.ppu.ctrl[env] = snap.ppu_ctrl[level];
+    buffers.ppu.mask[env] = snap.ppu_mask[level];
+    buffers.ppu.status[env] = snap.ppu_status[level];
+    buffers.ppu.oam_addr[env] = snap.ppu_oam_addr[level];
     buffers.ppu.nmi_pending[env] = 0;
     buffers.ppu.scanline[env] = 0;
     buffers.ppu.dot[env] = 0;
     buffers.ppu.frame[env] = 0;
-    buffers.ppu.v[env] = snap.ppu_v;
-    buffers.ppu.t[env] = snap.ppu_t;
-    buffers.ppu.x[env] = snap.ppu_x;
-    buffers.ppu.w[env] = snap.ppu_w;
-    buffers.ppu.open_bus[env] = snap.ppu_open_bus;
-    buffers.ppu.read_buffer[env] = snap.ppu_read_buffer;
+    buffers.ppu.v[env] = snap.ppu_v[level];
+    buffers.ppu.t[env] = snap.ppu_t[level];
+    buffers.ppu.x[env] = snap.ppu_x[level];
+    buffers.ppu.w[env] = snap.ppu_w[level];
+    buffers.ppu.open_bus[env] = snap.ppu_open_bus[level];
+    buffers.ppu.read_buffer[env] = snap.ppu_read_buffer[level];
     buffers.ppu.scroll_x[env] = 0;
     buffers.ppu.scroll_y[env] = 0;
 
     auto* nt = buffers.ppu.nametable_ram + static_cast<std::uint64_t>(env) * kNametableRamBytes;
     for (int i = 0; i < kNametableRamBytes; ++i) {
-        nt[i] = snap.nametable_ram[i];
+        nt[i] = snap.nametable_ram[nt_base + i];
     }
     auto* pal = buffers.ppu.palette_ram + static_cast<std::uint64_t>(env) * kPaletteRamBytes;
     for (int i = 0; i < kPaletteRamBytes; ++i) {
-        pal[i] = snap.palette_ram[i];
+        pal[i] = snap.palette_ram[pal_base + i];
     }
     auto* oam = env_oam(buffers, env);
     for (int i = 0; i < kOamBytes; ++i) {
-        oam[i] = snap.oam[i];
+        oam[i] = snap.oam[oam_base + i];
     }
 
     // Reward baselines — seed previous_x and previous_time from the snapshot's RAM so the
     // first step's reward calculation doesn't see a synthetic large delta from zero.
-    const int x_pos = static_cast<int>(snap.cpu_ram[kMarioXPage]) * 0x100 +
-                      static_cast<int>(snap.cpu_ram[kMarioXScreen]);
-    const int time_val = read_bcd_digits(snap.cpu_ram, kMarioTimeDigits, 3);
+    const auto* level_ram = snap.cpu_ram + cpu_ram_base;
+    const int x_pos = static_cast<int>(level_ram[kMarioXPage]) * 0x100 +
+                      static_cast<int>(level_ram[kMarioXScreen]);
+    const int time_val = read_bcd_digits(level_ram, kMarioTimeDigits, 3);
     buffers.previous_mario_x[env] = x_pos;
     buffers.previous_mario_time[env] = time_val;
     buffers.rewards[env] = 0.0F;
