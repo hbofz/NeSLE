@@ -140,6 +140,34 @@ experiments.
 `backend="cuda"` controls NeSLE's emulator backend. SB3/PyTorch policy placement
 is separate and is controlled by `--sb3-device` in `examples/sb3_train.py`.
 
+## GPU-resident PPO path
+
+For large-batch training where SB3's CPU rollout buffer is the bottleneck,
+`nesle.native_ppo` provides a fully GPU-resident PPO loop. Observations, the
+rollout buffer, the action sample, GAE, the policy/value loss, the optimizer
+state, and the gradient update all stay on device. The only host roundtrip per
+update is the small set of scalar log lines.
+
+The bridge is provided by three methods on `nesle._cuda_core.CudaBatch`:
+
+- `reset_device()` — runs the snapshot reset kernel and returns a
+  `CudaDeviceArrayView` over the RAM observation buffer.
+- `step_device(actions, auto_reset=True, synchronize=True)` — accepts a CUDA
+  action tensor (uint8 mask or int64-encoded mask), launches the console step
+  kernel, optionally fires the snapshot reset kernel for done envs, and returns
+  a dict of `CudaDeviceArrayView` objects (`ram`, `rewards`, `dones`). When
+  `auto_reset=True` the call always synchronizes (otherwise the next step's
+  action copy would race the reset writes).
+- `ram_device()`, `rewards_device()`, `last_done_device()` — direct device views
+  for inspection between calls.
+
+Each view implements both `__cuda_array_interface__` v3 and `__dlpack__`, so
+PyTorch can build tensors directly via `torch.utils.dlpack.from_dlpack(view)`
+without a host copy. The pybind layer uses `py::keep_alive<0, 1>()` to keep the
+parent `CudaBatch` alive as long as any view (and any torch tensor built from
+it) is reachable from Python — see the lifetime comment above
+`CudaDeviceArrayView` in `cpp/bindings/cuda_module.cu`.
+
 ## Benchmark Plan
 
 Benchmark modes:

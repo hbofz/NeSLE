@@ -21,9 +21,15 @@ notebooks/.ipynb_checkpoints/
 venv/
 *.nes
 
-# Trained model artifacts from local smokes (PPO .zip checkpoints).
+# Trained model artifacts (PPO .zip checkpoints + native_ppo .pt checkpoints).
 nesle_*ppo*.zip
 *_steps.zip
+*.pt
+nesle_native_ppo*.pt
 
 # Local Claude Code project config.
 .claude/
+
+# Ad-hoc Colab / training notebooks. The repo intentionally does not ship a
+# notebook today; add specific paths back here when one is committed.
+notebooks/
