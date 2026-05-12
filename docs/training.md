@@ -33,6 +33,14 @@ NVIDIA GeForce GTX 1050 Ti
 So `backend="cuda"` runs the emulator on CUDA, and `--sb3-device cuda` places
 SB3/PyTorch policy work on CUDA too.
 
+For RAM observations with SB3's default `MlpPolicy`, `--sb3-device cpu` can be
+faster even on an A100. NeSLE still runs the emulator on CUDA; only PPO's small
+policy network and rollout update step stay on CPU. SB3 stores VecEnv rollouts
+as CPU NumPy arrays, and a small MLP often does not provide enough work to
+offset CPU-to-GPU transfer and kernel-launch overhead. Use `--sb3-device cuda`
+mainly for RGB/CNN policies or after measuring that it wins for the current
+configuration.
+
 ## PyTorch CUDA Setup
 
 Use the official PyTorch selector for the current command:
@@ -220,3 +228,7 @@ The notebook expects your ROM in Drive, by default:
 ```
 
 The ROM is intentionally not committed to Git.
+
+The notebook defaults `SB3_DEVICE = 'cpu'` for RAM-observation PPO while keeping
+`backend cuda` for the emulator. It also includes an SB3 device probe cell that
+tests CPU versus CUDA policy placement on the current Colab runtime.
