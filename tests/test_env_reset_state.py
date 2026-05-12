@@ -116,6 +116,42 @@ class ResetStateTests(unittest.TestCase):
         self.assertTrue(env._cuda_batch.has_snapshot)
         env.close()
 
+    def test_device_view_outlives_intermediate_batch_reference(self) -> None:
+        """Regression for the CudaDeviceArrayView lifetime contract.
+
+        ram_device() / step_device() return views holding bare device pointers owned by
+        the CudaBatch. Pybind `keep_alive<0, 1>` should keep the parent CudaBatch alive
+        as long as a Python caller still holds the view, even if the original Python
+        reference to the batch is dropped. Without keep_alive, dereferencing the view
+        after the batch's destructor freed device_ram_ would be a use-after-free.
+        """
+        try:
+            import torch
+            if not torch.cuda.is_available():
+                self.skipTest("CUDA-enabled torch not available")
+        except ImportError:
+            self.skipTest("torch is not installed")
+        from nesle._cuda_core import CudaBatch
+        import gc
+
+        rom_bytes = ROM_PATH.read_bytes()
+        snapshot_bytes = __import__("gzip").decompress(STATE_PATH.read_bytes())
+
+        batch = CudaBatch(2, 4, rom_bytes, snapshot_bytes)
+        batch.reset()
+        # Acquire a torch tensor via DLPack. The view (and now the tensor) should keep
+        # the batch alive even after we drop our local reference.
+        ram_tensor = torch.utils.dlpack.from_dlpack(batch.ram_device())
+        # Drop the only Python reference to the batch.
+        del batch
+        gc.collect()
+        # If keep_alive is working, ram_tensor's device memory is still valid and we
+        # can read from it without crashing. Numerical content doesn't matter for this
+        # test — we just need a syntactically valid GPU read that would UAF without
+        # keep_alive.
+        copied = ram_tensor.detach().clone().cpu()
+        self.assertEqual(copied.shape, (2, 2048))
+
 
 if __name__ == "__main__":
     unittest.main()

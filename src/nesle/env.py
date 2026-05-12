@@ -18,7 +18,6 @@ from .actions import (
     RIGHT_ONLY_MASKS,
     SIMPLE_MOVEMENT_MASKS,
     SIMPLE_MOVEMENT_WITH_START_MASKS,
-    encode_action,
 )
 from .rom import INESRom, parse_ines
 from .smb import CPU_RAM_BYTES, MarioRamState, compute_reward, read_ram
@@ -201,10 +200,6 @@ class BackendConfig:
     observation_mode: str = "rgb_array"
     observation_cadence: int = 1
     max_episode_steps: int = 0
-    start_on_reset: bool = False
-    reset_wait_steps: int = 10
-    reset_start_steps: int = 2
-    reset_post_start_steps: int = 60
     reset_state_path: str | None = None
 
 
@@ -388,10 +383,6 @@ class NesleVecEnv(_VecEnvBase):
         seed: int | None = None,
         observation_cadence: int = 1,
         max_episode_steps: int = 0,
-        start_on_reset: bool = False,
-        reset_wait_steps: int = 10,
-        reset_start_steps: int = 2,
-        reset_post_start_steps: int = 60,
         reset_state_path: str | Path | None = None,
         reset_state_paths: Sequence[str | Path] | None = None,
         env_to_level: Sequence[int] | np.ndarray | None = None,
@@ -403,8 +394,6 @@ class NesleVecEnv(_VecEnvBase):
             raise ValueError("frameskip must be positive")
         if observation_cadence <= 0:
             raise ValueError("observation_cadence must be positive")
-        if reset_wait_steps < 0 or reset_start_steps < 0 or reset_post_start_steps < 0:
-            raise ValueError("reset warmup step counts must be non-negative")
         if render_mode not in (None, "rgb_array"):
             raise ValueError("render_mode must be None or 'rgb_array'")
         observation_mode = _normalize_observation_mode(observation_mode)
@@ -431,10 +420,6 @@ class NesleVecEnv(_VecEnvBase):
                         raise ValueError("env_to_level contains index >= number of snapshots")
             elif env_to_level is not None:
                 raise ValueError("env_to_level requires more than one snapshot")
-            if start_on_reset:
-                # Snapshot reset already lands us in gameplay; the NOOP+START+poke warmup
-                # is redundant and would corrupt the snapshot's state.
-                start_on_reset = False
         self.config = BackendConfig(
             rom_path=str(rom_path),
             num_envs=num_envs,
@@ -445,10 +430,6 @@ class NesleVecEnv(_VecEnvBase):
             observation_mode=observation_mode,
             observation_cadence=observation_cadence,
             max_episode_steps=max_episode_steps,
-            start_on_reset=start_on_reset,
-            reset_wait_steps=reset_wait_steps,
-            reset_start_steps=reset_start_steps,
-            reset_post_start_steps=reset_post_start_steps,
             reset_state_path=None if reset_state_path is None else str(reset_state_path),
         )
         self.rom = rom
@@ -457,10 +438,6 @@ class NesleVecEnv(_VecEnvBase):
         self.num_envs = num_envs
         self.frameskip = frameskip
         self.observation_cadence = observation_cadence
-        self.start_on_reset = bool(start_on_reset)
-        self.reset_wait_steps = int(reset_wait_steps)
-        self.reset_start_steps = int(reset_start_steps)
-        self.reset_post_start_steps = int(reset_post_start_steps)
         self.action_masks = _action_masks(action_space)
         self.action_space = _discrete(len(self.action_masks))
         observation_shape = RAM_SHAPE if observation_mode == "ram" else FRAME_SHAPE
@@ -536,10 +513,6 @@ class NesleVecEnv(_VecEnvBase):
             self.reset_infos = infos
             self._seeds = [None for _ in range(self.num_envs)]
             self._options = [{} for _ in range(self.num_envs)]
-            if self.start_on_reset:
-                observations = self._run_cuda_start_sequence()
-                for info in self.reset_infos:
-                    info["start_on_reset"] = True
             return observations
 
         observations = []
@@ -556,67 +529,6 @@ class NesleVecEnv(_VecEnvBase):
         self.reset_infos = infos
         self._seeds = [None for _ in range(self.num_envs)]
         self._options = [{} for _ in range(self.num_envs)]
-        if self.start_on_reset:
-            observations = self._run_native_start_sequence()
-            for info in self.reset_infos:
-                info["start_on_reset"] = True
-            return observations
-        return numpy.stack(observations, axis=0)
-
-    def _reset_start_sequence(self) -> tuple[int, int, int]:
-        return self.reset_wait_steps, self.reset_start_steps, self.reset_post_start_steps
-
-    def _run_cuda_start_sequence(self) -> np.ndarray:
-        numpy = _require_numpy()
-        if self._cuda_batch is None:
-            raise RuntimeError("CUDA reset sequence requires a CUDA batch")
-        noop = numpy.zeros(self.num_envs, dtype=numpy.uint8)
-        start = numpy.full(self.num_envs, encode_action(["start"]), dtype=numpy.uint8)
-        for mask, steps in zip((noop, start, noop), self._reset_start_sequence(), strict=True):
-            for _ in range(steps):
-                self._cuda_batch.step(mask, render_frame=False, copy_obs=False)
-        if hasattr(self._cuda_batch, "poke_ram"):
-            self._cuda_batch.poke_ram(0x0770, 1)
-        self._cuda_step_count = 0
-        if self._cuda_env_step_counts is not None:
-            self._cuda_env_step_counts[:] = 0
-        if self.observation_mode == "ram":
-            observations = numpy.asarray(self._cuda_batch.ram(), dtype=numpy.uint8)
-            self._cuda_observations = observations
-            ram_observations = observations
-        else:
-            observations = numpy.asarray(self._cuda_batch.render(), dtype=numpy.uint8)
-            self._cuda_observations = observations
-            ram_observations = numpy.asarray(self._cuda_batch.ram(), dtype=numpy.uint8)
-        backend_name = str(self._cuda_batch.name)
-        self.reset_infos = [
-            {
-                **_info_from_state(read_ram(ram_observations[env]), None, backend_name),
-                "observation_mode": self.observation_mode,
-            }
-            for env in range(self.num_envs)
-        ]
-        return observations
-
-    def _run_native_start_sequence(self) -> np.ndarray:
-        numpy = _require_numpy()
-        noop = 0
-        start = encode_action(["start"])
-        for backend in self._backends:
-            for mask, steps in zip((noop, start, noop), self._reset_start_sequence(), strict=True):
-                for _ in range(steps):
-                    backend.step(mask, self.frameskip)
-            backend.step_count = 0
-        observations = []
-        infos = []
-        for backend in self._backends:
-            obs = backend.ram_observation() if self.observation_mode == "ram" else backend.render()
-            state = read_ram(backend.ram_observation())
-            info = _info_from_state(state, None, backend.name)
-            info["observation_mode"] = self.observation_mode
-            observations.append(obs)
-            infos.append(info)
-        self.reset_infos = infos
         return numpy.stack(observations, axis=0)
 
     def step_async(self, actions: Iterable[int]) -> None:
@@ -917,10 +829,6 @@ class NesleEnv(_EnvBase):
         observation_mode: str = "rgb_array",
         observation_cadence: int = 1,
         max_episode_steps: int = 0,
-        start_on_reset: bool = False,
-        reset_wait_steps: int = 10,
-        reset_start_steps: int = 2,
-        reset_post_start_steps: int = 60,
         reset_state_path: str | Path | None = None,
         reset_state_paths: Sequence[str | Path] | None = None,
         env_to_level: Sequence[int] | np.ndarray | None = None,
@@ -938,10 +846,6 @@ class NesleEnv(_EnvBase):
             observation_mode=observation_mode,
             observation_cadence=observation_cadence,
             max_episode_steps=max_episode_steps,
-            start_on_reset=start_on_reset,
-            reset_wait_steps=reset_wait_steps,
-            reset_start_steps=reset_start_steps,
-            reset_post_start_steps=reset_post_start_steps,
             reset_state_path=reset_state_path,
             reset_state_paths=reset_state_paths,
             env_to_level=env_to_level,
