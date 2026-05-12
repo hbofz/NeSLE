@@ -56,11 +56,11 @@ There are two separate GPU pieces:
 
 - **NeSLE emulator GPU:** working. `_cuda_core` loads and `backend="cuda"`
   runs CUDA kernels.
-- **PyTorch/SB3 policy GPU:** not working yet in the current venv. Local check:
-  `torch=2.11.0+cpu`, `torch.cuda.is_available() == False`.
+- **PyTorch/SB3 policy GPU:** working in the current venv after switching from
+  the CPU wheel to `torch==2.11.0+cu126`.
 
-That means environment stepping is on CUDA, but PPO's neural network forward
-and gradient updates run on CPU unless a CUDA-enabled PyTorch wheel is installed.
+That means both environment stepping and PPO's neural network placement can run
+on GPU when training is launched with `--sb3-device cuda`.
 
 Check with:
 
@@ -77,10 +77,13 @@ https://pytorch.org/get-started/locally/
 On this machine, also keep in mind:
 
 - GPU is GTX 1050 Ti, compute capability `sm_61`.
+- `torch==2.11.0+cu128` detects the GPU but cannot execute kernels on this
+  card (`no kernel image is available`) because that wheel targets newer SMs.
+- `torch==2.11.0+cu126` works locally: `torch.cuda.is_available() == True` and
+  CUDA tensor ops run on the GTX 1050 Ti.
 - CUDA Toolkit 13.x dropped offline compilation support for Pascal GPUs like
-  the 1050 Ti; building NeSLE CUDA from source for this card needs CUDA 12.x.
-- The current venv uses Python 3.14. If PyTorch CUDA wheels lag Python 3.14,
-  create a Python 3.12 venv for training.
+  the 1050 Ti; rebuilding NeSLE CUDA from source for this card still needs
+  CUDA Toolkit 12.x.
 
 ---
 
