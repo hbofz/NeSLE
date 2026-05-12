@@ -7,6 +7,7 @@ import json
 import math
 import os
 import re
+import shutil
 import subprocess
 import sys
 import time
@@ -141,6 +142,25 @@ def load_reset_state(path: Path) -> bytes:
     return raw
 
 
+def ensure_correctness_rom(nesle_root: Path, rom_path: Path) -> Path:
+    """Put the ROM where NeSLE's standalone correctness script expects it.
+
+    `benchmarks/verify_correctness.py` intentionally has no CLI; it reads
+    `Super Mario Bros. (World).nes` from the NeSLE repo root.  The A100 notebook
+    keeps the legal ROM under the Mario harness, so create an ignored symlink
+    at the expected root path before invoking that script.
+    """
+
+    expected = nesle_root / "Super Mario Bros. (World).nes"
+    if expected.exists():
+        return expected
+    try:
+        expected.symlink_to(rom_path.resolve())
+    except OSError:
+        shutil.copy2(rom_path, expected)
+    return expected
+
+
 def run_command(cmd: Sequence[str], cwd: Path | None = None, env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         list(cmd),
@@ -258,11 +278,13 @@ def preflight(args: argparse.Namespace) -> dict[str, Any]:
     if args.run_correctness:
         if nesle_root is None:
             raise SystemExit("--run-correctness requires --nesle-root or NESLE_ROOT.")
+        correctness_rom = ensure_correctness_rom(nesle_root, rom_path)
         proc = run_command([sys.executable, "benchmarks/verify_correctness.py"], cwd=nesle_root)
         correctness = {
             "returncode": proc.returncode,
             "stdout_tail": tail(proc.stdout),
             "stderr_tail": tail(proc.stderr),
+            "rom_path": str(correctness_rom),
         }
         if proc.returncode != 0:
             raise RuntimeError("benchmark correctness check failed")
