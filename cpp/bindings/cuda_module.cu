@@ -10,6 +10,7 @@
 #include <vector>
 
 #include <optional>
+#include <sstream>
 
 #include "nesle/cuda/batch_step.cuh"
 #include "nesle/cuda/kernels.cuh"
@@ -22,6 +23,37 @@ namespace {
 
 constexpr std::uint32_t kFrameBytes =
     nesle::cuda::kFrameWidth * nesle::cuda::kFrameHeight * nesle::cuda::kRgbChannels;
+
+class CudaDeviceArrayView {
+public:
+    CudaDeviceArrayView(std::uintptr_t ptr,
+                        std::vector<py::ssize_t> shape,
+                        std::string typestr,
+                        bool read_only = false)
+        : ptr_(ptr),
+          shape_(std::move(shape)),
+          typestr_(std::move(typestr)),
+          read_only_(read_only) {}
+
+    py::dict cuda_array_interface() const {
+        py::dict out;
+        py::tuple shape(shape_.size());
+        for (std::size_t i = 0; i < shape_.size(); ++i) {
+            shape[i] = shape_[i];
+        }
+        out["shape"] = shape;
+        out["typestr"] = typestr_;
+        out["data"] = py::make_tuple(ptr_, read_only_);
+        out["version"] = 3;
+        return out;
+    }
+
+private:
+    std::uintptr_t ptr_ = 0;
+    std::vector<py::ssize_t> shape_;
+    std::string typestr_;
+    bool read_only_ = false;
+};
 
 void check_cuda(cudaError_t error, const char* label) {
     if (error != cudaSuccess) {
@@ -74,6 +106,40 @@ std::uint16_t reset_vector_from_prg(const std::vector<std::uint8_t>& prg_rom) {
     }
     const auto base = prg_rom.size() == 16u * 1024u ? 0x3FFCu : 0x7FFCu;
     return static_cast<std::uint16_t>(prg_rom[base] | (static_cast<std::uint16_t>(prg_rom[base + 1]) << 8));
+}
+
+std::uintptr_t cuda_array_pointer(const py::object& object,
+                                  std::uint32_t expected_len,
+                                  std::string* typestr_out) {
+    if (!py::hasattr(object, "__cuda_array_interface__")) {
+        throw std::invalid_argument(
+            "expected a CUDA tensor/array exposing __cuda_array_interface__");
+    }
+    py::dict iface = object.attr("__cuda_array_interface__").cast<py::dict>();
+    const auto shape = iface["shape"].cast<py::tuple>();
+    if (shape.size() != 1 || shape[0].cast<std::uint32_t>() != expected_len) {
+        std::ostringstream msg;
+        msg << "CUDA action array must have shape (" << expected_len << ",)";
+        throw std::invalid_argument(msg.str());
+    }
+    const auto typestr = iface["typestr"].cast<std::string>();
+    if (typestr_out != nullptr) {
+        *typestr_out = typestr;
+    }
+    const auto data = iface["data"].cast<py::tuple>();
+    if (data.size() < 1) {
+        throw std::invalid_argument("__cuda_array_interface__ data field is malformed");
+    }
+    return data[0].cast<std::uintptr_t>();
+}
+
+__global__ void copy_int64_actions_kernel(std::uint8_t* dst,
+                                          const long long* src,
+                                          std::uint32_t num_envs) {
+    const auto env = blockIdx.x * blockDim.x + threadIdx.x;
+    if (env < num_envs) {
+        dst[env] = static_cast<std::uint8_t>(src[env] & 0xFF);
+    }
 }
 
 __global__ void apply_actions_kernel(nesle::cuda::BatchBuffers buffers,
@@ -273,6 +339,20 @@ public:
         return render();
     }
 
+    CudaDeviceArrayView reset_device() {
+        if (use_console_) {
+            if (!snapshots_.empty()) {
+                reset_console_from_snapshot();
+            } else {
+                reset_console();
+            }
+        } else {
+            reset();
+        }
+        check_cuda(cudaDeviceSynchronize(), "reset_device synchronize");
+        return ram_device();
+    }
+
     py::dict step(py::array_t<std::uint8_t, py::array::c_style | py::array::forcecast> actions,
                   bool render_frame = true,
                   bool copy_obs = true) {
@@ -331,6 +411,75 @@ public:
         }
         out["rewards"] = rewards;
         out["dones"] = dones;
+        return out;
+    }
+
+    py::dict step_device(const py::object& actions, bool auto_reset = true, bool synchronize = true) {
+        std::string typestr;
+        const auto ptr = cuda_array_pointer(actions, num_env_, &typestr);
+        if (typestr == "|u1" || typestr == "<u1") {
+            check_cuda(cudaMemcpy(device_actions_,
+                                  reinterpret_cast<const void*>(ptr),
+                                  static_cast<std::size_t>(num_env_) * sizeof(std::uint8_t),
+                                  cudaMemcpyDeviceToDevice),
+                       "copy cuda uint8 actions");
+        } else if (typestr == "<i8" || typestr == "|i8") {
+            constexpr int kThreads = 256;
+            const auto blocks = static_cast<int>((num_env_ + kThreads - 1) / kThreads);
+            copy_int64_actions_kernel<<<blocks, kThreads>>>(
+                device_actions_,
+                reinterpret_cast<const long long*>(ptr),
+                num_env_);
+            check_cuda(cudaGetLastError(), "copy_int64_actions_kernel");
+        } else {
+            throw std::invalid_argument(
+                "CUDA actions must be uint8 masks or int64 values already encoded as masks");
+        }
+
+        if (use_console_) {
+            nesle::cuda::launch_console_step_kernel(
+                buffers_,
+                nesle::cuda::StepConfig{num_env_, frameskip_, false},
+                max_instructions_per_frame_,
+                {},
+                nullptr);
+            check_cuda(cudaGetLastError(), "launch_console_step_kernel");
+        } else {
+            nesle::cuda::launch_step_kernel(
+                buffers_, nesle::cuda::StepConfig{num_env_, frameskip_, false}, nullptr);
+            check_cuda(cudaGetLastError(), "launch_step_kernel");
+        }
+
+        check_cuda(cudaMemcpy(device_last_rewards_,
+                              device_rewards_,
+                              static_cast<std::size_t>(num_env_) * sizeof(float),
+                              cudaMemcpyDeviceToDevice),
+                   "preserve device rewards");
+        check_cuda(cudaMemcpy(device_last_done_,
+                              device_done_,
+                              static_cast<std::size_t>(num_env_) * sizeof(std::uint8_t),
+                              cudaMemcpyDeviceToDevice),
+                   "preserve device dones");
+
+        if (auto_reset) {
+            if (!snapshots_.empty()) {
+                nesle::cuda::launch_snapshot_reset_envs_kernel(
+                    buffers_, snapshot_template_, device_last_done_, num_env_, nullptr);
+                check_cuda(cudaGetLastError(), "launch_snapshot_reset_envs_kernel");
+            } else {
+                nesle::cuda::launch_reset_envs_kernel(
+                    buffers_, device_last_done_, num_env_, use_console_, nullptr);
+                check_cuda(cudaGetLastError(), "launch_reset_envs_kernel");
+            }
+        }
+        if (synchronize) {
+            check_cuda(cudaDeviceSynchronize(), "cuda device step synchronize");
+        }
+
+        py::dict out;
+        out["rewards"] = rewards_device();
+        out["dones"] = last_done_device();
+        out["ram"] = ram_device();
         return out;
     }
 
@@ -520,6 +669,33 @@ public:
         return out;
     }
 
+    CudaDeviceArrayView ram_device() const {
+        return CudaDeviceArrayView(
+            reinterpret_cast<std::uintptr_t>(device_ram_),
+            {
+                static_cast<py::ssize_t>(num_env_),
+                nesle::cuda::kCpuRamBytes,
+            },
+            "|u1",
+            false);
+    }
+
+    CudaDeviceArrayView rewards_device() const {
+        return CudaDeviceArrayView(
+            reinterpret_cast<std::uintptr_t>(device_last_rewards_),
+            {static_cast<py::ssize_t>(num_env_)},
+            "<f4",
+            false);
+    }
+
+    CudaDeviceArrayView last_done_device() const {
+        return CudaDeviceArrayView(
+            reinterpret_cast<std::uintptr_t>(device_last_done_),
+            {static_cast<py::ssize_t>(num_env_)},
+            "|u1",
+            false);
+    }
+
     py::array_t<std::uint8_t> oam() const {
         py::array_t<std::uint8_t> out(std::vector<py::ssize_t>{
             static_cast<py::ssize_t>(num_env_),
@@ -620,6 +796,8 @@ private:
         device_previous_time_ = cuda_alloc<int>(num_env_, "cudaMalloc previous_time");
         device_rewards_ = cuda_alloc<float>(num_env_, "cudaMalloc rewards");
         device_done_ = cuda_alloc<std::uint8_t>(num_env_, "cudaMalloc done");
+        device_last_rewards_ = cuda_alloc<float>(num_env_, "cudaMalloc last rewards");
+        device_last_done_ = cuda_alloc<std::uint8_t>(num_env_, "cudaMalloc last done");
         device_actions_ = cuda_alloc<std::uint8_t>(num_env_, "cudaMalloc actions");
         device_step_counts_ = cuda_alloc<std::uint32_t>(num_env_, "cudaMalloc step_counts");
         device_ppu_ctrl_ = cuda_alloc<std::uint8_t>(num_env_, "cudaMalloc ppu ctrl");
@@ -724,6 +902,8 @@ private:
         cudaFree(device_previous_time_);
         cudaFree(device_rewards_);
         cudaFree(device_done_);
+        cudaFree(device_last_rewards_);
+        cudaFree(device_last_done_);
         cudaFree(device_actions_);
         cudaFree(device_step_counts_);
         cudaFree(device_ppu_ctrl_);
@@ -1036,6 +1216,8 @@ private:
     int* device_previous_time_ = nullptr;
     float* device_rewards_ = nullptr;
     std::uint8_t* device_done_ = nullptr;
+    float* device_last_rewards_ = nullptr;
+    std::uint8_t* device_last_done_ = nullptr;
     std::uint8_t* device_actions_ = nullptr;
     std::uint32_t* device_step_counts_ = nullptr;
     std::uint8_t* device_ppu_ctrl_ = nullptr;
@@ -1100,6 +1282,10 @@ private:
 PYBIND11_MODULE(_cuda_core, m) {
     m.doc() = "CUDA NeSLE batch helpers";
 
+    py::class_<CudaDeviceArrayView>(m, "CudaDeviceArrayView")
+        .def_property_readonly("__cuda_array_interface__",
+                               &CudaDeviceArrayView::cuda_array_interface);
+
     m.def(
         "parse_fcs_state",
         [](const py::bytes& data) {
@@ -1160,15 +1346,22 @@ PYBIND11_MODULE(_cuda_core, m) {
              py::arg("snapshot_bytes_list"),
              py::arg("env_to_level"))
         .def("reset", &CudaBatchBinding::reset)
+        .def("reset_device", &CudaBatchBinding::reset_device)
         .def("step",
              &CudaBatchBinding::step,
              py::arg("actions"),
              py::arg("render_frame") = true,
              py::arg("copy_obs") = true)
+        .def("step_device",
+             &CudaBatchBinding::step_device,
+             py::arg("actions"),
+             py::arg("auto_reset") = true,
+             py::arg("synchronize") = true)
         .def("step_stats", &CudaBatchBinding::step_stats, py::arg("actions"))
         .def("step_profile", &CudaBatchBinding::step_profile, py::arg("actions"))
         .def("render", &CudaBatchBinding::render)
         .def("ram", &CudaBatchBinding::ram)
+        .def("ram_device", &CudaBatchBinding::ram_device)
         .def("oam", &CudaBatchBinding::oam)
         .def("reset_envs", &CudaBatchBinding::reset_envs, py::arg("mask"))
         .def("poke_ram", &CudaBatchBinding::poke_ram, py::arg("address"), py::arg("value"))
