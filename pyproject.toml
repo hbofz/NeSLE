@@ -16,6 +16,7 @@ dependencies = ["numpy>=1.26"]
 rl = [
   "gymnasium>=1.0",
   "stable-baselines3>=2.0",
+  "torch>=2.0",
 ]
 legacy-mario = [
   "numpy>=1.26,<2",

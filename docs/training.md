@@ -41,6 +41,18 @@ offset CPU-to-GPU transfer and kernel-launch overhead. Use `--sb3-device cuda`
 mainly for RGB/CNN policies or after measuring that it wins for the current
 configuration.
 
+The custom native path bypasses SB3's CPU rollout buffer:
+
+- `nesle._cuda_core.CudaBatch.step_device(...)` consumes CUDA action-mask tensors.
+- `_cuda_core` exposes RAM/reward/done buffers with `__cuda_array_interface__`.
+- `nesle.native_ppo` converts those buffers to PyTorch CUDA tensors and keeps the
+  PPO rollout buffer, GAE, clipped policy loss, value loss, entropy term, and
+  optimizer step on CUDA.
+
+That path is the preferred experiment when the goal is a truly GPU-resident RAM
+policy loop. It still uses Python as the PPO coordinator, but the per-step
+observations and rollout tensors stay on the GPU.
+
 ## PyTorch CUDA Setup
 
 Use the official PyTorch selector for the current command:
@@ -133,6 +145,26 @@ nesle_backend=cuda-console observation_mode=ram sb3_device=cpu torch=... torch_c
 
 For full GPU training, expect `nesle_backend=cuda-console`, `sb3_device=cuda`,
 and a real `torch_cuda` GPU name.
+
+## CUDA-Native PPO Smoke
+
+After rebuilding `_cuda_core`, run the custom PPO path:
+
+```powershell
+.\.venv\Scripts\python.exe examples\native_ppo_train.py "Super Mario Bros. (World).nes" `
+  --reset-state-path docs\data\smb_level1_1.state `
+  --action-space simple `
+  --num-envs 1024 `
+  --total-timesteps 100000 `
+  --n-steps 128 `
+  --batch-size 8192 `
+  --max-episode-steps 512 `
+  --checkpoint-path nesle_native_ppo.pt
+```
+
+For a larger CUDA box, increase `--num-envs` to 4096 or higher after checking
+VRAM headroom. The script prints update FPS, PPO losses, approximate clip
+fraction, explained variance, and recent episode returns/lengths.
 
 ## Evaluate A Model
 
