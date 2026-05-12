@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import math
 import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -35,6 +36,7 @@ class NativePPOConfig:
     seed: int = 1
     checkpoint_path: str = "nesle_native_ppo.pt"
     log_interval: int = 1
+    progress_bar: bool = False
 
 
 def _require_torch():
@@ -159,7 +161,9 @@ def train_native_ppo(config: NativePPOConfig, resume_from: str | None = None) ->
 
     action_mask_table = torch.tensor(tuple(env.action_masks), dtype=torch.uint8, device="cuda")
     obs = _device_tensor(batch.ram_device())
-    num_updates = max(1, config.total_timesteps // (config.num_envs * config.n_steps))
+    rollout_timesteps = config.num_envs * config.n_steps
+    num_updates = max(1, math.ceil(config.total_timesteps / rollout_timesteps))
+    planned_timesteps = num_updates * rollout_timesteps
 
     obs_buf = torch.empty((config.n_steps, config.num_envs, obs_dim), dtype=torch.uint8, device="cuda")
     actions_buf = torch.empty((config.n_steps, config.num_envs), dtype=torch.long, device="cuda")
@@ -178,112 +182,142 @@ def train_native_ppo(config: NativePPOConfig, resume_from: str | None = None) ->
     print(
         "native_ppo "
         f"backend={batch.name} envs={config.num_envs} n_steps={config.n_steps} "
-        f"batch={config.batch_size} action_space={config.action_space}"
+        f"batch={config.batch_size} action_space={config.action_space} "
+        f"target_steps={config.total_timesteps} planned_steps={planned_timesteps}"
     )
 
-    for update in range(1, num_updates + 1):
-        for step in range(config.n_steps):
-            global_step += config.num_envs
-            obs_buf[step].copy_(obs)
-            dones_buf[step].copy_(next_done)
-            with torch.no_grad():
-                logits, value = model(obs)
-                dist = Categorical(logits=logits)
-                action = dist.sample()
-                logprob = dist.log_prob(action)
-            actions_buf[step].copy_(action)
-            logprobs_buf[step].copy_(logprob)
-            values_buf[step].copy_(value)
-
-            action_masks = action_mask_table[action].contiguous()
-            step_out = batch.step_device(action_masks, auto_reset=True, synchronize=True)
-            reward = _device_tensor(step_out["rewards"])
-            done_u8 = _device_tensor(step_out["dones"])
-            rewards_buf[step].copy_(reward)
-            next_done = done_u8.float()
-
-            episode_returns += reward
-            episode_lengths += 1.0
-            if bool(done_u8.any().item()):
-                done_indices = done_u8.nonzero().flatten()
-                recent_returns.extend(episode_returns[done_indices].detach().cpu().tolist())
-                recent_lengths.extend(episode_lengths[done_indices].detach().cpu().tolist())
-                episode_returns[done_indices] = 0.0
-                episode_lengths[done_indices] = 0.0
-
-            obs = _device_tensor(step_out["ram"])
-
-        with torch.no_grad():
-            _, next_value = model(obs)
-            advantages, returns = compute_gae(
-                rewards_buf,
-                dones_buf,
-                values_buf,
-                next_done,
-                next_value,
-                config.gamma,
-                config.gae_lambda,
-            )
-
-        b_obs = obs_buf.reshape((-1, obs_dim))
-        b_actions = actions_buf.reshape(-1)
-        b_logprobs = logprobs_buf.reshape(-1)
-        b_advantages = advantages.reshape(-1)
-        b_returns = returns.reshape(-1)
-        b_values = values_buf.reshape(-1)
-        batch_count = b_obs.shape[0]
-
-        clipfracs: list[float] = []
-        losses: list[float] = []
-        for _ in range(config.update_epochs):
-            permutation = torch.randperm(batch_count, device="cuda")
-            for start in range(0, batch_count, config.batch_size):
-                mb_inds = permutation[start : start + config.batch_size]
-                logits, newvalue = model(b_obs[mb_inds])
-                dist = Categorical(logits=logits)
-                newlogprob = dist.log_prob(b_actions[mb_inds])
-                entropy = dist.entropy().mean()
-                logratio = newlogprob - b_logprobs[mb_inds]
-                ratio = logratio.exp()
-
-                mb_advantages = b_advantages[mb_inds]
-                mb_advantages = (mb_advantages - mb_advantages.mean()) / (mb_advantages.std() + 1e-8)
-                pg_loss1 = -mb_advantages * ratio
-                pg_loss2 = -mb_advantages * torch.clamp(
-                    ratio, 1.0 - config.clip_coef, 1.0 + config.clip_coef
-                )
-                pg_loss = torch.max(pg_loss1, pg_loss2).mean()
-                value_loss = 0.5 * (newvalue - b_returns[mb_inds]).pow(2).mean()
-                entropy_loss = entropy
-                loss = pg_loss - config.ent_coef * entropy_loss + config.vf_coef * value_loss
-
-                optimizer.zero_grad(set_to_none=True)
-                loss.backward()
-                torch.nn.utils.clip_grad_norm_(model.parameters(), config.max_grad_norm)
-                optimizer.step()
-
+    progress = _make_progress_bar(config.progress_bar, planned_timesteps, global_step)
+    try:
+        for update in range(1, num_updates + 1):
+            for step in range(config.n_steps):
+                global_step += config.num_envs
+                obs_buf[step].copy_(obs)
+                dones_buf[step].copy_(next_done)
                 with torch.no_grad():
-                    clipfracs.append(((ratio - 1.0).abs() > config.clip_coef).float().mean().item())
-                    losses.append(loss.item())
+                    logits, value = model(obs)
+                    dist = Categorical(logits=logits)
+                    action = dist.sample()
+                    logprob = dist.log_prob(action)
+                actions_buf[step].copy_(action)
+                logprobs_buf[step].copy_(logprob)
+                values_buf[step].copy_(value)
 
-        if update % max(1, config.log_interval) == 0:
-            elapsed = max(1e-6, time.monotonic() - start_time)
-            fps = int(global_step / elapsed)
-            recent_slice = recent_returns[-100:]
-            recent_len_slice = recent_lengths[-100:]
-            ep_ret = float(np.mean(recent_slice)) if recent_slice else float("nan")
-            ep_len = float(np.mean(recent_len_slice)) if recent_len_slice else float("nan")
-            explained_var = _explained_variance(b_values, b_returns)
-            print(
-                f"update={update}/{num_updates} step={global_step} fps={fps} "
-                f"loss={np.mean(losses):.4f} clipfrac={np.mean(clipfracs):.3f} "
-                f"explained_var={explained_var:.3f} ep_return_100={ep_ret:.2f} ep_len_100={ep_len:.1f}",
-                flush=True,
-            )
-            _save_checkpoint(config.checkpoint_path, model, optimizer, config, global_step)
+                action_masks = action_mask_table[action].contiguous()
+                step_out = batch.step_device(action_masks, auto_reset=True, synchronize=True)
+                reward = _device_tensor(step_out["rewards"])
+                done_u8 = _device_tensor(step_out["dones"])
+                rewards_buf[step].copy_(reward)
+                next_done = done_u8.float()
+
+                episode_returns += reward
+                episode_lengths += 1.0
+                if bool(done_u8.any().item()):
+                    done_indices = done_u8.nonzero().flatten()
+                    recent_returns.extend(episode_returns[done_indices].detach().cpu().tolist())
+                    recent_lengths.extend(episode_lengths[done_indices].detach().cpu().tolist())
+                    episode_returns[done_indices] = 0.0
+                    episode_lengths[done_indices] = 0.0
+
+                obs = _device_tensor(step_out["ram"])
+                if progress is not None:
+                    progress.update(config.num_envs)
+
+            with torch.no_grad():
+                _, next_value = model(obs)
+                advantages, returns = compute_gae(
+                    rewards_buf,
+                    dones_buf,
+                    values_buf,
+                    next_done,
+                    next_value,
+                    config.gamma,
+                    config.gae_lambda,
+                )
+
+            b_obs = obs_buf.reshape((-1, obs_dim))
+            b_actions = actions_buf.reshape(-1)
+            b_logprobs = logprobs_buf.reshape(-1)
+            b_advantages = advantages.reshape(-1)
+            b_returns = returns.reshape(-1)
+            b_values = values_buf.reshape(-1)
+            batch_count = b_obs.shape[0]
+
+            clipfracs: list[float] = []
+            losses: list[float] = []
+            for _ in range(config.update_epochs):
+                permutation = torch.randperm(batch_count, device="cuda")
+                for start in range(0, batch_count, config.batch_size):
+                    mb_inds = permutation[start : start + config.batch_size]
+                    logits, newvalue = model(b_obs[mb_inds])
+                    dist = Categorical(logits=logits)
+                    newlogprob = dist.log_prob(b_actions[mb_inds])
+                    entropy = dist.entropy().mean()
+                    logratio = newlogprob - b_logprobs[mb_inds]
+                    ratio = logratio.exp()
+
+                    mb_advantages = b_advantages[mb_inds]
+                    mb_advantages = (mb_advantages - mb_advantages.mean()) / (
+                        mb_advantages.std() + 1e-8
+                    )
+                    pg_loss1 = -mb_advantages * ratio
+                    pg_loss2 = -mb_advantages * torch.clamp(
+                        ratio, 1.0 - config.clip_coef, 1.0 + config.clip_coef
+                    )
+                    pg_loss = torch.max(pg_loss1, pg_loss2).mean()
+                    value_loss = 0.5 * (newvalue - b_returns[mb_inds]).pow(2).mean()
+                    entropy_loss = entropy
+                    loss = pg_loss - config.ent_coef * entropy_loss + config.vf_coef * value_loss
+
+                    optimizer.zero_grad(set_to_none=True)
+                    loss.backward()
+                    torch.nn.utils.clip_grad_norm_(model.parameters(), config.max_grad_norm)
+                    optimizer.step()
+
+                    with torch.no_grad():
+                        clipfracs.append(
+                            ((ratio - 1.0).abs() > config.clip_coef).float().mean().item()
+                        )
+                        losses.append(loss.item())
+
+            if update % max(1, config.log_interval) == 0:
+                elapsed = max(1e-6, time.monotonic() - start_time)
+                fps = int(global_step / elapsed)
+                recent_slice = recent_returns[-100:]
+                recent_len_slice = recent_lengths[-100:]
+                ep_ret = float(np.mean(recent_slice)) if recent_slice else float("nan")
+                ep_len = float(np.mean(recent_len_slice)) if recent_len_slice else float("nan")
+                explained_var = _explained_variance(b_values, b_returns)
+                if progress is not None:
+                    progress.set_postfix(
+                        fps=fps,
+                        ret=f"{ep_ret:.1f}",
+                        ev=f"{explained_var:.2f}",
+                        clip=f"{np.mean(clipfracs):.2f}",
+                    )
+                print(
+                    f"update={update}/{num_updates} step={global_step} fps={fps} "
+                    f"loss={np.mean(losses):.4f} clipfrac={np.mean(clipfracs):.3f} "
+                    f"explained_var={explained_var:.3f} ep_return_100={ep_ret:.2f} ep_len_100={ep_len:.1f}",
+                    flush=True,
+                )
+                _save_checkpoint(config.checkpoint_path, model, optimizer, config, global_step)
+    finally:
+        if progress is not None:
+            progress.close()
 
     _save_checkpoint(config.checkpoint_path, model, optimizer, config, global_step)
     env.close()
+
+
+def _make_progress_bar(enabled: bool, total: int, initial: int):
+    if not enabled:
+        return None
+    try:
+        from tqdm.auto import tqdm
+    except ImportError:
+        print("progress bar requested but tqdm is not installed; falling back to update logs")
+        return None
+    return tqdm(total=total, initial=min(initial, total), desc="native PPO", unit="steps")
 
 
 def _explained_variance(values, returns) -> float:
@@ -341,6 +375,7 @@ def parse_args() -> tuple[NativePPOConfig, str | None]:
     parser.add_argument("--checkpoint-path", default="nesle_native_ppo.pt")
     parser.add_argument("--resume-from", default=None)
     parser.add_argument("--log-interval", type=int, default=1)
+    parser.add_argument("--progress-bar", action="store_true")
     args = parser.parse_args()
     config = NativePPOConfig(
         rom_path=args.rom_path,
@@ -365,6 +400,7 @@ def parse_args() -> tuple[NativePPOConfig, str | None]:
         seed=args.seed,
         checkpoint_path=args.checkpoint_path,
         log_interval=args.log_interval,
+        progress_bar=args.progress_bar,
     )
     if config.reset_state_path and config.reset_state_paths:
         raise SystemExit("Pass either --reset-state-path or --reset-state-paths, not both.")
