@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=69", "wheel", "pybind11>=2.12"]
+requires = ["setuptools>=77", "wheel", "pybind11>=2.12"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -9,8 +9,43 @@ description = "GPU-native NES learning environment for reinforcement learning"
 readme = "README.md"
 requires-python = ">=3.10"
 license = "MIT"
-authors = [{ name = "NeSLE contributors" }]
+license-files = ["LICENSE"]
+authors = [{ name = "Hamzah Azzam" }]
+maintainers = [{ name = "Hamzah Azzam" }]
+keywords = [
+  "nes",
+  "emulator",
+  "cuda",
+  "gpu",
+  "reinforcement-learning",
+  "ppo",
+  "super-mario-bros",
+  "gymnasium",
+]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: Science/Research",
+  "Intended Audience :: Developers",
+  "Topic :: Scientific/Engineering :: Artificial Intelligence",
+  "Topic :: System :: Emulators",
+  "Topic :: Games/Entertainment",
+  "Operating System :: POSIX :: Linux",
+  "Operating System :: MacOS",
+  "Operating System :: Microsoft :: Windows",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: C++",
+  "Environment :: GPU :: NVIDIA CUDA",
+]
 dependencies = ["numpy>=1.26"]
+
+[project.urls]
+Homepage = "https://github.com/hbofz/NeSLE"
+Repository = "https://github.com/hbofz/NeSLE"
+Documentation = "https://github.com/hbofz/NeSLE/tree/main/docs"
+Issues = "https://github.com/hbofz/NeSLE/issues"
 
 [project.optional-dependencies]
 rl = [
@@ -26,7 +61,7 @@ legacy-mario = [
 ]
 dev = [
   "pytest>=8",
-  "setuptools>=69",
+  "setuptools>=77",
   "wheel",
   "pybind11>=2.12",
 ]

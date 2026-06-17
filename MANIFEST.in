@@ -1,0 +1,17 @@
+include LICENSE
+include README.md
+include CLAUDE.md
+include setup.py
+
+# C++/CUDA extension sources and headers (needed to build from an sdist).
+recursive-include cpp *.cpp *.cu *.h *.hpp *.cuh
+
+# Bundled FCEUX save states used for snapshot reset / curriculum.
+recursive-include docs/data *.state
+
+# Build helper scripts referenced by the docs.
+recursive-include scripts *.sh
+
+global-exclude *.py[cod]
+global-exclude __pycache__
+global-exclude .DS_Store
