@@ -1,5 +1,12 @@
 """NeSLE Python API."""
 
+from importlib.metadata import PackageNotFoundError, version as _pkg_version
+
+try:
+    __version__ = _pkg_version("nesle")
+except PackageNotFoundError:  # running from a source checkout without install
+    __version__ = "0.0.1"
+
 from .actions import (
     COMPLEX_MOVEMENT,
     COMPLEX_MOVEMENT_MASKS,
@@ -18,6 +25,7 @@ from .rom import INESRom, parse_ines
 from .smb import MarioRamState, RewardComponents, compute_reward, read_ram
 
 __all__ = [
+    "__version__",
     "Button",
     "COMPLEX_MOVEMENT",
     "COMPLEX_MOVEMENT_MASKS",
