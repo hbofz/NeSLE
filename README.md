@@ -23,8 +23,15 @@ trains PPO agents against them with observations that never leave the device.
 Requires Python ≥ 3.10, a CUDA GPU, and a C++20 toolchain.
 
 ```sh
-git clone https://github.com/hbofz/NeSLE.git && cd NeSLE
+git clone https://github.com/hbofz/NeSLE.git
+cd NeSLE
+python -m venv .venv && . .venv/bin/activate   # Windows: .venv\Scripts\activate
 python -m pip install -e '.[dev,rl]'
+
+# The rl extra pulls CPU-only torch from PyPI. For training you need the CUDA
+# build — --force-reinstall is required (same version number, so pip would
+# otherwise silently keep the CPU wheel):
+python -m pip install --force-reinstall torch --index-url https://download.pytorch.org/whl/cu126
 
 # Build the CUDA extension for your GPU architecture:
 NESLE_CUDA_ARCH=sm_61 sh scripts/build_cuda_extension.sh   # GTX 10-series
@@ -33,7 +40,10 @@ NESLE_CUDA_ARCH=sm_90 sh scripts/build_cuda_extension.sh   # H100
 ```
 
 On Windows the build script doesn't apply — follow
-[`docs/build-windows.md`](docs/build-windows.md).
+[`docs/build-windows.md`](docs/build-windows.md). Shell snippets in this README
+use `sh` syntax; on PowerShell, join the multi-line commands onto one line (or
+replace the trailing `\` with a backtick) and drop the single quotes around
+`.[dev,rl]`. Budget ~9 GB of transient disk for the CUDA torch wheel install.
 
 **Bring your own legally obtained Super Mario Bros. ROM** (iNES, mapper 0,
 usually named `Super Mario Bros. (World).nes`). ROMs are not included and are
@@ -45,7 +55,7 @@ never committed (`*.nes` is gitignored).
 |---|---|
 | GPU | Any CUDA GPU; tested on GTX 1050 Ti (sm_61, 4 GB) and A100 (sm_80, 80 GB) |
 | CUDA Toolkit | 12.x. **Pascal (GTX 10-series) requires CTK 12.x** — CTK 13+ dropped sm_61 |
-| PyTorch | CUDA build required for training paths (`pip install torch --index-url https://download.pytorch.org/whl/cu126`) |
+| PyTorch | CUDA build required for training paths (see Install — `--force-reinstall` from the cu126 index) |
 | OS | Linux, Windows 11 (both tested); macOS builds the CPU core only |
 
 ## Quickstart
