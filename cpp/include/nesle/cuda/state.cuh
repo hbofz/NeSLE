@@ -143,6 +143,22 @@ struct CartridgeView {
     std::uint8_t nametable_arrangement;
 };
 
+// The PPU fields read/modified on every emulated instruction. The step kernel
+// loads them into registers once per launch (like CpuState already is) and
+// stores them back at exit — without this they cost ~6-10 dependent global
+// round-trips per instruction. Everything else (scroll, v/t/x/w, memories,
+// presentation snapshot) stays in global memory: those are touched per
+// register-access or per frame, not per instruction. Load/store helpers live
+// in batch_ppu.cuh next to the timing constants.
+struct PpuHotState {
+    std::uint32_t frame_dot = 0;  // scanline * dots-per-scanline + dot
+    std::uint64_t frame = 0;
+    std::uint8_t status = 0;
+    std::uint8_t ctrl = 0;
+    std::uint8_t mask = 0;
+    std::uint8_t nmi_pending = 0;
+};
+
 struct BatchBuffers {
     CpuStateSoA cpu;
     PpuStateSoA ppu;
