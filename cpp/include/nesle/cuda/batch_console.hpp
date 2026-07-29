@@ -30,16 +30,20 @@ NESLE_CUDA_BATCH_CONSOLE_HD inline void clear_batch_ppu_nmi_pending(BatchBuffers
     buffers.ppu.nmi_pending[env] = 0;
 }
 
+// Hot variant: PPU scalars live in the caller's register-resident PpuHotState
+// for the whole kernel; the bus and PPU catch-up read/write it instead of
+// global memory.
 [[nodiscard]] NESLE_CUDA_BATCH_CONSOLE_HD inline BatchConsoleStepResult
-step_batch_console_instruction(BatchBuffers& buffers,
-                               std::uint32_t env,
-                               cpu::CpuState& state) {
+step_batch_console_instruction_hot(BatchBuffers& buffers,
+                                   std::uint32_t env,
+                                   cpu::CpuState& state,
+                                   PpuHotState& hot) {
     const auto cycles_before = state.cycles;
     bool nmi_serviced = false;
-    BatchCpuBus bus(buffers, env);
+    BatchCpuBus bus(buffers, env, hot);
 
-    if (buffers.ppu.nmi_pending[env] != 0) {
-        clear_batch_ppu_nmi_pending(buffers, env);
+    if (hot.nmi_pending != 0) {
+        hot.nmi_pending = 0;
         cpu::nmi(state, bus);
         nmi_serviced = true;
     }
@@ -52,7 +56,7 @@ step_batch_console_instruction(BatchBuffers& buffers,
 
     const auto cpu_cycles = static_cast<std::uint32_t>(state.cycles - cycles_before);
     const auto ppu_cycles = cpu_cycles * kPpuCyclesPerCpuCycle;
-    const auto ppu_step = batch_ppu_step_env(buffers, env, ppu_cycles);
+    const auto ppu_step = batch_ppu_step_env_hot(buffers, env, ppu_cycles, hot);
 
     return BatchConsoleStepResult{
         cpu_step,
@@ -65,6 +69,16 @@ step_batch_console_instruction(BatchBuffers& buffers,
 }
 
 [[nodiscard]] NESLE_CUDA_BATCH_CONSOLE_HD inline BatchConsoleStepResult
+step_batch_console_instruction(BatchBuffers& buffers,
+                               std::uint32_t env,
+                               cpu::CpuState& state) {
+    auto hot = load_ppu_hot_state(buffers, env);
+    const auto result = step_batch_console_instruction_hot(buffers, env, state, hot);
+    store_ppu_hot_state(buffers, env, hot);
+    return result;
+}
+
+[[nodiscard]] NESLE_CUDA_BATCH_CONSOLE_HD inline BatchConsoleStepResult
 step_batch_console_instruction(BatchBuffers& buffers, std::uint32_t env) {
     auto state = load_cpu_state(buffers, env);
     const auto result = step_batch_console_instruction(buffers, env, state);
@@ -73,10 +87,11 @@ step_batch_console_instruction(BatchBuffers& buffers, std::uint32_t env) {
 }
 
 [[nodiscard]] NESLE_CUDA_BATCH_CONSOLE_HD inline BatchConsoleStepResult
-fast_forward_batch_console_idle_loop(BatchBuffers& buffers,
-                                     std::uint32_t env,
-                                     cpu::CpuState& state) {
-    const auto ppu_cycles_to_event = batch_ppu_cycles_until_next_timing_event(buffers, env);
+fast_forward_batch_console_idle_loop_hot(BatchBuffers& buffers,
+                                         std::uint32_t env,
+                                         cpu::CpuState& state,
+                                         PpuHotState& hot) {
+    const auto ppu_cycles_to_event = batch_ppu_cycles_until_next_timing_event_hot(hot);
     const auto skipped_jumps = (ppu_cycles_to_event + 8u) / 9u;
     if (skipped_jumps == 0) {
         return {};
@@ -85,7 +100,7 @@ fast_forward_batch_console_idle_loop(BatchBuffers& buffers,
     const auto cpu_cycles = skipped_jumps * 3u;
     const auto ppu_cycles = cpu_cycles * kPpuCyclesPerCpuCycle;
     state.cycles += cpu_cycles;
-    const auto ppu_step = batch_ppu_step_env(buffers, env, ppu_cycles);
+    const auto ppu_step = batch_ppu_step_env_hot(buffers, env, ppu_cycles, hot);
     return BatchConsoleStepResult{
         {},
         cpu_cycles,
@@ -94,6 +109,16 @@ fast_forward_batch_console_idle_loop(BatchBuffers& buffers,
         false,
         ppu_step.nmi_started,
     };
+}
+
+[[nodiscard]] NESLE_CUDA_BATCH_CONSOLE_HD inline BatchConsoleStepResult
+fast_forward_batch_console_idle_loop(BatchBuffers& buffers,
+                                     std::uint32_t env,
+                                     cpu::CpuState& state) {
+    auto hot = load_ppu_hot_state(buffers, env);
+    const auto result = fast_forward_batch_console_idle_loop_hot(buffers, env, state, hot);
+    store_ppu_hot_state(buffers, env, hot);
+    return result;
 }
 
 }  // namespace nesle::cuda

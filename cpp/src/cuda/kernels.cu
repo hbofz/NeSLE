@@ -27,6 +27,9 @@ __global__ void console_step_kernel(BatchBuffers buffers,
     }
 
     auto state = load_cpu_state(buffers, env);
+    // PPU scalars stay in registers for the whole launch, like CpuState —
+    // they are otherwise ~6-10 dependent global round-trips per instruction.
+    auto hot = load_ppu_hot_state(buffers, env);
     std::uint64_t total_instructions = 0;
     std::uint32_t total_frames_completed = 0;
     std::uint32_t budget_hits = 0;
@@ -34,7 +37,7 @@ __global__ void console_step_kernel(BatchBuffers buffers,
         std::uint64_t instructions = 0;
         std::uint32_t frames_completed = 0;
         while (instructions < max_instructions_per_frame && frames_completed == 0) {
-            const auto step = step_batch_console_instruction(buffers, env, state);
+            const auto step = step_batch_console_instruction_hot(buffers, env, state, hot);
             if (stats.opcode_counts != nullptr) {
                 atomicAdd(&stats.opcode_counts[step.cpu.opcode], 1ULL);
             }
@@ -44,7 +47,8 @@ __global__ void console_step_kernel(BatchBuffers buffers,
             ++instructions;
             frames_completed += step.frames_completed;
             if (step.cpu.opcode == 0x4C && state.pc == step.cpu.pc && frames_completed == 0) {
-                const auto fast_forward = fast_forward_batch_console_idle_loop(buffers, env, state);
+                const auto fast_forward =
+                    fast_forward_batch_console_idle_loop_hot(buffers, env, state, hot);
                 frames_completed += fast_forward.frames_completed;
             }
         }
@@ -55,6 +59,7 @@ __global__ void console_step_kernel(BatchBuffers buffers,
         }
     }
     store_cpu_state(buffers, env, state);
+    store_ppu_hot_state(buffers, env, hot);
 
     apply_batch_reward_env(buffers, env);
     if (stats.instructions != nullptr) {

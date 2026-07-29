@@ -94,10 +94,13 @@ NESLE_CUDA_HD inline void bus_ppu_memory_write(BatchBuffers& buffers,
                             bus_mirror_palette_address(address)] = value;
 }
 
-NESLE_CUDA_HD inline void bus_increment_vram_address(BatchBuffers& buffers, std::uint32_t env) {
+NESLE_CUDA_HD inline void bus_increment_vram_address(BatchBuffers& buffers,
+                                                     std::uint32_t env,
+                                                     const PpuHotState* hot = nullptr) {
     if (buffers.ppu.v != nullptr) {
+        const auto ctrl = hot != nullptr ? hot->ctrl : buffers.ppu.ctrl[env];
         buffers.ppu.v[env] =
-            static_cast<std::uint16_t>(buffers.ppu.v[env] + ((buffers.ppu.ctrl[env] & 0x04) != 0 ? 32 : 1));
+            static_cast<std::uint16_t>(buffers.ppu.v[env] + ((ctrl & 0x04) != 0 ? 32 : 1));
     }
 }
 
@@ -156,7 +159,8 @@ NESLE_CUDA_HD inline void batch_oam_dma(BatchBuffers& buffers,
 
 NESLE_CUDA_HD inline std::uint8_t batch_cpu_read(BatchBuffers& buffers,
                                                  std::uint32_t env,
-                                                 std::uint16_t address) {
+                                                 std::uint16_t address,
+                                                 PpuHotState* hot = nullptr) {
     if (address < 0x2000) {
         return env_cpu_ram(buffers, env)[address & 0x07FF];
     }
@@ -164,11 +168,16 @@ NESLE_CUDA_HD inline std::uint8_t batch_cpu_read(BatchBuffers& buffers,
         const auto reg = static_cast<std::uint16_t>((address - 0x2000) & 0x0007);
         if (reg == 2) {
             const auto open_bus = buffers.ppu.open_bus != nullptr ? buffers.ppu.open_bus[env] : 0;
-            const auto value = static_cast<std::uint8_t>((buffers.ppu.status[env] & 0xE0) |
-                                                         (open_bus & 0x1F));
-            buffers.ppu.status[env] = static_cast<std::uint8_t>(buffers.ppu.status[env] & 0x7F);
-            if (buffers.ppu.nmi_pending != nullptr) {
-                buffers.ppu.nmi_pending[env] = 0;
+            const auto status = hot != nullptr ? hot->status : buffers.ppu.status[env];
+            const auto value = static_cast<std::uint8_t>((status & 0xE0) | (open_bus & 0x1F));
+            if (hot != nullptr) {
+                hot->status = static_cast<std::uint8_t>(status & 0x7F);
+                hot->nmi_pending = 0;
+            } else {
+                buffers.ppu.status[env] = static_cast<std::uint8_t>(status & 0x7F);
+                if (buffers.ppu.nmi_pending != nullptr) {
+                    buffers.ppu.nmi_pending[env] = 0;
+                }
             }
             if (buffers.ppu.w != nullptr) {
                 buffers.ppu.w[env] = 0;
@@ -192,7 +201,7 @@ NESLE_CUDA_HD inline std::uint8_t batch_cpu_read(BatchBuffers& buffers,
                 value = buffers.ppu.read_buffer[env];
                 buffers.ppu.read_buffer[env] = bus_ppu_memory_read(buffers, env, ppu_address);
             }
-            bus_increment_vram_address(buffers, env);
+            bus_increment_vram_address(buffers, env, hot);
             if (buffers.ppu.open_bus != nullptr) {
                 buffers.ppu.open_bus[env] = value;
             }
@@ -218,7 +227,8 @@ NESLE_CUDA_HD inline std::uint8_t batch_cpu_read(BatchBuffers& buffers,
 NESLE_CUDA_HD inline void batch_cpu_write(BatchBuffers& buffers,
                                           std::uint32_t env,
                                           std::uint16_t address,
-                                          std::uint8_t value) {
+                                          std::uint8_t value,
+                                          PpuHotState* hot = nullptr) {
     if (address < 0x2000) {
         env_cpu_ram(buffers, env)[address & 0x07FF] = value;
         return;
@@ -226,19 +236,30 @@ NESLE_CUDA_HD inline void batch_cpu_write(BatchBuffers& buffers,
     if (address < 0x4000) {
         const auto reg = static_cast<std::uint16_t>((address - 0x2000) & 0x0007);
         if (reg == 0) {
-            if ((value & 0x80) != 0 && (buffers.ppu.ctrl[env] & 0x80) == 0 &&
-                (buffers.ppu.status[env] & 0x80) != 0) {
-                if (buffers.ppu.nmi_pending != nullptr) {
+            const auto ctrl = hot != nullptr ? hot->ctrl : buffers.ppu.ctrl[env];
+            const auto status = hot != nullptr ? hot->status : buffers.ppu.status[env];
+            if ((value & 0x80) != 0 && (ctrl & 0x80) == 0 && (status & 0x80) != 0) {
+                if (hot != nullptr) {
+                    hot->nmi_pending = 1;
+                } else if (buffers.ppu.nmi_pending != nullptr) {
                     buffers.ppu.nmi_pending[env] = 1;
                 }
             }
-            buffers.ppu.ctrl[env] = value;
+            if (hot != nullptr) {
+                hot->ctrl = value;
+            } else {
+                buffers.ppu.ctrl[env] = value;
+            }
             if (buffers.ppu.t != nullptr) {
                 buffers.ppu.t[env] =
                     static_cast<std::uint16_t>((buffers.ppu.t[env] & 0xF3FF) | ((value & 0x03) << 10));
             }
         } else if (reg == 1) {
-            buffers.ppu.mask[env] = value;
+            if (hot != nullptr) {
+                hot->mask = value;
+            } else {
+                buffers.ppu.mask[env] = value;
+            }
         } else if (reg == 3) {
             buffers.ppu.oam_addr[env] = value;
         } else if (reg == 4) {
@@ -280,7 +301,7 @@ NESLE_CUDA_HD inline void batch_cpu_write(BatchBuffers& buffers,
             }
         } else if (reg == 7 && buffers.ppu.v != nullptr) {
             bus_ppu_memory_write(buffers, env, buffers.ppu.v[env], value);
-            bus_increment_vram_address(buffers, env);
+            bus_increment_vram_address(buffers, env, hot);
         }
         if (buffers.ppu.open_bus != nullptr) {
             buffers.ppu.open_bus[env] = value;
