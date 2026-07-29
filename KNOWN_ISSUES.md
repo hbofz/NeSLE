@@ -34,6 +34,22 @@ Honest list of what's broken, deferred, or unverified. Kept current as of
 - The C++ tests in `tests/cpp/` are compiled ad hoc by `scripts/verify.sh`
   (POSIX) and are not wired into pytest or CI on Windows.
 
+## Windows/WDDM training-throughput ceiling (measured 2026-07-29)
+
+On Windows (WDDM driver model, GTX 1050 Ti), interleaving torch CUDA *kernels*
+(gather/`copy_`/sampling — memcpy-class ops are exempt) with the emulator's
+step-kernel launches costs ~100–200 ms per interleaved kernel class per step,
+capping the native-PPO rollout at ~3k env-steps/s at 2048 envs even though raw
+stepping does ~25k and policy inference alone takes ~2.5 ms. Reproduce with
+`benchmarks/profile_native_ppo.py`. Measured to be independent of: sync flavor
+(device sync vs event sync vs no sync), action-tensor allocation pattern
+(fresh vs persistent), and cudart linkage (static vs shared). CUDA graphs on
+the policy forward did not help. The pathology does not appear on Linux — the
+A100 (Colab, Linux) training run sustained ~31k env-steps/s end-to-end. If you
+train on Windows, this is the known ceiling; the suspected culprit is WDDM
+command-buffer scheduling, and the practical fix is training on Linux/WSL or a
+TCC-mode GPU.
+
 ## Environment quirks
 
 - The CPU-baseline number in `benchmarks/gpu_vs_cpu.py` is sensitive to host

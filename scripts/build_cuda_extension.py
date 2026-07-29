@@ -116,6 +116,13 @@ def main() -> int:
 
     cmd = [
         nvcc, "-std=c++20", f"-arch={arch}",
+        # Shared cudart so the extension and torch use ONE runtime instance.
+        # With nvcc's default static cudart, torch and the extension each run
+        # their own runtime; under Windows WDDM their interleaved kernel
+        # submissions force queue flushes costing ~100-200 ms per interleaved
+        # torch kernel (measured on a GTX 1050 Ti; see
+        # benchmarks/profile_native_ppo.py).
+        "--cudart=shared",
         f"-I{REPO / 'cpp' / 'include'}",
         f"-I{pybind11.get_include()}",
     ]
