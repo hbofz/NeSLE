@@ -473,6 +473,7 @@ public:
             } else {
                 reset_console();
             }
+            seed_presentation_snapshot();
             render_device();
             return render();
         }
@@ -509,6 +510,7 @@ public:
         copy_to_device(device_ppu_ctrl_, ctrl, "reset ppu ctrl");
         copy_to_device(device_ppu_mask_, mask, "reset ppu mask");
         copy_to_device(device_palette_, palette, "reset palette");
+        seed_presentation_snapshot();
         render_device();
         return render();
     }
@@ -520,6 +522,7 @@ public:
             } else {
                 reset_console();
             }
+            seed_presentation_snapshot();
         } else {
             reset();
         }
@@ -1030,6 +1033,25 @@ private:
         device_frames_ = cuda_alloc<std::uint8_t>(
             static_cast<std::size_t>(num_env_) * kFrameBytes,
             "cudaMalloc frames");
+        // Presentation snapshot buffers (frozen at vblank; see batch_ppu.cuh).
+        device_lat_scroll_x_ = cuda_alloc<std::uint8_t>(num_env_, "cudaMalloc lat scroll x");
+        device_lat_scroll_y_ = cuda_alloc<std::uint8_t>(num_env_, "cudaMalloc lat scroll y");
+        device_lat_ctrl_ = cuda_alloc<std::uint8_t>(num_env_, "cudaMalloc lat ctrl");
+        device_snap_scroll_x_start_ = cuda_alloc<std::uint8_t>(num_env_, "cudaMalloc snap scroll x start");
+        device_snap_scroll_y_start_ = cuda_alloc<std::uint8_t>(num_env_, "cudaMalloc snap scroll y start");
+        device_snap_ctrl_start_ = cuda_alloc<std::uint8_t>(num_env_, "cudaMalloc snap ctrl start");
+        device_snap_scroll_x_end_ = cuda_alloc<std::uint8_t>(num_env_, "cudaMalloc snap scroll x end");
+        device_snap_scroll_y_end_ = cuda_alloc<std::uint8_t>(num_env_, "cudaMalloc snap scroll y end");
+        device_snap_ctrl_end_ = cuda_alloc<std::uint8_t>(num_env_, "cudaMalloc snap ctrl end");
+        device_snap_mask_ = cuda_alloc<std::uint8_t>(num_env_, "cudaMalloc snap mask");
+        device_snap_oam_ = cuda_alloc<std::uint8_t>(
+            static_cast<std::size_t>(num_env_) * nesle::cuda::kOamBytes, "cudaMalloc snap oam");
+        device_snap_nametable_ = cuda_alloc<std::uint8_t>(
+            static_cast<std::size_t>(num_env_) * nesle::cuda::kNametableRamBytes,
+            "cudaMalloc snap nametable");
+        device_snap_palette_ = cuda_alloc<std::uint8_t>(
+            static_cast<std::size_t>(num_env_) * nesle::cuda::kPaletteRamBytes,
+            "cudaMalloc snap palette");
         device_reset_mask_ = cuda_alloc<std::uint8_t>(num_env_, "cudaMalloc reset mask");
         device_stat_instructions_ =
             cuda_alloc<std::uint64_t>(num_env_, "cudaMalloc stat instructions");
@@ -1081,6 +1103,19 @@ private:
         buffers_.ppu.nametable_ram = device_nametable_;
         buffers_.ppu.palette_ram = device_palette_;
         buffers_.ppu.oam = device_oam_;
+        buffers_.ppu.lat_scroll_x = device_lat_scroll_x_;
+        buffers_.ppu.lat_scroll_y = device_lat_scroll_y_;
+        buffers_.ppu.lat_ctrl = device_lat_ctrl_;
+        buffers_.ppu.snap_scroll_x_start = device_snap_scroll_x_start_;
+        buffers_.ppu.snap_scroll_y_start = device_snap_scroll_y_start_;
+        buffers_.ppu.snap_ctrl_start = device_snap_ctrl_start_;
+        buffers_.ppu.snap_scroll_x_end = device_snap_scroll_x_end_;
+        buffers_.ppu.snap_scroll_y_end = device_snap_scroll_y_end_;
+        buffers_.ppu.snap_ctrl_end = device_snap_ctrl_end_;
+        buffers_.ppu.snap_mask = device_snap_mask_;
+        buffers_.ppu.snap_oam = device_snap_oam_;
+        buffers_.ppu.snap_nametable = device_snap_nametable_;
+        buffers_.ppu.snap_palette = device_snap_palette_;
         buffers_.frames_rgb = device_frames_;
     }
 
@@ -1127,6 +1162,19 @@ private:
         cudaFree(device_nametable_);
         cudaFree(device_palette_);
         cudaFree(device_oam_);
+        cudaFree(device_lat_scroll_x_);
+        cudaFree(device_lat_scroll_y_);
+        cudaFree(device_lat_ctrl_);
+        cudaFree(device_snap_scroll_x_start_);
+        cudaFree(device_snap_scroll_y_start_);
+        cudaFree(device_snap_ctrl_start_);
+        cudaFree(device_snap_scroll_x_end_);
+        cudaFree(device_snap_scroll_y_end_);
+        cudaFree(device_snap_ctrl_end_);
+        cudaFree(device_snap_mask_);
+        cudaFree(device_snap_oam_);
+        cudaFree(device_snap_nametable_);
+        cudaFree(device_snap_palette_);
         cudaFree(device_prg_rom_);
         cudaFree(device_chr_rom_);
         cudaFree(device_frames_);
@@ -1393,6 +1441,31 @@ private:
         check_cuda(cudaGetLastError(), "launch_render_kernel");
     }
 
+    // Seed the presentation snapshot from live state so render() is coherent
+    // even before the first stepped vblank refreshes it (e.g. render right
+    // after reset). All copies are device-to-device.
+    void seed_presentation_snapshot() {
+        auto d2d = [&](void* dst, const void* src, std::size_t bytes, const char* label) {
+            check_cuda(cudaMemcpy(dst, src, bytes, cudaMemcpyDeviceToDevice), label);
+        };
+        d2d(device_snap_nametable_, device_nametable_,
+            static_cast<std::size_t>(num_env_) * nesle::cuda::kNametableRamBytes, "seed snap nametable");
+        d2d(device_snap_palette_, device_palette_,
+            static_cast<std::size_t>(num_env_) * nesle::cuda::kPaletteRamBytes, "seed snap palette");
+        d2d(device_snap_oam_, device_oam_,
+            static_cast<std::size_t>(num_env_) * nesle::cuda::kOamBytes, "seed snap oam");
+        d2d(device_snap_mask_, device_ppu_mask_, num_env_, "seed snap mask");
+        for (auto* dst : {device_lat_scroll_x_, device_snap_scroll_x_start_, device_snap_scroll_x_end_}) {
+            d2d(dst, device_ppu_scroll_x_, num_env_, "seed snap scroll x");
+        }
+        for (auto* dst : {device_lat_scroll_y_, device_snap_scroll_y_start_, device_snap_scroll_y_end_}) {
+            d2d(dst, device_ppu_scroll_y_, num_env_, "seed snap scroll y");
+        }
+        for (auto* dst : {device_lat_ctrl_, device_snap_ctrl_start_, device_snap_ctrl_end_}) {
+            d2d(dst, device_ppu_ctrl_, num_env_, "seed snap ctrl");
+        }
+    }
+
     std::uint32_t num_env_ = 0;
     std::uint32_t frameskip_ = 0;
     std::uint64_t max_instructions_per_frame_ = 200'000;
@@ -1444,6 +1517,19 @@ private:
     std::uint8_t* device_prg_rom_ = nullptr;
     std::uint8_t* device_chr_rom_ = nullptr;
     std::uint8_t* device_frames_ = nullptr;
+    std::uint8_t* device_lat_scroll_x_ = nullptr;
+    std::uint8_t* device_lat_scroll_y_ = nullptr;
+    std::uint8_t* device_lat_ctrl_ = nullptr;
+    std::uint8_t* device_snap_scroll_x_start_ = nullptr;
+    std::uint8_t* device_snap_scroll_y_start_ = nullptr;
+    std::uint8_t* device_snap_ctrl_start_ = nullptr;
+    std::uint8_t* device_snap_scroll_x_end_ = nullptr;
+    std::uint8_t* device_snap_scroll_y_end_ = nullptr;
+    std::uint8_t* device_snap_ctrl_end_ = nullptr;
+    std::uint8_t* device_snap_mask_ = nullptr;
+    std::uint8_t* device_snap_oam_ = nullptr;
+    std::uint8_t* device_snap_nametable_ = nullptr;
+    std::uint8_t* device_snap_palette_ = nullptr;
     std::uint8_t* device_reset_mask_ = nullptr;
     std::uint64_t* device_stat_instructions_ = nullptr;
     std::uint32_t* device_stat_frames_completed_ = nullptr;

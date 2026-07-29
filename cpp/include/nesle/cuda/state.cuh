@@ -60,6 +60,28 @@ struct PpuStateSoA {
     std::uint8_t* nametable_ram;
     std::uint8_t* palette_ram;
     std::uint8_t* oam;
+
+    // Presentation snapshot — frozen at each vblank start so render() sees an
+    // internally consistent picture of the just-finished frame no matter where
+    // stepping paused. All nullptr (host tests, older callers) => render falls
+    // back to live state, the pre-snapshot behavior. `lat_*` latch scroll/ctrl
+    // at the pre-render crossing (frame start); the following vblank promotes
+    // them into `snap_*_start` so start/end pairs always describe one frame.
+    // Two-region rendering uses `snap_*_start` above sprite-0's bottom edge
+    // (SMB's status-bar split) and `snap_*_end` below it.
+    std::uint8_t* lat_scroll_x;
+    std::uint8_t* lat_scroll_y;
+    std::uint8_t* lat_ctrl;
+    std::uint8_t* snap_scroll_x_start;
+    std::uint8_t* snap_scroll_y_start;
+    std::uint8_t* snap_ctrl_start;
+    std::uint8_t* snap_scroll_x_end;
+    std::uint8_t* snap_scroll_y_end;
+    std::uint8_t* snap_ctrl_end;
+    std::uint8_t* snap_mask;
+    std::uint8_t* snap_oam;        // kOamBytes per env
+    std::uint8_t* snap_nametable;  // kNametableRamBytes per env
+    std::uint8_t* snap_palette;    // kPaletteRamBytes per env
 };
 
 struct CartridgeView {
