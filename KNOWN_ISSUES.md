@@ -5,6 +5,27 @@ Honest list of what's broken, deferred, or unverified. Kept current as of
 
 ## Deferred bugs
 
+- **Renderer samples live PPU state mid-frame, causing transient visual
+  artifacts in recordings** (found 2026-07-29 via a user report of GIF
+  flicker; game state and RAM-based training are unaffected — render-only).
+  One root cause, three observed symptom classes, all confirmed frame-by-frame:
+  1. *HUD-less wrong-scroll frames* (~⅓ of frames in a scrolling recording):
+     the whole frame renders at the playfield scroll, scrolling the status bar
+     away — real SMB holds the HUD still via a mid-frame scroll change
+     (sprite-0 split) that the renderer doesn't emulate.
+  2. *Objects flashing in/out*: sprite (OAM) state sampled mid-update.
+  3. *Future level content materializing* (e.g. a flagpole appearing
+     mid-level for one frame): SMB pre-writes upcoming columns into the
+     second nametable; sampled mid-frame, the scroll/nametable-select state
+     can expose them.
+  Real fix (specified, not yet implemented): capture presentation state at
+  defined points — scroll/PPUCTRL as of frame start for HUD rows, the
+  post-NMI playfield scroll for rows 32+, OAM as of the frame's vblank — into
+  per-env snapshot buffers during stepping, and render from the snapshot in
+  `cpp/include/nesle/cuda/batch_render.cuh`. Until then, recordings (and any
+  future pixel-observation policy) contain these transients; the recorder
+  filters the grossest class (HUD-less frames) automatically.
+
 - **Title-screen → gameplay transition stalls** (PPU timing bug). SMB's menu
   handler runs and controller polling works, but the edge-detect branch that
   advances `OperMode` never fires under our PPU timing. Worked around

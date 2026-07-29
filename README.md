@@ -88,16 +88,19 @@ Full options and troubleshooting: [`docs/training.md`](docs/training.md).
 
 ### What the trained agent looks like
 
-![Native PPO agent clearing World 1-1](docs/assets/agent-clears-world1-1.gif)
+![Native PPO agent clearing World 1-1](docs/assets/agent-flag-run.gif)
 
 A 25M-timestep native-PPO run (2048 envs, smart reward, `mario` action space,
-~2.5 h on a GTX 1050 Ti). The GIF above is the agent's best episode out of 12:
-a full World 1-1 clear — flag captured at x≈3,157, rendered at real-time
-speed. Honest status: that's the tail of the distribution, not the typical
-episode — most runs stall around x≈1,100 (of the flag's ~3,175) and die; over
-the 12 recorded episodes, one cleared the level. Training metrics: episode
-return −26 → ~195, `explained_variance` 0 → 0.88. Evaluate and record any
-checkpoint yourself:
+~2.5 h on a GTX 1050 Ti). The GIF above is the final life of the agent's best
+episode out of 12: a World 1-1 clear — flag captured at x≈3,157, rendered at
+real-time speed. Honest status on two fronts: (1) the clear is the tail of the
+distribution — most episodes stall around x≈1,100 and die; (2) the recording
+contains occasional 1-frame visual glitches (objects flashing in/out) from a
+known renderer limitation — the CUDA PPU samples scroll/sprite state mid-frame
+rather than at coherent frame boundaries (see KNOWN_ISSUES.md; game state and
+RAM-based training are unaffected). Training metrics: episode return −26 →
+~195, `explained_variance` 0 → 0.88. Evaluate and record any checkpoint
+yourself:
 
 ```sh
 python examples/native_ppo_eval.py "Super Mario Bros. (World).nes" \
