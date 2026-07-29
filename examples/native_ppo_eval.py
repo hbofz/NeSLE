@@ -30,6 +30,76 @@ X_SCREEN = 0x0086
 GAME_MODE = 0x0770
 
 
+def record_best_episode(args, payload, hidden_size: int, action_space: str) -> None:
+    """Run N episodes in one frameskip-1 env, keep the best, write a smooth GIF.
+
+    The env steps single NES frames so every frame can be rendered; the policy
+    still chooses an action once per ``--frameskip`` frames, matching the
+    cadence it was trained with. Playback is real time (every 2nd frame at
+    ~30 fps).
+    """
+    torch, _, Categorical = _require_cuda_torch()
+
+    import nesle
+
+    env = nesle.make_vec(
+        rom_path=args.rom_path,
+        num_envs=1,
+        backend="cuda",
+        observation_mode="ram",
+        action_space=action_space,
+        frameskip=1,
+        reset_state_path=args.state,
+    )
+    model = _make_model(2048, int(env.action_space.n), hidden_size)
+    model.load_state_dict(payload["model"])
+    model.eval()
+
+    max_frames_per_ep = args.max_steps * args.frameskip
+    best_frames: list[np.ndarray] = []
+    best_x = -1
+    obs = env.reset()
+    for episode in range(args.record_best):
+        frames: list[np.ndarray] = []
+        ep_x = 0
+        done = False
+        while not done and len(frames) < max_frames_per_ep:
+            with torch.no_grad():
+                logits, _ = model(torch.as_tensor(obs, device="cuda"))
+                action = int(Categorical(logits=logits).sample()[0])
+            for _ in range(args.frameskip):
+                obs, _, dones, _ = env.step([action])
+                frames.append(env.render()[0].copy())
+                x = int(obs[0, X_PAGE]) * 256 + int(obs[0, X_SCREEN])
+                ep_x = max(ep_x, x)
+                if dones[0]:
+                    done = True
+                    break
+        print(f"episode {episode + 1}/{args.record_best}: max_x={ep_x} frames={len(frames)}")
+        if ep_x > best_x:
+            best_x = ep_x
+            best_frames = frames
+        # env auto-resets on done; if the episode hit the frame cap, force one.
+        if not done:
+            obs = env.reset()
+
+    from PIL import Image
+
+    out = Path(args.gif_out)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    images = [Image.fromarray(f) for f in best_frames[::2]]  # 60 fps source -> 30 fps
+    images[0].save(
+        out,
+        save_all=True,
+        append_images=images[1:],
+        duration=33,  # ~30 fps == real time for every-2nd-frame of 60 fps
+        loop=0,
+        optimize=True,
+    )
+    print(f"best episode: max_x={best_x} -> {out} ({len(images)} frames, {out.stat().st_size / 1e6:.1f} MB)")
+    env.close()
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("rom_path")
@@ -41,6 +111,16 @@ def main() -> None:
     parser.add_argument("--deterministic", action="store_true", help="argmax actions instead of sampling")
     parser.add_argument("--gif-out", default=None, help="write a GIF of env 0 to this path")
     parser.add_argument("--gif-fps", type=int, default=15)
+    parser.add_argument(
+        "--record-best",
+        type=int,
+        default=0,
+        metavar="N",
+        help="smooth recording mode: run N episodes in a single frameskip-1 env "
+        "(policy still acts every --frameskip frames, as in training), render "
+        "every NES frame, and write only the best episode (highest x) to "
+        "--gif-out at real-time speed",
+    )
     parser.add_argument("--seed", type=int, default=0)
     args = parser.parse_args()
 
@@ -51,6 +131,12 @@ def main() -> None:
     config = payload.get("config", {})
     hidden_size = int(config.get("hidden_size", 256))
     action_space = config.get("action_space", "mario")
+
+    if args.record_best > 0:
+        if args.gif_out is None:
+            parser.error("--record-best requires --gif-out")
+        record_best_episode(args, payload, hidden_size, action_space)
+        return
 
     env = nesle.make_vec(
         rom_path=args.rom_path,
