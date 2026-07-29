@@ -86,6 +86,19 @@ __global__ void render_rgb_kernel(BatchBuffers buffers, std::uint32_t num_envs) 
     }
 }
 
+// One thread per env, serial frame paint. The per-pixel kernel above checks
+// every sprite per pixel, which costs more total arithmetic; once the env
+// count alone saturates the GPU, the serial per-env renderer wins (measured
+// crossover ~ several hundred envs on a GTX 1050 Ti: 2.9x faster per-pixel at
+// 256 envs, 1.5x slower at 2048).
+__global__ void render_rgb_kernel_serial(BatchBuffers buffers, std::uint32_t num_envs) {
+    const auto env = blockIdx.x * blockDim.x + threadIdx.x;
+    if (env >= num_envs) {
+        return;
+    }
+    render_batch_rgb_frame_env(buffers, env);
+}
+
 }  // namespace
 
 void launch_step_kernel(const BatchBuffers& buffers, StepConfig config, cudaStream_t stream) {
@@ -111,8 +124,17 @@ void launch_console_step_kernel(const BatchBuffers& buffers,
 
 void launch_render_kernel(const BatchBuffers& buffers, StepConfig config, cudaStream_t stream) {
     constexpr int kThreads = 256;
-    const int blocks = static_cast<int>(config.num_envs);
-    render_rgb_kernel<<<blocks, kThreads, 0, stream>>>(buffers, config.num_envs);
+    // Small batches (recording, eval, pixel obs on few envs): block-per-env,
+    // threads cooperate on pixels. Large batches: the env count already
+    // saturates the GPU and the serial per-env paint does less total work.
+    constexpr std::uint32_t kPerPixelMaxEnvs = 512;
+    if (config.num_envs <= kPerPixelMaxEnvs) {
+        const int blocks = static_cast<int>(config.num_envs);
+        render_rgb_kernel<<<blocks, kThreads, 0, stream>>>(buffers, config.num_envs);
+    } else {
+        const int blocks = static_cast<int>((config.num_envs + kThreads - 1) / kThreads);
+        render_rgb_kernel_serial<<<blocks, kThreads, 0, stream>>>(buffers, config.num_envs);
+    }
 }
 
 namespace {
