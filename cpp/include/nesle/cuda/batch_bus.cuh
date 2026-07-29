@@ -136,9 +136,18 @@ NESLE_CUDA_HD inline void batch_oam_dma(BatchBuffers& buffers,
                                         std::uint8_t page) {
     const auto base = static_cast<std::uint16_t>(page << 8);
     auto* oam = env_oam(buffers, env);
-    for (std::uint16_t i = 0; i < kOamBytes; ++i) {
-        oam[static_cast<std::uint8_t>(buffers.ppu.oam_addr[env] + i)] =
-            env_cpu_ram(buffers, env)[(base + i) & 0x07FF];
+    if (buffers.ppu.oam_addr[env] == 0) {
+        // Common case: OAMADDR is 0, so the destination is the whole OAM block
+        // in order. The source is contiguous too: base is a multiple of 256,
+        // so (base + i) & 0x07FF == (base & 0x07FF) + i for i in [0, 255].
+        copy_bytes_fast(oam, env_cpu_ram(buffers, env) + (base & 0x07FF),
+                        static_cast<std::uint32_t>(kOamBytes));
+    } else {
+        // Destination wraps around OAM at oam_addr; keep the byte loop.
+        for (std::uint16_t i = 0; i < kOamBytes; ++i) {
+            oam[static_cast<std::uint8_t>(buffers.ppu.oam_addr[env] + i)] =
+                env_cpu_ram(buffers, env)[(base + i) & 0x07FF];
+        }
     }
     if (buffers.cpu.pending_dma_cycles != nullptr) {
         buffers.cpu.pending_dma_cycles[env] += 513;
