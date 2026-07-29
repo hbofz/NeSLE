@@ -86,6 +86,21 @@ python examples/native_ppo_train.py "Super Mario Bros. (World).nes" \
 
 Full options and troubleshooting: [`docs/training.md`](docs/training.md).
 
+### What the trained agent looks like
+
+![Native PPO agent playing World 1-1](docs/assets/agent-world1-1.gif)
+
+A 25M-timestep native-PPO run (2048 envs, smart reward, `mario` action space,
+~2.5 h on a GTX 1050 Ti) learns to run and jump through roughly the first
+third of World 1-1 — episode return rose −26 → ~195, `explained_variance`
+0 → 0.88, best x-position ~1,100 of the flag's ~3,175. Honest status: it does
+not clear the level yet. Evaluate and record any checkpoint yourself:
+
+```sh
+python examples/native_ppo_eval.py "Super Mario Bros. (World).nes" \
+    --checkpoint checkpoints/native_ppo.pt --gif-out my_agent.gif
+```
+
 ## What's in the box
 
 - **CUDA-batched NROM emulator** (`cpp/bindings/cuda_module.cu`,
