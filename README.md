@@ -185,8 +185,6 @@ env-steps/s for a 75M-timestep run (40 min wall-clock).
   [`KNOWN_ISSUES.md`](KNOWN_ISSUES.md).
 - **One CUDA thread per env** — simple to reason about, but leaves performance
   on the table at very large batches (warp divergence).
-- The smart reward is tuned for World 1-1; other levels currently reuse its
-  defaults.
 
 ## Project layout
 
