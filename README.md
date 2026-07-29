@@ -10,8 +10,10 @@ trains PPO agents against them with observations that never leave the device.
 
 **Key results** (see [Benchmarks](#benchmarks) for methodology and commands):
 
-- On a **GTX 1050 Ti (4 GB)**: 29,491 env-steps/s at 4,096 parallel envs —
-  **88× a single-env CPU baseline** (measured 2026-07-28 on this repo's HEAD).
+- On a **GTX 1050 Ti (4 GB)**: 35,488 env-steps/s at 4,096 parallel envs —
+  **110× a single-env CPU baseline** (measured 2026-07-29 on this repo's HEAD,
+  after the register-caching/copy-vectorization work in
+  [docs/gpu-scaling.md](docs/gpu-scaling.md)).
 - On an **A100 (80 GB)**: ~560k env-steps/s with RAM observations at 128 envs
   ([full report](docs/phase6-report.md)); a 75M-timestep GPU-resident PPO run on
   World 7-1 finished in **40 minutes** at 65,536 envs, sustaining ~31k
@@ -149,22 +151,24 @@ Reproduce the GPU-vs-CPU sweep (ROM at repo root, ~3 min):
 python benchmarks/gpu_vs_cpu.py
 ```
 
-GTX 1050 Ti / 4 GB, Windows 11, CTK 12.9, frameskip 4 — measured 2026-07-28:
+GTX 1050 Ti / 4 GB, Windows 11, CTK 12.9, frameskip 4 — measured 2026-07-29:
 
 | Backend | Envs | Env-steps/s | vs CPU |
 |---|---:|---:|---:|
-| native CPU | 1 | 335 | 1.00× |
-| `cuda-console` | 64 | 1,066 | 3.2× |
-| `cuda-console` | 256 | 4,086 | 12.2× |
-| `cuda-console` | 1,024 | 15,003 | 44.8× |
-| `cuda-console` | 4,096 | **29,491** | **88.1×** |
+| native CPU | 1 | 321 | 1.00× |
+| `cuda-console` | 64 | 1,299 | 4.0× |
+| `cuda-console` | 256 | 4,839 | 15.1× |
+| `cuda-console` | 1,024 | 17,591 | 54.8× |
+| `cuda-console` | 4,096 | **35,488** | **110.5×** |
 
-The GPU crosses over the single-env CPU at ~64 envs and scales near-linearly to
-~2k envs. An earlier run of the same script recorded 102× against a slower CPU
-baseline ([details](docs/benchmark-gpu-vs-cpu.md)) — the GPU-side numbers agree
-within ~1%. For external scale: the standard CPU stack (nes-py /
-gym-super-mario-bros) measures 132 env-steps/s on the same machine
-(`benchmarks/nespy_baseline.py`), so 4,096 GPU envs ≈ **223× nes-py**.
+The GPU crosses over the single-env CPU at ~32 envs and scales near-linearly to
+~2k envs. These numbers include the optimization pass documented in
+[docs/gpu-scaling.md](docs/gpu-scaling.md) (+20% over the previous day's
+measurement; earlier recorded runs and their CPU-baseline sensitivity are in
+[the benchmark doc](docs/benchmark-gpu-vs-cpu.md)). For external scale: the
+standard CPU stack (nes-py / gym-super-mario-bros) measures 132 env-steps/s on
+the same machine (`benchmarks/nespy_baseline.py`), so 4,096 GPU envs ≈
+**269× nes-py**.
 
 A100 / 80 GB (recorded 2026-05, [full report](docs/phase6-report.md)):
 

@@ -45,7 +45,29 @@ payoff.
 
 ## Ranked roadmap
 
-### Tier 0 — quick wins, no redesign (days; do these first)
+### Tier 0 — quick wins, no redesign — **EXECUTED 2026-07-29, measured**
+
+Three of the five items below were implemented and measured the same day
+(GTX 1050 Ti, per-change A/B with the full test suite green at each step):
+
+| Change | step @2048 envs | render @256 envs |
+|---|---:|---:|
+| (baseline, start of day) | 88.3 ms / 23.2k steps/s | 118.5 ms |
+| + hybrid render dispatch (#2) | — | **41.4 ms (2.9×)** |
+| + vectorized bulk copies (#3) | 80.6 ms / 25.4k (+9.5%) | — |
+| + PPU hot-state register caching (#1) | **68.6 ms / 29.8k (+17%)** | — |
+| **cumulative** | **+29% stepping** | **2.9× small-batch render** |
+
+Effect on the official `benchmarks/gpu_vs_cpu.py` headline: 29,491 →
+**35,488 env-steps/s at 4,096 envs (88× → 110× the CPU baseline)**. Honest
+notes: the per-pixel render kernel loses to the serial one once the env count
+alone saturates the GPU (321 ms vs 207 ms at 2,048 envs), so dispatch is
+hybrid with the crossover at 512 envs; the refactored serial path also costs
+~14% at 2,048 envs (207 → 237 ms) — accepted, as large-batch rendering serves
+only RGB-observation training. Items #4 (zero page in shared memory) and #5
+(hygiene pass) remain open.
+
+Original plan:
 
 1. **Register-cache the hot PPU scalars** exactly like `CpuState` already is
    (verified single-writer per env within a kernel). Eliminates most
