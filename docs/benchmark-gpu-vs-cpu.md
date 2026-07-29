@@ -64,6 +64,19 @@ The 1050 Ti has ~2 TFLOPS FP32. A100 has ~19.5 TFLOPS, H100 has ~67 TFLOPS. The 
 
 Memory-wise: each env needs ~200 KB of state. A100 (40-80 GB) can comfortably hold 200,000+ parallel envs. The local 4 GB cap (and the 2048-to-4096 plateau) is a host-side constraint, not a fundamental algorithmic one.
 
+## Baseline: nes-py / gym-super-mario-bros (2026-07-29)
+
+The widely-used CPU Mario stack was measured on the same machine with the same
+protocol (hold RIGHT+B, warmup then timed steps): **530 frames/s ≈ 132
+env-steps/s** at frameskip-4 accounting (`benchmarks/nespy_baseline.py`; needs
+its own old-gym venv, see the script header). For scale:
+
+| Stack | Env-steps/s (fs4) | Relative |
+|---|---:|---:|
+| nes-py (`SuperMarioBros-v0`), 1 env | 132 | 0.4× |
+| NeSLE native CPU, 1 env | 335 | 1.0× |
+| NeSLE cuda-console, 4,096 envs | 29,491 | 88× (≈223× nes-py) |
+
 ## Reproduction check (2026-07-28)
 
 A rerun of `python benchmarks/gpu_vs_cpu.py` on the same machine reproduced the
