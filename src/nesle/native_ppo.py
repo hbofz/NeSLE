@@ -41,6 +41,9 @@ class NativePPOConfig:
 
 
 def _require_torch():
+    """Import torch or exit with guidance. CUDA availability is checked separately
+    (in train_native_ppo) so CPU-only utilities like compute_gae and checkpoint
+    save/load stay usable on machines without a GPU."""
     try:
         import torch
         import torch.nn as nn
@@ -49,6 +52,11 @@ def _require_torch():
         raise SystemExit(
             "Install PyTorch to run native PPO. For the usual setup: pip install -e '.[rl]'"
         ) from exc
+    return torch, nn, Categorical
+
+
+def _require_cuda_torch():
+    torch, nn, Categorical = _require_torch()
     if not torch.cuda.is_available():
         raise SystemExit("native PPO requires a CUDA-enabled PyTorch build.")
     return torch, nn, Categorical
@@ -373,10 +381,8 @@ def _make_env(config: NativePPOConfig):
 
 
 def train_native_ppo(config: NativePPOConfig, resume_from: str | None = None) -> None:
-    torch, _, Categorical = _require_torch()
-
-    # Cheap config validation BEFORE we open a ROM or talk to CUDA — fails fast on
-    # misconfigurations without spending the env setup cost.
+    # Cheap config validation BEFORE we require CUDA, open a ROM, or talk to the
+    # GPU — fails fast on misconfigurations without spending the env setup cost.
     rollout_timesteps = config.num_envs * config.n_steps
     if rollout_timesteps < config.batch_size:
         raise ValueError(
@@ -385,6 +391,8 @@ def train_native_ppo(config: NativePPOConfig, resume_from: str | None = None) ->
             f"batch_size={config.batch_size} is larger. Either lower --batch-size, "
             f"raise --num-envs, or raise --n-steps."
         )
+
+    torch, _, Categorical = _require_cuda_torch()
 
     torch.manual_seed(config.seed)
     np.random.seed(config.seed)
