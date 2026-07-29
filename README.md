@@ -141,7 +141,9 @@ GTX 1050 Ti / 4 GB, Windows 11, CTK 12.9, frameskip 4 — measured 2026-07-28:
 The GPU crosses over the single-env CPU at ~64 envs and scales near-linearly to
 ~2k envs. An earlier run of the same script recorded 102× against a slower CPU
 baseline ([details](docs/benchmark-gpu-vs-cpu.md)) — the GPU-side numbers agree
-within ~1%.
+within ~1%. For external scale: the standard CPU stack (nes-py /
+gym-super-mario-bros) measures 132 env-steps/s on the same machine
+(`benchmarks/nespy_baseline.py`), so 4,096 GPU envs ≈ **223× nes-py**.
 
 A100 / 80 GB (recorded 2026-05, [full report](docs/phase6-report.md)):
 
