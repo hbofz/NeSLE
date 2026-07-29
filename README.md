@@ -88,7 +88,7 @@ Full options and troubleshooting: [`docs/training.md`](docs/training.md).
 
 ### What the trained agent looks like
 
-![Native PPO agent playing World 1-1](docs/assets/agent-world1-1.gif)
+![Native PPO agent clearing World 1-1](docs/assets/agent-clears-world1-1.gif)
 
 A 25M-timestep native-PPO run (2048 envs, smart reward, `mario` action space,
 ~2.5 h on a GTX 1050 Ti). The GIF above is the agent's best episode out of 12:
