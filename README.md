@@ -204,6 +204,8 @@ docker/         CUDA build/test image
 
 - [Training guide](docs/training.md) — primary entry point for RL work
 - [Architecture](docs/architecture.md) — system design
+- [Design rationale](docs/design.md) — why the emulator lives inside the kernel
+- [GPU scaling notes](docs/gpu-scaling.md) — beyond one-thread-per-env: measured costs, prior art, ranked roadmap
 - [Windows CUDA build](docs/build-windows.md)
 - [A100 benchmark report](docs/phase6-report.md)
 - [GPU vs CPU benchmark (1050 Ti)](docs/benchmark-gpu-vs-cpu.md)
