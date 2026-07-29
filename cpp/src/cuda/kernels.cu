@@ -68,10 +68,21 @@ __global__ void console_step_kernel(BatchBuffers buffers,
     }
 }
 
+// One block per env; threads stride over the frame's pixels. Each pixel is a
+// pure function of PPU state (see render_batch_rgb_pixel_env), and every
+// thread owns the pixels it writes, so no synchronization is needed.
 __global__ void render_rgb_kernel(BatchBuffers buffers, std::uint32_t num_envs) {
-    const auto env = blockIdx.x * blockDim.x + threadIdx.x;
-    if (env < num_envs) {
-        render_batch_rgb_frame_env(buffers, env);
+    const auto env = blockIdx.x;
+    if (env >= num_envs) {
+        return;
+    }
+    // Resolving the presentation-snapshot views is a handful of loads and
+    // pointer swaps; redoing it per thread is cheaper than staging it through
+    // shared memory.
+    auto views = resolve_render_env_views(buffers, env);
+    constexpr std::uint32_t kPixels = kFrameWidth * kFrameHeight;
+    for (std::uint32_t pixel = threadIdx.x; pixel < kPixels; pixel += blockDim.x) {
+        render_batch_rgb_pixel_env(buffers, views.hud, views.play, env, views.split_y, pixel);
     }
 }
 
@@ -99,8 +110,8 @@ void launch_console_step_kernel(const BatchBuffers& buffers,
 }
 
 void launch_render_kernel(const BatchBuffers& buffers, StepConfig config, cudaStream_t stream) {
-    constexpr int kThreads = 64;
-    const int blocks = static_cast<int>((config.num_envs + kThreads - 1) / kThreads);
+    constexpr int kThreads = 256;
+    const int blocks = static_cast<int>(config.num_envs);
     render_rgb_kernel<<<blocks, kThreads, 0, stream>>>(buffers, config.num_envs);
 }
 
