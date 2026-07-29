@@ -98,6 +98,30 @@ Measured end-to-end on a 4 GB GTX 1050 Ti (2048 envs): ~25M timesteps in
   divergent banking logic inside the hot kernel. NROM covers SMB, the target.
 - **Audio.** No RL value for the cost.
 
+## On adding mappers (MMC1 first)
+
+Extending beyond NROM is the highest-leverage *capability* work: MMC1 alone
+adds Zelda, Metroid, and Mega Man 2-class games. Honest scoping from reading
+the current code:
+
+- **Where it plugs in:** cartridge reads/writes flow through the batched bus
+  (`cpp/include/nesle/cuda/batch_bus.cuh`); NROM is currently a fixed mapping.
+  MMC1 needs per-env mapper state in the SoA layout (shift register, 5-bit
+  load count, 4 bank-control registers) plus bank-translation on PRG/CHR
+  access and runtime nametable-mirroring control.
+- **The hard parts:** (1) every PRG/CHR access gains a bank indirection —
+  measurable but small; (2) CHR-RAM support (MMC1 games commonly use CHR-RAM,
+  which NROM's read-only CHR path doesn't model); (3) more warp divergence as
+  envs' bank states drift apart.
+- **The validation blocker:** this machine has a legally-obtained ROM for SMB
+  only. Mapper logic can be unit-tested against synthetic iNES images (the
+  existing C++ test style supports this), but claiming "game X works" without
+  running game X would violate this project's standards. MMC1 implementation
+  should land together with real-game validation by someone holding the ROMs.
+- **Estimate:** the mapper state machine itself is well-documented and small
+  (~200 lines device code + parsing); the CHR-RAM plumbing and validation are
+  the real cost. A focused effort is likely a few days, not hours.
+
 ## The next frontier: killing the launch round-trip
 
 Every `step()` is still one kernel launch plus a Python round-trip (~3 ms of
