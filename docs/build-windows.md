@@ -1,9 +1,21 @@
 # Building the CUDA extension on Windows
 
+**Recommended:** use the cross-platform build script, which auto-detects nvcc
+(including sidecar CTK installs), MSVC (via vswhere), your Python's
+`EXT_SUFFIX`, and the GPU architecture:
+
+```powershell
+.venv\Scripts\python.exe scripts\build_cuda_extension.py
+```
+
+It ends with `cuda_extension_check ok` on success. The rest of this document
+is the manual recipe behind it — useful if the script cannot find your
+toolchain, or as a reference for what actually happens. Tested with Windows
+11, MSVC 2022 Build Tools, Python 3.14, GTX 1050 Ti.
+
 `scripts/build_cuda_extension.sh` is POSIX-only (it uses `-fPIC --shared`,
-POSIX paths, and `/tmp`). On Windows, invoke `nvcc` directly through the MSVC
-environment. This is the recipe used to build the extension this repo was
-tested with (Windows 11, MSVC 2022 Build Tools, Python 3.14, GTX 1050 Ti).
+POSIX paths, and `/tmp`); on Windows, `nvcc` must be invoked through the MSVC
+environment as follows.
 
 ## Prerequisites
 

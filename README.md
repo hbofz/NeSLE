@@ -33,14 +33,15 @@ python -m pip install -e '.[dev,rl]'
 # otherwise silently keep the CPU wheel):
 python -m pip install --force-reinstall torch --index-url https://download.pytorch.org/whl/cu126
 
-# Build the CUDA extension for your GPU architecture:
-NESLE_CUDA_ARCH=sm_61 sh scripts/build_cuda_extension.sh   # GTX 10-series
-NESLE_CUDA_ARCH=sm_80 sh scripts/build_cuda_extension.sh   # A100
-NESLE_CUDA_ARCH=sm_90 sh scripts/build_cuda_extension.sh   # H100
+# Build the CUDA extension (all platforms; auto-detects nvcc, MSVC, and GPU arch):
+python scripts/build_cuda_extension.py
 ```
 
-On Windows the build script doesn't apply — follow
-[`docs/build-windows.md`](docs/build-windows.md). Shell snippets in this README
+The build script detects your GPU's architecture via torch; override with
+`NESLE_CUDA_ARCH=sm_80` (A100) / `sm_90` (H100) if building for another
+machine. `scripts/build_cuda_extension.sh` remains for POSIX scripting/Docker,
+and [`docs/build-windows.md`](docs/build-windows.md) documents the manual
+Windows recipe if the script can't find your toolchain. Shell snippets in this README
 use `sh` syntax; on PowerShell, join the multi-line commands onto one line (or
 replace the trailing `\` with a backtick) and drop the single quotes around
 `.[dev,rl]`. Budget ~9 GB of transient disk for the CUDA torch wheel install.
