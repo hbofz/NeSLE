@@ -91,10 +91,13 @@ Full options and troubleshooting: [`docs/training.md`](docs/training.md).
 ![Native PPO agent playing World 1-1](docs/assets/agent-world1-1.gif)
 
 A 25M-timestep native-PPO run (2048 envs, smart reward, `mario` action space,
-~2.5 h on a GTX 1050 Ti) learns to run and jump through roughly the first
-third of World 1-1 — episode return rose −26 → ~195, `explained_variance`
-0 → 0.88, best x-position ~1,100 of the flag's ~3,175. Honest status: it does
-not clear the level yet. Evaluate and record any checkpoint yourself:
+~2.5 h on a GTX 1050 Ti). The GIF above is the agent's best episode out of 12:
+a full World 1-1 clear — flag captured at x≈3,157, rendered at real-time
+speed. Honest status: that's the tail of the distribution, not the typical
+episode — most runs stall around x≈1,100 (of the flag's ~3,175) and die; over
+the 12 recorded episodes, one cleared the level. Training metrics: episode
+return −26 → ~195, `explained_variance` 0 → 0.88. Evaluate and record any
+checkpoint yourself:
 
 ```sh
 python examples/native_ppo_eval.py "Super Mario Bros. (World).nes" \
