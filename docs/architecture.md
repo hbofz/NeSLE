@@ -1,5 +1,12 @@
 # Architecture
 
+> **Status note (2026-07-28):** this document began as the design plan and some
+> sections still use design-phase language ("the first GPU implementation
+> should…", "Benchmark Plan"). The described execution model — one CUDA thread
+> per env, SoA state, snapshot reset, device-view API — **is** what's built and
+> shipping; where the text lists plans (e.g. the full benchmark matrix), treat
+> `benchmarks/` and the reports in `docs/` as the record of what actually ran.
+
 ## Goal
 
 Run thousands of independent Super Mario Bros. environments on one NVIDIA A100,

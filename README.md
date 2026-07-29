@@ -1,5 +1,8 @@
 # NeSLE
 
+[![CI](https://github.com/hbofz/NeSLE/actions/workflows/ci.yml/badge.svg)](https://github.com/hbofz/NeSLE/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+
 **A GPU-native NES emulator and reinforcement-learning stack for Super Mario Bros.**
 NeSLE runs thousands of independent NES instances in parallel on one CUDA GPU —
 6502 CPU, PPU, and bus emulated inside a CUDA kernel, one thread per env — and
