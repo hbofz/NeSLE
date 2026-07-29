@@ -406,6 +406,7 @@ def train_native_ppo(config: NativePPOConfig, resume_from: str | None = None) ->
     model = _make_model(obs_dim, action_dim, config.hidden_size)
     optimizer = torch.optim.Adam(model.parameters(), lr=config.learning_rate, eps=1e-5)
     global_step = _load_checkpoint(resume_from, model, optimizer)
+    resume_step = global_step
 
     action_mask_table = torch.tensor(tuple(env.action_masks), dtype=torch.uint8, device="cuda")
     if action_mask_table.shape[0] != action_dim:
@@ -421,8 +422,17 @@ def train_native_ppo(config: NativePPOConfig, resume_from: str | None = None) ->
         rewarder.reset(obs)
     elif config.reward_mode != "minimal":
         raise ValueError(f"unknown reward mode: {config.reward_mode!r}")
-    num_updates = max(1, math.ceil(config.total_timesteps / rollout_timesteps))
-    planned_timesteps = num_updates * rollout_timesteps
+    # total_timesteps is the cumulative target including steps already trained in
+    # a resumed checkpoint — resuming a finished run does nothing rather than
+    # training a whole extra budget.
+    remaining_timesteps = max(0, config.total_timesteps - global_step)
+    num_updates = math.ceil(remaining_timesteps / rollout_timesteps)
+    if remaining_timesteps == 0:
+        print(
+            f"checkpoint already at global_step={global_step} >= "
+            f"total_timesteps={config.total_timesteps}; nothing to train."
+        )
+    planned_timesteps = resume_step + num_updates * rollout_timesteps
 
     obs_buf = torch.empty((config.n_steps, config.num_envs, obs_dim), dtype=torch.uint8, device="cuda")
     actions_buf = torch.empty((config.n_steps, config.num_envs), dtype=torch.long, device="cuda")
@@ -555,7 +565,7 @@ def train_native_ppo(config: NativePPOConfig, resume_from: str | None = None) ->
 
             if update % max(1, config.log_interval) == 0:
                 elapsed = max(1e-6, time.monotonic() - start_time)
-                fps = int(global_step / elapsed)
+                fps = int((global_step - resume_step) / elapsed)
                 recent_slice = recent_returns[-100:]
                 recent_len_slice = recent_lengths[-100:]
                 ep_ret = float(np.mean(recent_slice)) if recent_slice else float("nan")
