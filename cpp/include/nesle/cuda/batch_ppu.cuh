@@ -157,23 +157,17 @@ NESLE_CUDA_HD inline BatchPpuStepResult batch_ppu_step_env(BatchBuffers& buffers
                 buffers.ppu.snap_mask[env] = buffers.ppu.mask[env];
                 const auto* oam_src = buffers.ppu.oam + static_cast<std::uint64_t>(env) * kOamBytes;
                 auto* oam_dst = buffers.ppu.snap_oam + static_cast<std::uint64_t>(env) * kOamBytes;
-                for (std::uint32_t i = 0; i < kOamBytes; ++i) {
-                    oam_dst[i] = oam_src[i];
-                }
+                copy_bytes_fast(oam_dst, oam_src, static_cast<std::uint32_t>(kOamBytes));
                 const auto* nt_src =
                     buffers.ppu.nametable_ram + static_cast<std::uint64_t>(env) * kNametableRamBytes;
                 auto* nt_dst =
                     buffers.ppu.snap_nametable + static_cast<std::uint64_t>(env) * kNametableRamBytes;
-                for (std::uint32_t i = 0; i < kNametableRamBytes; ++i) {
-                    nt_dst[i] = nt_src[i];
-                }
+                copy_bytes_fast(nt_dst, nt_src, static_cast<std::uint32_t>(kNametableRamBytes));
                 const auto* pal_src =
                     buffers.ppu.palette_ram + static_cast<std::uint64_t>(env) * kPaletteRamBytes;
                 auto* pal_dst =
                     buffers.ppu.snap_palette + static_cast<std::uint64_t>(env) * kPaletteRamBytes;
-                for (std::uint32_t i = 0; i < kPaletteRamBytes; ++i) {
-                    pal_dst[i] = pal_src[i];
-                }
+                copy_bytes_fast(pal_dst, pal_src, static_cast<std::uint32_t>(kPaletteRamBytes));
             }
         }
         if (crossed(frame_offset, kPreRenderDot)) {
