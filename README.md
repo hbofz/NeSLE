@@ -1,13 +1,55 @@
 # NeSLE
 
-**A GPU-native NES emulator and reinforcement-learning stack for Super Mario Bros.** NeSLE runs thousands of independent NES instances in parallel on one CUDA GPU and trains PPO agents against them. On a GTX 1050 Ti, the emulator alone hits **~29k env-steps/sec at 4096 parallel envs** (94× a single-env CPU baseline). On an A100, a real **75M-timestep PPO run on World 7-1 finished in 40 minutes** at 65,536 envs while the value head learned (`explained_variance` 0 → 0.66, `ep_return` 70 → 150).
+**A GPU-native NES emulator and reinforcement-learning stack for Super Mario Bros.**
+NeSLE runs thousands of independent NES instances in parallel on one CUDA GPU —
+6502 CPU, PPU, and bus emulated inside a CUDA kernel, one thread per env — and
+trains PPO agents against them with observations that never leave the device.
 
-## Quick start
+**Key results** (see [Benchmarks](#benchmarks) for methodology and commands):
 
-Train a small PPO agent on World 1-1 in a few minutes:
+- On a **GTX 1050 Ti (4 GB)**: 29,491 env-steps/s at 4,096 parallel envs —
+  **88× a single-env CPU baseline** (measured 2026-07-28 on this repo's HEAD).
+- On an **A100 (80 GB)**: ~560k env-steps/s with RAM observations at 128 envs
+  ([full report](docs/phase6-report.md)); a 75M-timestep GPU-resident PPO run on
+  World 7-1 finished in **40 minutes** at 65,536 envs, sustaining ~31k
+  env-steps/s end-to-end while the value head learned
+  (`explained_variance` 0 → 0.66).
+
+## Install
+
+Requires Python ≥ 3.10, a CUDA GPU, and a C++20 toolchain.
 
 ```sh
-# Stable-Baselines3 path — CPU rollout buffer, easiest to start with
+git clone https://github.com/hbofz/NeSLE.git && cd NeSLE
+python -m pip install -e '.[dev,rl]'
+
+# Build the CUDA extension for your GPU architecture:
+NESLE_CUDA_ARCH=sm_61 sh scripts/build_cuda_extension.sh   # GTX 10-series
+NESLE_CUDA_ARCH=sm_80 sh scripts/build_cuda_extension.sh   # A100
+NESLE_CUDA_ARCH=sm_90 sh scripts/build_cuda_extension.sh   # H100
+```
+
+On Windows the build script doesn't apply — follow
+[`docs/build-windows.md`](docs/build-windows.md).
+
+**Bring your own legally obtained Super Mario Bros. ROM** (iNES, mapper 0,
+usually named `Super Mario Bros. (World).nes`). ROMs are not included and are
+never committed (`*.nes` is gitignored).
+
+### Hardware requirements
+
+| Requirement | Detail |
+|---|---|
+| GPU | Any CUDA GPU; tested on GTX 1050 Ti (sm_61, 4 GB) and A100 (sm_80, 80 GB) |
+| CUDA Toolkit | 12.x. **Pascal (GTX 10-series) requires CTK 12.x** — CTK 13+ dropped sm_61 |
+| PyTorch | CUDA build required for training paths (`pip install torch --index-url https://download.pytorch.org/whl/cu126`) |
+| OS | Linux, Windows 11 (both tested); macOS builds the CPU core only |
+
+## Quickstart
+
+Train a small PPO agent on World 1-1 in a few minutes (Stable-Baselines3 path):
+
+```sh
 python examples/sb3_train.py "Super Mario Bros. (World).nes" \
     --backend cuda --sb3-device cpu \
     --observation-mode ram --action-space simple \
@@ -16,91 +58,140 @@ python examples/sb3_train.py "Super Mario Bros. (World).nes" \
     --max-episode-steps 256 --model-path nesle_ppo_smoke
 ```
 
-For real scale (A100/H100), use the GPU-resident PPO path:
+For scale, use the GPU-resident PPO path — observations, rollouts, GAE, and the
+optimizer all stay on device via DLPack:
 
 ```sh
-# Native PPO path — observations / rollouts / loss all on GPU via DLPack
 python examples/native_ppo_train.py "Super Mario Bros. (World).nes" \
     --reset-state-path docs/data/smb_level1_1.state \
-    --action-space simple --num-envs 1024 --total-timesteps 1_000_000 \
-    --n-steps 128 --batch-size 8192 --hidden-size 256 \
-    --checkpoint-path nesle_native_ppo.pt
+    --action-space mario --reward-mode smart \
+    --num-envs 2048 --total-timesteps 25_000_000 \
+    --n-steps 128 --batch-size 8192 \
+    --checkpoint-path checkpoints/native_ppo.pt
 ```
 
-Full options + Colab setup notes: **[`docs/training.md`](docs/training.md)**.
+Full options and troubleshooting: [`docs/training.md`](docs/training.md).
 
 ## What's in the box
 
-- **CUDA-batched NROM emulator** (`cpp/bindings/cuda_module.cu`, `cpp/src/cuda/kernels.cu`). One CUDA thread per env runs 6502 + PPU + bus + OAM-DMA. Frame-skip happens inside the kernel.
-- **Snapshot reset** (`docs/data/smb_level1_1.state` … `smb_level8_1.state`). Bundled FCEUX FCS save states bypass SMB's title-screen state machine; every env reset (including auto-reset on done) restores the snapshot in a single kernel launch.
+- **CUDA-batched NROM emulator** (`cpp/bindings/cuda_module.cu`,
+  `cpp/src/cuda/kernels.cu`). One CUDA thread per env runs 6502 + PPU + bus +
+  OAM-DMA. Frame-skip happens inside the kernel.
+- **Snapshot reset.** Bundled FCEUX-format save states
+  (`docs/data/smb_level{1..8}_1.state`) drop every env directly into gameplay;
+  auto-reset on done restores the snapshot in a single kernel launch.
 - **Two PPO entry points:**
-  - `examples/sb3_train.py` — Stable-Baselines3 PPO with VecMonitor, the natural starting point.
-  - `examples/native_ppo_train.py` (delegates to `nesle.native_ppo`) — GPU-resident PPO that keeps observations, rollouts, GAE, and the optimizer on device using DLPack / `__cuda_array_interface__`. Bypasses SB3's CPU rollout buffer.
-- **Curriculum support.** Pass `--reset-state-paths` (plural) with the 8 bundled saves and envs are round-robin-assigned across worlds.
-- **Native CPU backend** (`nesle._core.NativeConsole`) for single-env debugging and parity testing.
-- **65+ tests** covering FCS parser, env reset, render freshness, multi-level, GAE, and lifetime of device views.
-
-## Build & install
-
-```sh
-python -m pip install -e '.[dev,rl]'
-```
-
-Build the CUDA extension after any C++ change:
-
-```sh
-# Linux/macOS — pick the right arch
-NESLE_CUDA_ARCH=sm_80 sh scripts/build_cuda_extension.sh    # A100
-NESLE_CUDA_ARCH=sm_90 sh scripts/build_cuda_extension.sh    # H100
-```
-
-**Windows + Pascal (e.g. GTX 1050 Ti):** the POSIX build script doesn't apply. CUDA Toolkit 13+ dropped Pascal support, so install a CTK 12.x sidecar alongside CTK 13. The manual `nvcc` recipe lives in the project memory as `windows_cuda_build_recipe.md` (Claude Code agents can read it; humans can use that file as a template).
-
-PyTorch needs CUDA to use `--sb3-device cuda` or `native_ppo`. See `docs/training.md` § "PyTorch CUDA Setup".
+  - `examples/sb3_train.py` — Stable-Baselines3 PPO, the natural starting point.
+  - `examples/native_ppo_train.py` → `nesle.native_ppo` — GPU-resident PPO that
+    bypasses SB3's CPU rollout buffer via DLPack / `__cuda_array_interface__`.
+- **Shaped reward on GPU.** `--reward-mode smart` runs a dense
+  progress/checkpoint/death shaped reward entirely on device
+  (`TorchSmartMarioReward`); `--reward-mode minimal` keeps the original sparse
+  x-progress reward.
+- **Curated action spaces** including `--action-space mario` (11 actions,
+  matches the vendored Mario RL project's controller space).
+- **Curriculum support.** Pass `--reset-state-paths` with the 8 bundled saves
+  and envs are round-robin-assigned across worlds.
+- **Native CPU backend** (`nesle._core.NativeConsole`) for single-env debugging
+  and parity testing.
+- **Sibling baseline project** at
+  [`project/mario-rl-ram/`](project/mario-rl-ram/) — the CPU Stable-Retro
+  Mario training stack NeSLE is benchmarked against.
 
 ## Verification
 
 ```sh
-python -m pytest tests/                   # 65+ green
-python benchmarks/gpu_vs_cpu.py           # GPU vs single-env CPU throughput
+python -m pytest tests/                   # 68 tests; GPU/ROM tests auto-skip when absent
 python benchmarks/verify_correctness.py   # falsifiability — confirms the batched kernel
-                                          # runs N independent emulators (not a copy of env 0)
+                                          # runs N independent emulators (not N copies of env 0)
 ```
 
 ## Benchmarks
 
-A100 / 80 GB (from `docs/phase6-report.md`):
+Reproduce the GPU-vs-CPU sweep (ROM at repo root, ~3 min):
 
-| Mode | Envs | Steps/sec |
-|---|---:|---:|
-| `cuda-console`, RAM obs | 128 | ~560k |
-| `cuda-console`, no-copy reward | 16,384 | ~103M |
+```sh
+python benchmarks/gpu_vs_cpu.py
+```
 
-GTX 1050 Ti / 4 GB (from `docs/benchmark-gpu-vs-cpu.md`):
+GTX 1050 Ti / 4 GB, Windows 11, CTK 12.9, frameskip 4 — measured 2026-07-28:
 
-| Mode | Envs | Env-steps/sec | vs CPU |
+| Backend | Envs | Env-steps/s | vs CPU |
 |---|---:|---:|---:|
-| native CPU baseline | 1 | 308 | 1.00× |
-| `cuda-console` | 32 | 535 | 1.74× |
-| `cuda-console` | 256 | 4,027 | 13× |
-| `cuda-console` | 4,096 | 29,058 | **94×** |
+| native CPU | 1 | 335 | 1.00× |
+| `cuda-console` | 64 | 1,066 | 3.2× |
+| `cuda-console` | 256 | 4,086 | 12.2× |
+| `cuda-console` | 1,024 | 15,003 | 44.8× |
+| `cuda-console` | 4,096 | **29,491** | **88.1×** |
 
-End-to-end PPO with the GPU-resident loop on A100 reached **31k env-steps/sec** sustained for a 75M-timestep training run (40 min wall-clock).
+The GPU crosses over the single-env CPU at ~64 envs and scales near-linearly to
+~2k envs. An earlier run of the same script recorded 102× against a slower CPU
+baseline ([details](docs/benchmark-gpu-vs-cpu.md)) — the GPU-side numbers agree
+within ~1%.
+
+A100 / 80 GB (recorded 2026-05, [full report](docs/phase6-report.md)):
+
+| Mode | Envs | Steps/s |
+|---|---:|---:|
+| `cuda-console`, RGB obs to host | 128 | ~3.6k |
+| `cuda-console`, RAM obs to host | 128 | ~560k |
+| `cuda-console`, no host copy | 128 | ~1.0M |
+
+End-to-end PPO with the GPU-resident loop on the A100 sustained ~31k
+env-steps/s for a 75M-timestep run (40 min wall-clock).
 
 ## Known limitations
 
-- **NROM only.** SMB and a handful of other mapper-0 games. Other mappers aren't wired up.
-- **Title-screen state machine has a PPU-timing bug.** Real fix is deferred; the snapshot-reset path bypasses it cleanly for SMB-style training. Documented in [`CLAUDE.md`](CLAUDE.md).
-- **Default reward function is minimal.** `nesle.smb.compute_reward` clips x-delta to ±5 (so walking and running look identical to the agent) and only penalizes death by `-25`. Real training runs will need a shaped reward (e.g. uncap x-delta, add level-completion bonus); the infrastructure is there but the policy isn't shipped yet.
-- **One CUDA thread per env.** Easy to reason about, leaves perf on the table for very large batches. See `docs/phase6-report.md` § "Next optimization targets".
+- **NROM (mapper 0) only.** SMB works; other mappers aren't wired up.
+- **Title-screen state machine has a PPU-timing bug.** The snapshot-reset path
+  bypasses it cleanly; a real fix is deferred. See
+  [`KNOWN_ISSUES.md`](KNOWN_ISSUES.md).
+- **One CUDA thread per env** — simple to reason about, but leaves performance
+  on the table at very large batches (warp divergence).
+- The smart reward is tuned for World 1-1; other levels currently reuse its
+  defaults.
+
+## Project layout
+
+```text
+cpp/            C++/CUDA emulator core (headers, kernels, pybind11 bindings)
+src/nesle/      Python package: env, actions, rewards, ROM parsing, native PPO
+tests/          65+ Python tests + ad-hoc C++ tests (tests/cpp/)
+examples/       Training / evaluation entry points
+benchmarks/     Throughput + correctness benchmarks (legacy sweeps in legacy/)
+scripts/        Build + verification scripts (legacy one-offs in legacy/)
+docs/           Guides, benchmark reports, bundled save states (docs/data/)
+project/        Vendored mario-rl-ram baseline (CPU Stable-Retro stack)
+docker/         CUDA build/test image
+```
 
 ## Documents
 
 - [Training guide](docs/training.md) — primary entry point for RL work
 - [Architecture](docs/architecture.md) — system design
+- [Windows CUDA build](docs/build-windows.md)
 - [A100 benchmark report](docs/phase6-report.md)
 - [GPU vs CPU benchmark (1050 Ti)](docs/benchmark-gpu-vs-cpu.md)
-- [Research notes](docs/research-notes.md) — design rationale and NES hardware background
+- [Research notes](docs/research-notes.md) — design rationale, NES hardware background
 - [CPU validation](docs/cpu-validation.md) — Klaus 6502 functional test gate
 - [Headless runner](docs/headless-runner.md) — low-level ROM runner for debugging
 - [Project history](docs/history/) — archived phase-by-phase development docs
+
+## Citation
+
+```bibtex
+@misc{nesle2026,
+  author       = {Azzam, Hamzah},
+  title        = {NeSLE: a GPU-native NES emulator and reinforcement-learning environment},
+  year         = {2026},
+  howpublished = {\url{https://github.com/hbofz/NeSLE}}
+}
+```
+
+## License and disclaimer
+
+MIT — see [LICENSE](LICENSE).
+
+This project is provided for research and educational purposes. It is not
+affiliated with or endorsed by Nintendo. No game ROMs are distributed with this
+repository; users must supply their own legally obtained copies.

@@ -28,7 +28,7 @@ On an NVIDIA CUDA machine:
 ```sh
 python -m pip install -e '.[dev,rl]'
 NESLE_CUDA_ARCH=sm_80 PYTHON=python3 sh scripts/build_cuda_extension.sh
-NESLE_ROM_PATH="/path/to/Super Mario Bros. (World).nes" sh scripts/reproduce_phase6.sh
+NESLE_ROM_PATH="/path/to/Super Mario Bros. (World).nes" sh scripts/legacy/reproduce_phase6.sh
 ```
 
 With Docker:
@@ -37,7 +37,7 @@ With Docker:
 docker build -f docker/cuda.Dockerfile -t nesle-cuda .
 docker run --gpus all --rm -v "$PWD:/workspace/nesle" -w /workspace/nesle \
   -e NESLE_ROM_PATH="/workspace/nesle/Super Mario Bros. (World).nes" \
-  nesle-cuda sh scripts/reproduce_phase6.sh
+  nesle-cuda sh scripts/legacy/reproduce_phase6.sh
 ```
 
 The ROM is not vendored. The benchmark expects a local mapper-0 Super Mario
@@ -45,7 +45,7 @@ Bros. iNES file.
 
 ## Methodology
 
-The Phase 6 ablation uses `benchmarks/phase6_console_ablation.py`, which
+The Phase 6 ablation uses `benchmarks/legacy/phase6_console_ablation.py`, which
 constructs `nesle._cuda_core.CudaBatch(num_envs, frameskip, rom_bytes)` and
 steps the real CUDA CPU/PPU console loop. It compares four modes:
 

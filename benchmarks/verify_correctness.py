@@ -19,7 +19,6 @@ from __future__ import annotations
 
 import gzip
 import hashlib
-import time
 from pathlib import Path
 
 import numpy as np
@@ -48,7 +47,7 @@ def test_actions_diverge(num_envs: int = 4096, steps: int = 60) -> None:
     # Group by action class - envs with the same action should have similar (not identical
     # because of timing jitter) x_pos; envs with different actions should diverge.
     per_action_x = {int(m): x_positions[actions == m] for m in base_masks}
-    print(f"  per-action mean x_pos (n_envs each):")
+    print("  per-action mean x_pos (n_envs each):")
     for m, xs in per_action_x.items():
         print(f"    mask=0x{m:02x}  n={len(xs):4d}  x_mean={xs.mean():.1f}  x_min={xs.min()}  x_max={xs.max()}  x_std={xs.std():.1f}")
     # Sanity: RIGHT mask (0x80) should have higher mean than NOOP (0x00)
@@ -66,8 +65,9 @@ def test_actions_diverge(num_envs: int = 4096, steps: int = 60) -> None:
 
 
 def test_cycle_accounting(num_envs_list: tuple[int, ...] = (32, 256, 2048)) -> None:
-    print(f"\n[2/3] CPU cycle accounting (uses step_stats; instructions per env per step)...")
-    NOOP = lambda n: np.zeros(n, dtype=np.uint8)
+    print("\n[2/3] CPU cycle accounting (uses step_stats; instructions per env per step)...")
+    def NOOP(n):
+        return np.zeros(n, dtype=np.uint8)
     rows = []
     for n in num_envs_list:
         batch = CudaBatch(n, 4, ROM, STATE)
@@ -92,7 +92,7 @@ def test_cycle_accounting(num_envs_list: tuple[int, ...] = (32, 256, 2048)) -> N
             f"{n} envs only ran {mean_instrs} instructions/step - kernel skipping work?"
         )
         assert mean_frames == 4, f"frameskip=4 but frames_completed reports {mean_frames}"
-    print(f"  ==> PASS: all batch sizes ran plausible CPU work, frames_completed=4 each [ok]")
+    print("  ==> PASS: all batch sizes ran plausible CPU work, frames_completed=4 each [ok]")
 
 
 def test_state_diversity(num_envs: int = 256, steps: int = 100) -> None:
@@ -111,7 +111,7 @@ def test_state_diversity(num_envs: int = 256, steps: int = 100) -> None:
     assert len(hashes) >= num_envs // 2, (
         f"only {len(hashes)} distinct RAM hashes for {num_envs} envs - envs may be syncing"
     )
-    print(f"  ==> PASS: state evolution is independent across envs [ok]")
+    print("  ==> PASS: state evolution is independent across envs [ok]")
 
 
 def main() -> None:

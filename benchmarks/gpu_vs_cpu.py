@@ -102,7 +102,7 @@ def main() -> None:
     print(f"NeSLE benchmark - frameskip={FRAMESKIP}, action=RIGHT, "
           f"warmup={WARMUP_STEPS}, timed={TIMED_STEPS} steps per run")
     print(f"ROM:    Super Mario Bros. (World).nes ({len(ROM_BYTES):,} bytes)")
-    print(f"Reset:  Stable Retro Level 1-1 snapshot (start of W1-1)")
+    print("Reset:  Stable Retro Level 1-1 snapshot (start of W1-1)")
     print()
     print("Running...")
     print()

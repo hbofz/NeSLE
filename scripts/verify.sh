@@ -2,7 +2,7 @@
 set -eu
 
 PYTHONPATH=src python3 -m unittest discover -s tests
-sh scripts/verify_phase4.sh
+PYTHONPATH=src python3 scripts/verify_phase4.py
 sh scripts/verify_phase5.sh
 c++ -std=c++20 -Icpp/include cpp/src/rom.cpp cpp/src/smb.cpp tests/cpp/test_core.cpp -o /tmp/nesle_cpp_tests
 /tmp/nesle_cpp_tests
