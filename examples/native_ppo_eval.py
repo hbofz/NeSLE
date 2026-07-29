@@ -83,6 +83,34 @@ def record_best_episode(args, payload, hidden_size: int, action_space: str) -> N
         if not done:
             obs = env.reset()
 
+    # Two recording hazards (see KNOWN_ISSUES.md):
+    # 1. The renderer lacks SMB's mid-frame scroll split, so a fraction of
+    #    frames render at the playfield scroll with no HUD — a strobing
+    #    artifact. Detect via the HUD glyph mask and drop those frames.
+    # 2. SMB's lives system respawns Mario without ending the env episode, so
+    #    one "episode" can span several lives separated by blank transition
+    #    frames and a teleport. Keep only the final life.
+    def is_blank(frame: np.ndarray) -> bool:
+        flat = frame.reshape(-1, frame.shape[-1])
+        return bool((flat == flat[0]).all(axis=1).mean() > 0.95)
+
+    ref_hud = next((f for f in best_frames if not is_blank(f)), best_frames[0])[8:24]
+    glyphs = (ref_hud > 200).all(axis=2)
+
+    def hud_ok(frame: np.ndarray) -> bool:
+        if not glyphs.any():
+            return True
+        return bool(((frame[8:24] > 200).all(axis=2)[glyphs]).mean() > 0.90)
+
+    last_blank = max(
+        (idx for idx, frame in enumerate(best_frames) if is_blank(frame)), default=-1
+    )
+    kept = [f for f in best_frames[last_blank + 1:] if hud_ok(f)]
+    dropped = len(best_frames) - len(kept)
+    if dropped and len(kept) >= 30:
+        print(f"kept {len(kept)}/{len(best_frames)} frames (final life only, HUD-strobe frames dropped)")
+        best_frames = kept
+
     from PIL import Image
 
     out = Path(args.gif_out)
