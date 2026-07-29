@@ -231,23 +231,33 @@ NESLE_CUDA_RENDER_HD inline std::uint8_t batch_sprite_pattern_pixel(const BatchB
         pixel_y);
 }
 
-NESLE_CUDA_RENDER_HD inline void render_batch_rgb_frame_env(BatchBuffers& buffers,
-                                                            std::uint32_t env) {
-    auto* frame = env_frame_rgb(buffers, env);
-    const auto backdrop = batch_palette_entry(buffers, env, 0);
+// Core frame renderer. `target` supplies the output frame buffer; `hud` and
+// `play` supply PPU state for rows above and below `split_y` respectively
+// (SMB's status-bar scroll split). Callers without a presentation snapshot
+// pass the same buffers for all three with split_y = 0 — the original
+// live-state behavior.
+NESLE_CUDA_RENDER_HD inline void render_batch_rgb_frame_env_impl(BatchBuffers& target,
+                                                                 BatchBuffers& hud,
+                                                                 BatchBuffers& play,
+                                                                 std::uint32_t env,
+                                                                 int split_y) {
+    auto* frame = env_frame_rgb(target, env);
+    const auto backdrop = batch_palette_entry(play, env, 0);
     for (std::uint32_t pixel = 0; pixel < kFrameWidth * kFrameHeight; ++pixel) {
         write_batch_rgb(frame, pixel, backdrop);
     }
 
     for (std::uint16_t y = 0; y < kFrameHeight; ++y) {
+        auto& src = (static_cast<int>(y) < split_y) ? hud : play;
         for (std::uint16_t x = 0; x < kFrameWidth; ++x) {
-            const auto color = batch_background_color(buffers, env, x, y);
+            const auto color = batch_background_color(src, env, x, y);
             if (color != 0) {
                 write_batch_rgb(frame, y * kFrameWidth + x, color);
             }
         }
     }
 
+    BatchBuffers& buffers = play;
     if ((buffers.ppu.mask[env] & 0x10) == 0 || buffers.ppu.oam == nullptr) {
         return;
     }
@@ -301,6 +311,47 @@ NESLE_CUDA_RENDER_HD inline void render_batch_rgb_frame_env(BatchBuffers& buffer
             }
         }
     }
+}
+
+NESLE_CUDA_RENDER_HD inline void render_batch_rgb_frame_env(BatchBuffers& buffers,
+                                                            std::uint32_t env) {
+    if (buffers.ppu.snap_nametable == nullptr) {
+        // No presentation snapshot (host tests, legacy callers): render from
+        // live state as before.
+        render_batch_rgb_frame_env_impl(buffers, buffers, buffers, env, 0);
+        return;
+    }
+
+    // Render from the vblank-frozen presentation snapshot so the frame is
+    // internally consistent regardless of where stepping paused. Playfield
+    // rows use end-of-frame scroll/ctrl; rows above sprite-0's bottom edge use
+    // frame-start values (SMB pins its status bar with the sprite-0 split).
+    BatchBuffers play = buffers;
+    play.ppu.nametable_ram = buffers.ppu.snap_nametable;
+    play.ppu.palette_ram = buffers.ppu.snap_palette;
+    play.ppu.oam = buffers.ppu.snap_oam;
+    play.ppu.scroll_x = buffers.ppu.snap_scroll_x_end;
+    play.ppu.scroll_y = buffers.ppu.snap_scroll_y_end;
+    play.ppu.ctrl = buffers.ppu.snap_ctrl_end;
+    play.ppu.mask = buffers.ppu.snap_mask;
+
+    BatchBuffers hud = play;
+    hud.ppu.scroll_x = buffers.ppu.snap_scroll_x_start;
+    hud.ppu.scroll_y = buffers.ppu.snap_scroll_y_start;
+    hud.ppu.ctrl = buffers.ppu.snap_ctrl_start;
+
+    const auto* snap_oam = buffers.ppu.snap_oam + static_cast<std::uint64_t>(env) * kOamBytes;
+    const auto sprite_height = (play.ppu.ctrl[env] & 0x20) != 0 ? 16 : 8;
+    int split_y = static_cast<int>(snap_oam[0]) + 1 + sprite_height;
+    if (split_y >= kFrameHeight) {
+        // Sprite 0 offscreen this frame: no reliable split point. Render the
+        // whole frame with frame-start values — the HUD stays intact and the
+        // playfield is at most one frame of scroll stale, which is far less
+        // visible than a vanishing status bar.
+        render_batch_rgb_frame_env_impl(buffers, hud, hud, env, 0);
+        return;
+    }
+    render_batch_rgb_frame_env_impl(buffers, hud, play, env, split_y);
 }
 
 }  // namespace nesle::cuda

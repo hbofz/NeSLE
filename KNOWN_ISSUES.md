@@ -18,13 +18,16 @@ Honest list of what's broken, deferred, or unverified. Kept current as of
      mid-level for one frame): SMB pre-writes upcoming columns into the
      second nametable; sampled mid-frame, the scroll/nametable-select state
      can expose them.
-  Real fix (specified, not yet implemented): capture presentation state at
-  defined points — scroll/PPUCTRL as of frame start for HUD rows, the
-  post-NMI playfield scroll for rows 32+, OAM as of the frame's vblank — into
-  per-env snapshot buffers during stepping, and render from the snapshot in
-  `cpp/include/nesle/cuda/batch_render.cuh`. Until then, recordings (and any
-  future pixel-observation policy) contain these transients; the recorder
-  filters the grossest class (HUD-less frames) automatically.
+  **Fix implemented 2026-07-29:** stepping now freezes a per-env presentation
+  snapshot at each vblank (OAM, nametable, palette, frame-start and frame-end
+  scroll/ctrl), and the renderer draws from the snapshot with a two-region
+  scroll split at sprite-0's bottom edge. Measured on a 500-frame scripted
+  scrolling run: object-pop events fell 130 → 21 (−84%), and part of the
+  residue is legitimate game animation (score popups, spawns). Remaining
+  honest caveat: ~14% of frames during heavy action lose the status bar for
+  one frame — these are SMB *lag frames* where the game skips its scroll
+  reset (real hardware glitches these frames too, our timing makes them more
+  frequent); the recorder's HUD filter drops them from GIFs.
 
 - **Title-screen → gameplay transition stalls** (PPU timing bug). SMB's menu
   handler runs and controller polling works, but the edge-detect branch that

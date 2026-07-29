@@ -142,10 +142,51 @@ NESLE_CUDA_HD inline BatchPpuStepResult batch_ppu_step_env(BatchBuffers& buffers
             batch_ppu_set_vblank(buffers, env, true);
             result.nmi_started = result.nmi_started ||
                                  (!had_nmi && buffers.ppu.nmi_pending[env] != 0);
+            if (buffers.ppu.snap_nametable != nullptr) {
+                // Freeze the presentation snapshot for the frame that just
+                // finished rendering: frame-start scroll/ctrl were latched at
+                // the previous pre-render crossing; end values, OAM, and video
+                // memory are coherent right now (the game's NMI handler that
+                // mutates them for the NEXT frame has not run yet).
+                buffers.ppu.snap_scroll_x_start[env] = buffers.ppu.lat_scroll_x[env];
+                buffers.ppu.snap_scroll_y_start[env] = buffers.ppu.lat_scroll_y[env];
+                buffers.ppu.snap_ctrl_start[env] = buffers.ppu.lat_ctrl[env];
+                buffers.ppu.snap_scroll_x_end[env] = buffers.ppu.scroll_x[env];
+                buffers.ppu.snap_scroll_y_end[env] = buffers.ppu.scroll_y[env];
+                buffers.ppu.snap_ctrl_end[env] = buffers.ppu.ctrl[env];
+                buffers.ppu.snap_mask[env] = buffers.ppu.mask[env];
+                const auto* oam_src = buffers.ppu.oam + static_cast<std::uint64_t>(env) * kOamBytes;
+                auto* oam_dst = buffers.ppu.snap_oam + static_cast<std::uint64_t>(env) * kOamBytes;
+                for (std::uint32_t i = 0; i < kOamBytes; ++i) {
+                    oam_dst[i] = oam_src[i];
+                }
+                const auto* nt_src =
+                    buffers.ppu.nametable_ram + static_cast<std::uint64_t>(env) * kNametableRamBytes;
+                auto* nt_dst =
+                    buffers.ppu.snap_nametable + static_cast<std::uint64_t>(env) * kNametableRamBytes;
+                for (std::uint32_t i = 0; i < kNametableRamBytes; ++i) {
+                    nt_dst[i] = nt_src[i];
+                }
+                const auto* pal_src =
+                    buffers.ppu.palette_ram + static_cast<std::uint64_t>(env) * kPaletteRamBytes;
+                auto* pal_dst =
+                    buffers.ppu.snap_palette + static_cast<std::uint64_t>(env) * kPaletteRamBytes;
+                for (std::uint32_t i = 0; i < kPaletteRamBytes; ++i) {
+                    pal_dst[i] = pal_src[i];
+                }
+            }
         }
         if (crossed(frame_offset, kPreRenderDot)) {
             batch_ppu_set_vblank(buffers, env, false);
             buffers.ppu.status[env] = static_cast<std::uint8_t>(buffers.ppu.status[env] & 0x1F);
+            if (buffers.ppu.lat_ctrl != nullptr) {
+                // Latch frame-start scroll/ctrl: the game's vblank handler has
+                // set up the values the next visible frame begins with (SMB:
+                // scroll 0 for the status bar).
+                buffers.ppu.lat_scroll_x[env] = buffers.ppu.scroll_x[env];
+                buffers.ppu.lat_scroll_y[env] = buffers.ppu.scroll_y[env];
+                buffers.ppu.lat_ctrl[env] = buffers.ppu.ctrl[env];
+            }
         }
     }
 

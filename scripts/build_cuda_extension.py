@@ -116,13 +116,11 @@ def main() -> int:
 
     cmd = [
         nvcc, "-std=c++20", f"-arch={arch}",
-        # Shared cudart so the extension and torch use ONE runtime instance.
-        # With nvcc's default static cudart, torch and the extension each run
-        # their own runtime; under Windows WDDM their interleaved kernel
-        # submissions force queue flushes costing ~100-200 ms per interleaved
-        # torch kernel (measured on a GTX 1050 Ti; see
-        # benchmarks/profile_native_ppo.py).
-        "--cudart=shared",
+        # Static cudart (nvcc default) on purpose: --cudart=shared makes the
+        # extension require cudart64_*.dll on the DLL search path, so plain
+        # `import nesle` breaks unless torch happens to be imported first.
+        # (Shared cudart was also tested as a fix for the WDDM interleave
+        # slowdown documented in KNOWN_ISSUES.md — it made no difference.)
         f"-I{REPO / 'cpp' / 'include'}",
         f"-I{pybind11.get_include()}",
     ]
@@ -162,9 +160,14 @@ def main() -> int:
         return result.returncode
 
     # Smoke-test in a subprocess so this process never locks the built library
-    # (a loaded .pyd on Windows blocks the next rebuild's link step).
+    # (a loaded .pyd on Windows blocks the next rebuild's link step). Load the
+    # exact artifact we just built by path — `import nesle._cuda_core` would
+    # test whatever pyd sits in src/nesle instead when output is overridden.
     smoke = (
-        "import nesle._cuda_core as c\n"
+        "import importlib.util\n"
+        f"spec = importlib.util.spec_from_file_location('_cuda_core', r'{output}')\n"
+        "c = importlib.util.module_from_spec(spec)\n"
+        "spec.loader.exec_module(c)\n"
         "b = c.CudaBatch(2, 4)\n"
         "obs = b.reset()\n"
         "r = b.step([0x80, 0x00])\n"
