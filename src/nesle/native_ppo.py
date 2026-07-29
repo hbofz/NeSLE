@@ -325,7 +325,8 @@ def _load_checkpoint(path: str | None, model, optimizer) -> int:
     # tuple) alongside the tensors. PyTorch 2.6+ defaults to weights_only=True, which
     # disallows arbitrary pickled types. The checkpoints come from this codebase only —
     # we trust them — so explicitly disable the restriction.
-    payload = torch.load(checkpoint_path, map_location="cuda", weights_only=False)
+    map_location = "cuda" if torch.cuda.is_available() else "cpu"
+    payload = torch.load(checkpoint_path, map_location=map_location, weights_only=False)
     model.load_state_dict(payload["model"])
     optimizer.load_state_dict(payload["optimizer"])
     # Restore RNG state so a resumed run continues the same sample trajectory. Older
