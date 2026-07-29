@@ -111,7 +111,7 @@ class TestCheckpointRoundTrip(unittest.TestCase):
         self.assertEqual(step, 1234)
 
         # Now next draws from torch + numpy should match a fresh seed-42 run
-        expected_torch = torch.manual_seed(42)
+        torch.manual_seed(42)
         np.random.seed(42)
         torch_draw_a = torch.rand(5)
         numpy_draw_a = np.random.rand(5)

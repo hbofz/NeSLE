@@ -231,37 +231,23 @@ If `--sb3-device cuda` fails, check PyTorch first, not NeSLE:
 .\.venv\Scripts\python.exe -c "import torch; print(torch.__version__); print(torch.cuda.is_available())"
 ```
 
-## Colab A100 Notebook
+## Colab A100 Runs
 
-Use the checked-in notebook for the A100 run:
+The checked-in Colab material lives in the vendored Mario RL project:
 
-```text
-notebooks/nesle_colab_a100_training.ipynb
-```
-
-It does the standard Colab flow:
-
-- mounts Google Drive,
-- clones or updates the repo,
-- installs `.[dev,rl]`,
-- builds `_cuda_core` with `NESLE_CUDA_ARCH=sm_80`,
-- verifies snapshot reset,
-- trains W1-1 and multi-level curriculum PPO,
-- writes checkpoints, final models, and TensorBoard logs to Drive,
-- resumes from the latest checkpoint,
-- runs `examples/eval_smoke.py`.
+- [`project/mario-rl-ram/docs/NESLE_A100.md`](../project/mario-rl-ram/docs/NESLE_A100.md)
+  — A100 runtime setup (repo clone, `.[dev,rl]` install, `_cuda_core` build with
+  `NESLE_CUDA_ARCH=sm_80`, snapshot-reset verification).
+- [`project/mario-rl-ram/notebooks/nesle_a100_benchmark.ipynb`](../project/mario-rl-ram/notebooks/nesle_a100_benchmark.ipynb)
+  — the NeSLE A100 benchmark notebook.
 
 If the GitHub repo is private, create a Colab secret named `GITHUB_TOKEN` with
-read access to the repo before running the clone cell.
-
-The notebook expects your ROM in Drive, by default:
+read access to the repo before running the clone cell. The ROM is intentionally
+not committed to Git — the notebooks expect it in Drive, by default:
 
 ```text
 /content/drive/MyDrive/nesle/roms/Super Mario Bros. (World).nes
 ```
 
-The ROM is intentionally not committed to Git.
-
-The notebook defaults `SB3_DEVICE = 'cpu'` for RAM-observation PPO while keeping
-`backend cuda` for the emulator. It also includes an SB3 device probe cell that
-tests CPU versus CUDA policy placement on the current Colab runtime.
+For RAM-observation SB3 PPO, keep `backend cuda` for the emulator but prefer
+`--sb3-device cpu` for the MLP policy; probe both on the runtime you get.

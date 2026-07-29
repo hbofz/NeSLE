@@ -1,8 +1,8 @@
 """Parse the bundled Stable Retro Level 1-1 FCS state and verify known field values.
 
-The reference values come from inspecting the file with a hex dump (see
-project_savestate_reset_plan.md). If FCS layout for FCEUX state.cpp changes upstream,
-update both this test and the parser together.
+The reference values come from inspecting the file with a hex dump. If the FCS
+layout for FCEUX state.cpp changes upstream, update both this test and the
+parser together.
 """
 from __future__ import annotations
 

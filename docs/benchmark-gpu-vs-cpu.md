@@ -63,3 +63,13 @@ The 1050 Ti has ~2 TFLOPS FP32. A100 has ~19.5 TFLOPS, H100 has ~67 TFLOPS. The 
 - H100 estimate: ~30x -> **~1M env-steps/s**
 
 Memory-wise: each env needs ~200 KB of state. A100 (40-80 GB) can comfortably hold 200,000+ parallel envs. The local 4 GB cap (and the 2048-to-4096 plateau) is a host-side constraint, not a fundamental algorithmic one.
+
+## Reproduction check (2026-07-28)
+
+A rerun of `python benchmarks/gpu_vs_cpu.py` on the same machine reproduced the
+GPU-side numbers within ~1%: 29,491 env-steps/s at 4096 envs (vs 29,670 above),
+27,156 at 2048 (vs table), crossover still at 64 envs. The CPU baseline came in
+faster this time (335 vs 290 env-steps/s — background load sensitivity), so the
+headline ratio was 88.1× rather than 102×. The GPU throughput itself is stable
+run-to-run; the CPU-relative multiplier moves with whatever else the host is
+doing.

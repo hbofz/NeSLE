@@ -96,7 +96,7 @@ class TestAutoResetContract(unittest.TestCase):
         self.assertTrue(dones[0])
         # The terminal observation should differ from the returned obs
         # (returned obs is post-reset, terminal_observation is the last frame)
-        terminal = infos[0]["terminal_observation"]
+        self.assertIn("terminal_observation", infos[0])
         # The reset observation should match what we got from reset()
         # (both are the default state)
         self.assertEqual(obs[0].shape, reset_obs[0].shape)

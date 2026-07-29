@@ -69,11 +69,11 @@ def main() -> None:
         episode_rewards.append(current_ep_reward)
 
     print()
-    print(f"=== Summary ===")
+    print("=== Summary ===")
     print(f"  total reward:    {total_reward:+.1f}")
     print(f"  max x_pos:       {max_x} (start was {x_start}, advanced {max_x - x_start})")
     print(f"  episodes:        {len(episode_lengths)} (lengths={episode_lengths}, rewards=[{', '.join(f'{r:+.1f}' for r in episode_rewards)}])")
-    print(f"  action histogram:")
+    print("  action histogram:")
     for label, count in zip(SIMPLE_LABELS, action_histogram, strict=True):
         bar = "#" * int(40 * count / max(1, int(action_histogram.sum())))
         print(f"    {label:10s} {int(count):4d}  {bar}")
