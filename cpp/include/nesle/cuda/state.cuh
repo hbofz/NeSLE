@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <cstring>
 
 #ifdef __CUDACC__
 #define NESLE_CUDA_STATE_HD __host__ __device__
@@ -9,6 +10,55 @@
 #endif
 
 namespace nesle::cuda {
+
+// Copy `n` bytes from `src` to `dst` (non-overlapping). On the CUDA device
+// trajectory, uses 16-byte vector chunks when `n` and both pointers are
+// 16-byte aligned (all per-env blocks are: each array is its own cudaMalloc
+// allocation and the per-env strides — 2048/8192/256/32 — are multiples of
+// 16); otherwise falls back to a byte loop. Host builds (including the C++
+// unit tests, which compile these headers with a plain host compiler) use
+// std::memcpy, which imposes no alignment requirement.
+NESLE_CUDA_STATE_HD inline void copy_bytes_fast(std::uint8_t* dst,
+                                                const std::uint8_t* src,
+                                                std::uint32_t n) {
+#if defined(__CUDA_ARCH__)
+    if ((n % 16u) == 0u &&
+        (reinterpret_cast<std::uintptr_t>(dst) % 16u) == 0u &&
+        (reinterpret_cast<std::uintptr_t>(src) % 16u) == 0u) {
+        auto* d = reinterpret_cast<uint4*>(dst);
+        const auto* s = reinterpret_cast<const uint4*>(src);
+        const std::uint32_t chunks = n / 16u;
+        for (std::uint32_t i = 0; i < chunks; ++i) {
+            d[i] = s[i];
+        }
+        return;
+    }
+    for (std::uint32_t i = 0; i < n; ++i) {
+        dst[i] = src[i];
+    }
+#else
+    std::memcpy(dst, src, n);
+#endif
+}
+
+// Zero `n` bytes at `dst`. Same alignment strategy as copy_bytes_fast.
+NESLE_CUDA_STATE_HD inline void zero_bytes_fast(std::uint8_t* dst, std::uint32_t n) {
+#if defined(__CUDA_ARCH__)
+    if ((n % 16u) == 0u && (reinterpret_cast<std::uintptr_t>(dst) % 16u) == 0u) {
+        auto* d = reinterpret_cast<uint4*>(dst);
+        const std::uint32_t chunks = n / 16u;
+        for (std::uint32_t i = 0; i < chunks; ++i) {
+            d[i] = make_uint4(0u, 0u, 0u, 0u);
+        }
+        return;
+    }
+    for (std::uint32_t i = 0; i < n; ++i) {
+        dst[i] = 0;
+    }
+#else
+    std::memset(dst, 0, n);
+#endif
+}
 
 constexpr int kCpuRamBytes = 2048;
 constexpr int kPrgRamBytes = 8 * 1024;
