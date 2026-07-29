@@ -124,6 +124,15 @@ class TestCheckpointRoundTrip(unittest.TestCase):
         torch.testing.assert_close(torch_draw_a, torch_draw_b)
         np.testing.assert_allclose(numpy_draw_a, numpy_draw_b)
 
+    def test_save_creates_missing_parent_dirs(self) -> None:
+        # Regression: a run must not crash at checkpoint time just because the
+        # target directory does not exist yet.
+        model, optimizer = self._make_model_optimizer()
+        config = NativePPOConfig("dummy.nes")
+        nested = Path(self.tmp.name) / "does" / "not" / "exist" / "ckpt.pt"
+        _save_checkpoint(str(nested), model, optimizer, config, global_step=1)
+        self.assertTrue(nested.is_file())
+
 
 class TestBatchSizeValidation(unittest.TestCase):
     def test_rollout_smaller_than_batch_raises(self) -> None:

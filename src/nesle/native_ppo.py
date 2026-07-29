@@ -344,6 +344,7 @@ def _save_checkpoint(path: str, model, optimizer, config: NativePPOConfig, globa
     }
     if torch.cuda.is_available():
         payload["cuda_rng_state"] = torch.cuda.get_rng_state()
+    Path(path).resolve().parent.mkdir(parents=True, exist_ok=True)
     torch.save(payload, path)
 
 

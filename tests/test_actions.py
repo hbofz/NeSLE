@@ -3,6 +3,7 @@ import unittest
 from nesle.actions import (
     Button,
     COMPLEX_MOVEMENT_MASKS,
+    MARIO_MOVEMENT,
     MARIO_MOVEMENT_MASKS,
     RIGHT_ONLY_MASKS,
     SIMPLE_MOVEMENT_MASKS,
@@ -25,6 +26,23 @@ class ActionTests(unittest.TestCase):
         self.assertEqual(len(MARIO_MOVEMENT_MASKS), 11)
         self.assertEqual(SIMPLE_MOVEMENT_MASKS[1], encode_action(["right"]))
         self.assertEqual(MARIO_MOVEMENT_MASKS[4], encode_action(["right", "B", "A"]))
+
+    def test_mario_movement(self):
+        self.assertEqual(MARIO_MOVEMENT_MASKS[0], 0)  # NOOP first, like the other spaces
+        self.assertEqual(
+            MARIO_MOVEMENT_MASKS,
+            tuple(encode_action(action) for action in MARIO_MOVEMENT),
+        )
+        # No action in the space may press START: save-state resets bypass the
+        # title screen, so START would only pause the game mid-episode.
+        start_mask = encode_action([Button.START])
+        for mask in MARIO_MOVEMENT_MASKS:
+            self.assertEqual(mask & start_mask, 0)
+
+    def test_mario_movement_env_key(self):
+        from nesle.env import _action_masks
+
+        self.assertEqual(_action_masks("mario"), MARIO_MOVEMENT_MASKS)
 
     def test_unknown_button_fails(self):
         with self.assertRaises(ValueError):
