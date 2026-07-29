@@ -52,3 +52,10 @@ should print `True`.
   error in PowerShell — harmless unless the exit code is nonzero.
 - Rebuild after **any** change under `cpp/`; a stale `.pyd` fails silently
   (old behavior, no error).
+- On sm_61, nvcc 12.9 prints a deprecation warning ("support for architectures
+  prior to sm_75 will be removed in a future release") — expected, harmless.
+- The link step drops stray `_cuda_core*.lib`/`.exp` files next to the `.pyd`;
+  they are ignorable (and gitignored) linker artifacts.
+- The CUDA torch wheel is ~2.6 GB; `--force-reinstall` needs roughly 7–9 GB of
+  transient free disk (wheel + cache + unpacked copy). Use `--no-cache-dir` if
+  disk is tight.

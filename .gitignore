@@ -4,6 +4,9 @@ __pycache__/
 *.so
 *.dylib
 *.pyd
+# MSVC linker artifacts dropped next to the .pyd by the Windows CUDA build.
+src/nesle/*.lib
+src/nesle/*.exp
 *.egg-info/
 build/
 dist/
