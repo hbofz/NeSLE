@@ -123,15 +123,15 @@ def main() -> int:
         # slowdown documented in KNOWN_ISSUES.md — it made no difference.)
         f"-I{REPO / 'cpp' / 'include'}",
         f"-I{pybind11.get_include()}",
+        f"-I{sysconfig.get_paths()['include']}",  # Python.h on every platform
     ]
     if os.name == "nt":
-        py_include = sysconfig.get_paths()["include"]
         libs_dir = Path(sys.base_prefix) / "libs"
         py_lib = libs_dir / f"python{sys.version_info.major}{sys.version_info.minor}.lib"
         if not py_lib.exists():
             print(f"could not find {py_lib}; is this a standard CPython install?")
             return 1
-        cmd += [f"-I{py_include}", "-shared"]
+        cmd += ["-shared"]
         cmd += [str(REPO / s) for s in SOURCES]
         cmd += ["-o", output, str(py_lib)]
     else:
