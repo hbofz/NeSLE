@@ -3,6 +3,7 @@ __pycache__/
 *.py[cod]
 *.so
 *.dylib
+*.pyd
 *.egg-info/
 build/
 dist/
@@ -30,6 +31,10 @@ nesle_native_ppo*.pt
 # Local Claude Code project config.
 .claude/
 
-# Ad-hoc Colab / training notebooks. The repo intentionally does not ship a
-# notebook today; add specific paths back here when one is committed.
-notebooks/
+# Ad-hoc Colab / training notebooks at the repo root. Root-anchored so the
+# vendored project/mario-rl-ram/notebooks/ stays tracked.
+/notebooks/
+
+# Sibling checkout of the Mario RL project at the repo root; the canonical
+# vendored copy lives at project/mario-rl-ram/.
+/mario-rl-ram/
