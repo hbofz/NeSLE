@@ -63,6 +63,12 @@ struct DLManagedTensor {
 struct DLManagedTensorContext {
     DLManagedTensor managed{};
     std::vector<std::int64_t> shape;
+    // Strong reference to the Python view object that produced this capsule.
+    // The view's pybind keep_alive ties it to the owning CudaBatch, so as long
+    // as the consumer's tensor lives, the device memory it points at cannot be
+    // cudaFree'd underneath it. Without this the capsule held only a raw
+    // pointer — a use-after-free once the batch was garbage collected.
+    py::object owner;
 };
 
 DLDataType dlpack_dtype(const std::string& typestr) {
@@ -80,12 +86,20 @@ void dlpack_deleter(DLManagedTensor* self) {
         return;
     }
     auto* ctx = static_cast<DLManagedTensorContext*>(self->manager_ctx);
+    if (ctx->owner) {
+        // The consumer (e.g. torch) may run the deleter on any thread, without
+        // holding the GIL; releasing a py::object requires it.
+        PyGILState_STATE gil = PyGILState_Ensure();
+        ctx->owner = py::object();
+        PyGILState_Release(gil);
+    }
     delete ctx;
 }
 
 // Forward declaration so CudaDeviceArrayView::dlpack() can call check_cuda() before its
 // definition appears below. Body is unchanged at line ~150.
 void check_cuda(cudaError_t error, const char* label);
+void blocking_stream_sync(const char* label);
 
 // Read-only view into a device buffer owned by CudaBatchBinding. The view holds a bare
 // device pointer with no ownership — it is the *binding's* responsibility (via pybind
@@ -125,14 +139,14 @@ public:
         return py::make_tuple(static_cast<std::int32_t>(kDLCUDA), 0);
     }
 
-    py::capsule dlpack(py::object stream = py::none()) const {
+    py::capsule dlpack(py::object self_obj, py::object stream = py::none()) const {
         del_stream(stream);
         // Synchronize the default stream before producing the capsule. All kernels in
         // this module run on stream 0; if the consumer (e.g., PyTorch) is bound to a
         // different stream, in-flight writes from the producer side would otherwise race
         // the consumer's first read. One sync per handoff is cheap; consumers should
         // amortize by batching step_device calls between conversions.
-        check_cuda(cudaDeviceSynchronize(), "dlpack synchronize before handoff");
+        blocking_stream_sync("dlpack synchronize before handoff");
         auto* ctx = new DLManagedTensorContext();
         ctx->shape.reserve(shape_.size());
         for (const auto dim : shape_) {
@@ -147,6 +161,7 @@ public:
         ctx->managed.dl_tensor.byte_offset = 0;
         ctx->managed.manager_ctx = ctx;
         ctx->managed.deleter = dlpack_deleter;
+        ctx->owner = std::move(self_obj);
         return py::capsule(&ctx->managed, "dltensor", [](PyObject* capsule) {
             if (PyCapsule_IsValid(capsule, "dltensor")) {
                 auto* managed =
@@ -171,6 +186,27 @@ void check_cuda(cudaError_t error, const char* label) {
     if (error != cudaSuccess) {
         throw std::runtime_error(std::string(label) + ": " + cudaGetErrorString(error));
     }
+}
+
+// Wait for all work previously launched by this module (everything goes to the
+// default stream) via an event instead of cudaDeviceSynchronize. Ordering
+// guarantees are identical for default-stream work. Note: end-to-end rollout
+// benchmarks on Windows/WDDM showed NO measurable difference between this and
+// cudaDeviceSynchronize — the dominant cost there is torch-kernel/step-kernel
+// submission interleaving itself (see benchmarks/profile_native_ppo.py and
+// KNOWN_ISSUES.md). Kept because event sync is never slower and scopes the
+// wait to this module's stream semantics rather than the whole device.
+void blocking_stream_sync(const char* label) {
+    static cudaEvent_t event = nullptr;
+    if (event == nullptr) {
+        // Deliberately NOT cudaEventBlockingSync: the blocking (OS-signal) wait
+        // has ~100 ms wakeup latency under WDDM; the spin-wait default notices
+        // completion immediately, matching torch's own Event behavior.
+        check_cuda(cudaEventCreateWithFlags(&event, cudaEventDisableTiming),
+                   "create blocking sync event");
+    }
+    check_cuda(cudaEventRecord(event, nullptr), label);
+    check_cuda(cudaEventSynchronize(event), label);
 }
 
 template <typename T>
@@ -528,7 +564,7 @@ public:
         if (render_frame || copy_obs) {
             render_device();
         }
-        check_cuda(cudaDeviceSynchronize(), "cuda step synchronize");
+        blocking_stream_sync("cuda step synchronize");
 
         py::array_t<float> rewards(static_cast<py::ssize_t>(num_env_));
         py::array_t<std::uint8_t> dones(static_cast<py::ssize_t>(num_env_));
@@ -616,7 +652,7 @@ public:
             }
         }
         if (sync_required) {
-            check_cuda(cudaDeviceSynchronize(), "cuda device step synchronize");
+            blocking_stream_sync("cuda device step synchronize");
         }
 
         py::dict out;
@@ -784,7 +820,7 @@ public:
         // with render_frame=True — turning the high-throughput step(render_frame=False)
         // path into a "frozen frame" footgun. Re-rendering is one kernel launch; cheap.
         render_device();
-        check_cuda(cudaDeviceSynchronize(), "render synchronize");
+        blocking_stream_sync("render synchronize");
         py::array_t<std::uint8_t> out(std::vector<py::ssize_t>{
             static_cast<py::ssize_t>(num_env_),
             nesle::cuda::kFrameHeight,
@@ -818,6 +854,29 @@ public:
             {
                 static_cast<py::ssize_t>(num_env_),
                 nesle::cuda::kCpuRamBytes,
+            },
+            "|u1",
+            false);
+    }
+
+    void launch_render_device() const {
+        // Public wrapper over the internal render kernel launch: renders every
+        // env's frame into the on-device buffer without any host copy.
+        render_device();
+    }
+
+    CudaDeviceArrayView frames_device() const {
+        // View over the on-device RGB frame buffer, shape (N, H, W, 3) uint8.
+        // Frames are only fresh after render() or render_device(); step() does
+        // not render on its own. Pairing render_device() + frames_device() gives
+        // pixel observations to torch (via DLPack) with no host copy.
+        return CudaDeviceArrayView(
+            reinterpret_cast<std::uintptr_t>(device_frames_),
+            {
+                static_cast<py::ssize_t>(num_env_),
+                static_cast<py::ssize_t>(nesle::cuda::kFrameHeight),
+                static_cast<py::ssize_t>(nesle::cuda::kFrameWidth),
+                static_cast<py::ssize_t>(nesle::cuda::kRgbChannels),
             },
             "|u1",
             false);
@@ -871,7 +930,7 @@ public:
                 buffers_, device_reset_mask_, num_env_, use_console_, nullptr);
             check_cuda(cudaGetLastError(), "launch_reset_envs_kernel");
         }
-        check_cuda(cudaDeviceSynchronize(), "reset_envs synchronize");
+        blocking_stream_sync("reset_envs synchronize");
     }
 
     void poke_ram(std::uint16_t address, std::uint8_t value) {
@@ -1428,7 +1487,12 @@ PYBIND11_MODULE(_cuda_core, m) {
     py::class_<CudaDeviceArrayView>(m, "CudaDeviceArrayView")
         .def_property_readonly("__cuda_array_interface__",
                                &CudaDeviceArrayView::cuda_array_interface)
-        .def("__dlpack__", &CudaDeviceArrayView::dlpack, py::arg("stream") = py::none())
+        .def(
+            "__dlpack__",
+            [](py::object self, py::object stream) {
+                return self.cast<CudaDeviceArrayView&>().dlpack(self, stream);
+            },
+            py::arg("stream") = py::none())
         .def("__dlpack_device__", &CudaDeviceArrayView::dlpack_device);
 
     m.def(
@@ -1516,8 +1580,10 @@ PYBIND11_MODULE(_cuda_core, m) {
         .def("step_stats", &CudaBatchBinding::step_stats, py::arg("actions"))
         .def("step_profile", &CudaBatchBinding::step_profile, py::arg("actions"))
         .def("render", &CudaBatchBinding::render)
+        .def("render_device", &CudaBatchBinding::launch_render_device)
         .def("ram", &CudaBatchBinding::ram)
         .def("ram_device", &CudaBatchBinding::ram_device, py::keep_alive<0, 1>())
+        .def("frames_device", &CudaBatchBinding::frames_device, py::keep_alive<0, 1>())
         .def("rewards_device", &CudaBatchBinding::rewards_device, py::keep_alive<0, 1>())
         .def("last_done_device", &CudaBatchBinding::last_done_device, py::keep_alive<0, 1>())
         .def("oam", &CudaBatchBinding::oam)
