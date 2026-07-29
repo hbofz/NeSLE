@@ -42,9 +42,6 @@ Honest list of what's broken, deferred, or unverified. Kept current as of
 - **One CUDA thread per env.** Warp divergence leaves throughput on the table
   at very large batches; a warp-per-env or SoA-wavefront redesign is the known
   next optimization (see `docs/phase6-report.md`).
-- **Smart reward is tuned for World 1-1.** Other levels run with 1-1's
-  constants; per-level profiles exist only in the vendored CPU project
-  (`project/mario-rl-ram/src/mario_rl/reward_profiles/`).
 - **`scripts/build_cuda_extension.sh` is POSIX-only.** Windows uses the manual
   recipe in `docs/build-windows.md`. Porting both into `setup.py` so one build
   path serves all platforms is the cleanest known improvement.
