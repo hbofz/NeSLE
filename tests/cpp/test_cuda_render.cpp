@@ -17,8 +17,7 @@ nesle::cuda::BatchBuffers make_buffers(std::vector<std::uint8_t>& chr_rom,
                                        std::array<std::uint8_t, 1>& status,
                                        std::array<std::uint8_t, 1>& oam_addr,
                                        std::array<std::uint8_t, 1>& nmi_pending,
-                                       std::array<std::int16_t, 1>& scanline,
-                                       std::array<std::uint16_t, 1>& dot,
+                                       std::array<std::uint32_t, 1>& frame_dot,
                                        std::array<std::uint64_t, 1>& frame_count,
                                        std::vector<std::uint8_t>& nametable,
                                        std::vector<std::uint8_t>& palette,
@@ -30,8 +29,7 @@ nesle::cuda::BatchBuffers make_buffers(std::vector<std::uint8_t>& chr_rom,
     buffers.ppu.status = status.data();
     buffers.ppu.oam_addr = oam_addr.data();
     buffers.ppu.nmi_pending = nmi_pending.data();
-    buffers.ppu.scanline = scanline.data();
-    buffers.ppu.dot = dot.data();
+    buffers.ppu.frame_dot = frame_dot.data();
     buffers.ppu.frame = frame_count.data();
     buffers.ppu.nametable_ram = nametable.data();
     buffers.ppu.palette_ram = palette.data();
@@ -80,8 +78,7 @@ int main() {
         std::array<std::uint8_t, 1> status{0};
         std::array<std::uint8_t, 1> oam_addr{0};
         std::array<std::uint8_t, 1> nmi_pending{0};
-        std::array<std::int16_t, 1> scanline{0};
-        std::array<std::uint16_t, 1> dot{0};
+        std::array<std::uint32_t, 1> frame_dot{0};
         std::array<std::uint64_t, 1> frame_count{0};
         nametable[0] = 0x01;
         palette[1] = 0x21;
@@ -92,8 +89,7 @@ int main() {
                                     status,
                                     oam_addr,
                                     nmi_pending,
-                                    scanline,
-                                    dot,
+                                    frame_dot,
                                     frame_count,
                                     nametable,
                                     palette,
@@ -115,8 +111,7 @@ int main() {
         std::array<std::uint8_t, 1> status{0};
         std::array<std::uint8_t, 1> oam_addr{0};
         std::array<std::uint8_t, 1> nmi_pending{0};
-        std::array<std::int16_t, 1> scanline{0};
-        std::array<std::uint16_t, 1> dot{0};
+        std::array<std::uint32_t, 1> frame_dot{0};
         std::array<std::uint64_t, 1> frame_count{0};
         palette[0x11] = 0x16;
         oam[0] = 9;
@@ -130,8 +125,7 @@ int main() {
                                     status,
                                     oam_addr,
                                     nmi_pending,
-                                    scanline,
-                                    dot,
+                                    frame_dot,
                                     frame_count,
                                     nametable,
                                     palette,

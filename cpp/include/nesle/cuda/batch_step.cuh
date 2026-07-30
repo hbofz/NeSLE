@@ -145,8 +145,7 @@ NESLE_CUDA_HD inline void cold_reset_console_env(BatchBuffers& buffers, std::uin
     buffers.ppu.status[env] = 0;
     buffers.ppu.oam_addr[env] = 0;
     buffers.ppu.nmi_pending[env] = 0;
-    buffers.ppu.scanline[env] = 0;
-    buffers.ppu.dot[env] = 0;
+    buffers.ppu.frame_dot[env] = 0;
     buffers.ppu.frame[env] = 0;
     buffers.ppu.v[env] = 0;
     buffers.ppu.t[env] = 0;
@@ -210,8 +209,7 @@ NESLE_CUDA_HD inline void warm_reset_console_env(BatchBuffers& buffers,
     buffers.ppu.status[env] = snap.ppu_status[level];
     buffers.ppu.oam_addr[env] = snap.ppu_oam_addr[level];
     buffers.ppu.nmi_pending[env] = 0;
-    buffers.ppu.scanline[env] = 0;
-    buffers.ppu.dot[env] = 0;
+    buffers.ppu.frame_dot[env] = 0;
     buffers.ppu.frame[env] = 0;
     buffers.ppu.v[env] = snap.ppu_v[level];
     buffers.ppu.t[env] = snap.ppu_t[level];

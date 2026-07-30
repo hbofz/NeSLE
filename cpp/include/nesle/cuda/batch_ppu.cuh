@@ -29,9 +29,7 @@ struct BatchPpuStepResult {
 NESLE_CUDA_HD inline PpuHotState load_ppu_hot_state(const BatchBuffers& buffers,
                                                     std::uint32_t env) {
     PpuHotState hot;
-    hot.frame_dot = static_cast<std::uint32_t>(buffers.ppu.scanline[env]) *
-                        static_cast<std::uint32_t>(kPpuDotsPerScanline) +
-                    static_cast<std::uint32_t>(buffers.ppu.dot[env]);
+    hot.frame_dot = buffers.ppu.frame_dot[env];
     hot.frame = buffers.ppu.frame[env];
     hot.status = buffers.ppu.status[env];
     hot.ctrl = buffers.ppu.ctrl[env];
@@ -43,10 +41,7 @@ NESLE_CUDA_HD inline PpuHotState load_ppu_hot_state(const BatchBuffers& buffers,
 NESLE_CUDA_HD inline void store_ppu_hot_state(BatchBuffers& buffers,
                                               std::uint32_t env,
                                               const PpuHotState& hot) {
-    buffers.ppu.scanline[env] =
-        static_cast<std::int16_t>(hot.frame_dot / kPpuDotsPerScanline);
-    buffers.ppu.dot[env] =
-        static_cast<std::uint16_t>(hot.frame_dot % kPpuDotsPerScanline);
+    buffers.ppu.frame_dot[env] = hot.frame_dot;
     buffers.ppu.frame[env] = hot.frame;
     buffers.ppu.status[env] = hot.status;
     buffers.ppu.ctrl[env] = hot.ctrl;
@@ -79,9 +74,7 @@ NESLE_CUDA_HD inline void batch_ppu_set_vblank_hot(PpuHotState& hot, bool enable
 
 NESLE_CUDA_HD inline std::uint32_t batch_ppu_frame_dot(const BatchBuffers& buffers,
                                                        std::uint32_t env) {
-    return static_cast<std::uint32_t>(buffers.ppu.scanline[env]) *
-               static_cast<std::uint32_t>(kPpuDotsPerScanline) +
-           static_cast<std::uint32_t>(buffers.ppu.dot[env]);
+    return buffers.ppu.frame_dot[env];
 }
 
 NESLE_CUDA_HD inline void batch_ppu_set_vblank(BatchBuffers& buffers,

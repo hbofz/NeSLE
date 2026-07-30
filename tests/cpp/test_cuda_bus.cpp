@@ -38,6 +38,8 @@ int main() {
     std::vector<std::uint8_t> ppu_mask(kNumEnvs, 0);
     std::vector<std::uint8_t> ppu_status(kNumEnvs, 0);
     std::vector<std::uint8_t> ppu_oam_addr(kNumEnvs, 0);
+    std::vector<std::uint8_t> ppu_nmi_pending(kNumEnvs, 0);
+    std::vector<std::uint32_t> pending_dma_cycles(kNumEnvs, 0);
     std::vector<std::uint16_t> ppu_v(kNumEnvs, 0);
     std::vector<std::uint16_t> ppu_t(kNumEnvs, 0);
     std::vector<std::uint8_t> ppu_x(kNumEnvs, 0);
@@ -58,7 +60,9 @@ int main() {
     buffers.cpu.controller1_shift = controller_shift.data();
     buffers.cpu.controller1_shift_count = controller_shift_count.data();
     buffers.cpu.controller1_strobe = controller_strobe.data();
+    buffers.cpu.pending_dma_cycles = pending_dma_cycles.data();
     buffers.ppu.ctrl = ppu_ctrl.data();
+    buffers.ppu.nmi_pending = ppu_nmi_pending.data();
     buffers.ppu.mask = ppu_mask.data();
     buffers.ppu.status = ppu_status.data();
     buffers.ppu.oam_addr = ppu_oam_addr.data();
