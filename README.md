@@ -194,8 +194,10 @@ PPO learner, not the emulator, is the bottleneck. Earlier per-mode ablations
 - **Title-screen state machine has a PPU-timing bug.** The snapshot-reset path
   bypasses it cleanly; a real fix is deferred. See
   [`KNOWN_ISSUES.md`](KNOWN_ISSUES.md).
-- **One CUDA thread per env** — simple to reason about, but leaves performance
-  on the table at very large batches (warp divergence).
+- **One CUDA thread per env** — simple to reason about, but warp divergence
+  leaves performance on the table. Measured costs, prior art (CuLE), and a
+  ranked redesign roadmap: [docs/gpu-scaling.md](docs/gpu-scaling.md) — its
+  quick-win tier is already implemented; the deeper redesigns are open.
 
 ## Project layout
 
