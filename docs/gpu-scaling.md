@@ -64,8 +64,26 @@ notes: the per-pixel render kernel loses to the serial one once the env count
 alone saturates the GPU (321 ms vs 207 ms at 2,048 envs), so dispatch is
 hybrid with the crossover at 512 envs; the refactored serial path also costs
 ~14% at 2,048 envs (207 → 237 ms) — accepted, as large-batch rendering serves
-only RGB-observation training. Items #4 (zero page in shared memory) and #5
-(hygiene pass) remain open.
+only RGB-observation training.
+
+**Evening update — every remaining item resolved (all measured on the GTX
+1050 Ti; behavior verified bit-exact via a fixed-seed training run whose
+losses match pre-sprint to 4 decimals):**
+
+| Item | Verdict | Stepping @2,048 envs after |
+|---|---|---:|
+| #5 hygiene (restrict, guard strip, merged frame_dot) | ✅ shipped, +10% | 92.8k steps/s |
+| #4 zero page in shared memory | ❌ **rejected with data**: 1.9× regression on sm_61 — 32 KB/block collapses occupancy from 32 to 6 warps/SM; break-even needs ≤96 B/thread. Implementation preserved on its branch. | — |
+| Tier 2: table-driven decode (+ forced render inlining) | ✅ shipped — the sprint's largest win (see below) | 84.4k steps/s |
+| Tier 1: **lazy PPU settlement** (supersedes the kernel-split proposal below) | ✅ shipped, +9% | **100.8k steps/s** |
+
+Official `benchmarks/gpu_vs_cpu.py` after the sprint: **180,437 env-steps/s
+at 4,096 envs (576× CPU)** — 5.1× the morning's 35,488. A cautionary tale
+worth keeping: the decode merge initially *slowed both render kernels 2.3×*
+because the enlarged module blew nvcc's inlining heuristics — forcing
+inlining on the render helper chain (`NESLE_CUDA_RENDER_INLINE`) fixed render
+AND unlocked the decode change's full stepping value (57.6 → 24.3 ms in one
+line). Watch for this whenever the module grows.
 
 Original plan:
 
@@ -88,39 +106,55 @@ Original plan:
 (`step_profile`, `cuda_module.cu`) — quantify opcode fan-out and hot PCs
 before and after each change.
 
-### Tier 1 — CPU/PPU kernel split (weeks; CuLE's shipped answer)
+### Tier 1 — CPU/PPU kernel split — **RESOLVED as lazy settlement (shipped)**
 
-CuLE runs 6507 emulation in one kernel (buffering graphics-chip register
-writes to global memory) and consumes the buffer in a second kernel — because
-register pressure and divergence profiles differ between CPU and video work,
-and observation-free frames can skip the second kernel entirely. NeSLE
-interleaves PPU catch-up after every instruction; the PPU is already analytic
-(event-horizon arithmetic, `batch_ppu.cuh:62-102`), so deferring it to
-event/register-access boundaries is feasible. Correctness pivot: NMI delivery
-at instruction boundaries.
+The original CuLE-style two-kernel split was superseded by the Tier-0 work:
+with PPU scalars register-resident, events analytic, and rendering already a
+separate kernel, a literal split would only add launch overhead and buffer
+traffic. The surviving substance shipped as **lazy PPU settlement**: the step
+kernel accumulates cycles and advances the PPU only when the span reaches the
+precomputed next-event distance (PPU scalar state changes exclusively at the
+three timing events, so between settles the register-resident state the bus
+reads is exact). Measured: +9%, taking local 2,048-env stepping past 100k
+env-steps/s. Timing stays instruction-granular, identical to before.
 
-### Tier 2 — table-driven decode (weeks; best divergence fix per unit risk)
+Original proposal (kept for the record): CuLE runs 6507 emulation in one
+kernel (buffering graphics-chip register writes) and consumes the buffer in a
+second — because register pressure and divergence profiles differ between CPU
+and video work.
 
-Replace the monolithic 151-case switch with a 256-entry `__constant__` decode
-table ({addressing mode, operation, cycles, flags}) driving a restructured
-loop: uniform fetch → uniform table lookup → ~8-way effective-address switch →
-shared operand load → ~30 short ALU cases (already factored as lambdas,
-`cpu.hpp:205-312`). Divergence per iteration drops from 1-of-151 long cases to
-two small switches, and memory ops decouple from ALU. Stays a single kernel;
-bindings and tests unchanged. Risk: encoding page-cross/branch cycle rules in
-the table — well-covered by the existing CPU test suite (Klaus functional
-tests).
+### Tier 2 — table-driven decode — **SHIPPED (the sprint's largest win)**
 
-### Tier 3 — wavefront / opcode-binned interpreter (months; research-grade)
+Shipped exactly as designed: a 256-entry constexpr decode table drives an
+11-case effective-address switch and a 49-case operation switch (all eight
+branch opcodes share one case). Verified by an 8M-random-instruction
+differential harness against the old interpreter (zero divergence, identical
+bus traffic and exception messages) and cycle-exact Klaus functional counts.
+Combined with the forced-inlining fix it took local 2,048-env stepping from
+29.8k to 84.4k env-steps/s — and it is also what makes Tier 3's explicit
+binning redundant (see below).
 
-The structurally "correct" fix from GPU ray tracing ("Megakernels Considered
-Harmful", Laine & Karras HPG 2013) and demonstrated for CHIP-8 by Octax
-(JAX `lax.switch` vectorized dispatch; 1.4M frames/s — but that's a 35-opcode
-ISA without cycle-accurate video timing). Requires compaction/queue
-infrastructure and an interpreter rewrite; the payoff for a 256-opcode 6502
-with a timed PPU is a hypothesis to validate with a small prototype (ALU
-dispatch only) before committing. CuLE's ~30%-worst-case divergence number is
-the sober counterweight to this tier's ambitions.
+### Tier 3 — wavefront / opcode-binned interpreter — **NO-GO (measured)**
+
+Prototyped and measured (`benchmarks/wavefront_prototype/`, full write-up in
+its RESULTS.md): the real table-driven interpreter over a synthetic NROM bus,
+instruction streams sampled from the *measured* SMB opcode distribution
+(535.7M profiled executions), wavefront variants validated byte-for-byte
+against the baseline. Verdict: opcode-binned dispatch is **3.2× slower** than
+thread-per-env on realistic decorrelated streams (0.31× at every scale from
+4,096 to 131,072 instances) and merely break-even (+4–6%) on fully correlated
+streams where there is no divergence to remove. The loss is group
+serialization, not binning overhead: a decorrelated warp holds ~20.6 distinct
+opcodes, and hardware SIMT reconvergence in the baseline already shares
+fetch/table-lookup/addressing across differing opcodes — explicit binning
+serializes what the hardware was sharing. Ceiling analysis: even *free*
+divergence removal caps at ~1.9× on the CPU-only prototype (~1.4× diluted by
+real PPU/bus work) — from a 3.2× hole. The original proposal (Laine & Karras
+wavefront, Octax's CHIP-8 result) is kept in the sources; the pattern does
+not transfer to a 6502 with a table-driven core.
+
+Useful byproduct: the measured 1.9× correlated-vs-decorrelated gap is direct
+empirical support for the cheap state-correlation scheduling lever below.
 
 ### Rejected: warp-per-env for the CPU loop
 
