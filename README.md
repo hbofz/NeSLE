@@ -10,17 +10,18 @@ trains PPO agents against them with observations that never leave the device.
 
 **Key results** (see [Benchmarks](#benchmarks) for methodology and commands):
 
-- On a **GTX 1050 Ti (4 GB)**: 35,488 env-steps/s at 4,096 parallel envs —
-  **110× a single-env CPU baseline** (measured 2026-07-29 on this repo's HEAD,
-  after the register-caching/copy-vectorization work in
-  [docs/gpu-scaling.md](docs/gpu-scaling.md)).
-- On an **A100 (80 GB)**: **699,456 env-steps/s at 65,536 parallel envs**
-  (peak; 2.8M NES frames/s ≈ 46,000× real-time), 161k env-steps/s at 4,096 —
-  **~746× that machine's CPU** — measured 2026-07-29 on a Colab A100 from a
-  clean clone with all 69 tests green. End-to-end GPU-resident PPO sustains
-  ~33k env-steps/s at 32,768 envs (the learner, not the emulator, is the
-  bottleneck at that scale). Earlier mode ablations:
-  [phase-6 report](docs/phase6-report.md).
+- On an **A100 (80 GB)**: **3,142,205 env-steps/s at 65,536 parallel envs**
+  (peak; 12.6M NES frames/s ≈ 209,000× real-time), 311,844 at 4,096 envs —
+  **~1,422× that machine's CPU** — measured 2026-07-30 on a Colab A100 from a
+  clean clone with all 69 tests green.
+- On a **GTX 1050 Ti (4 GB)**: 180,437 env-steps/s at 4,096 envs —
+  **576× a single-env CPU baseline**.
+- These numbers are ~5× the previous release's, from the fully-executed
+  optimization program in [docs/gpu-scaling.md](docs/gpu-scaling.md):
+  table-driven 6502 decode, register-resident PPU state, lazy event
+  settlement — each change measured, and the dead ends (shared-memory zero
+  page, wavefront dispatch) retired with published measurements rather than
+  silently dropped.
 
 ## Install
 
@@ -173,20 +174,20 @@ the same machine (`benchmarks/nespy_baseline.py`), so 4,096 GPU envs ≈
 **269× nes-py**.
 
 A100-SXM4-80GB (Colab), device stepping via `step_device` — measured
-2026-07-29 on this repo's HEAD:
+2026-07-30 on this repo's HEAD:
 
-| Envs | Env-steps/s | vs that VM's CPU (216/s) |
+| Envs | Env-steps/s | vs that VM's CPU (219/s) |
 |---:|---:|---:|
-| 4,096 | 161,430 | 746× |
-| 16,384 | 486,372 | 2,252× |
-| 32,768 | 627,880 | 2,907× |
-| **65,536** | **699,456** | **3,238×** |
-| 131,072 | 574,755 | past the saturation knee |
+| 4,096 | 311,844 | 1,422× |
+| 16,384 | 1,050,710 | 4,798× |
+| 32,768 | 1,931,460 | 8,819× |
+| **65,536** | **3,142,205** | **14,348×** |
+| 131,072 | 2,816,144 | past the saturation knee |
 
-Peak ≈ 2.8M NES frames/s using 13 GB of the 80 GB card. End-to-end
-GPU-resident PPO at 32,768 envs sustains ~33k env-steps/s — at that scale the
-PPO learner, not the emulator, is the bottleneck. Earlier per-mode ablations
-(RGB/RAM/no-copy): [phase-6 report](docs/phase6-report.md), recorded 2026-05.
+Peak ≈ 12.6M NES frames/s using 13 GB of the 80 GB card. At training scale
+the PPO learner, not the emulator, is the bottleneck — by design. Earlier
+per-mode ablations (RGB/RAM/no-copy): [phase-6 report](docs/phase6-report.md),
+recorded 2026-05.
 
 ## Known limitations
 
