@@ -122,6 +122,258 @@ NESLE_CPU_HD void nmi(CpuState& state, Bus& bus) {
     state.cycles += 7;
 }
 
+// ---------------------------------------------------------------------------
+// Table-driven decode.
+//
+// A single 256-entry constexpr table maps every opcode to its addressing
+// mode, operation, base cycle count, and behavior flags. step() dispatches
+// through two small switches (effective address, then operation) instead of
+// a monolithic 151-case opcode switch. Cycle timing is encoded as:
+//   total = base_cycles (table)
+//         + 1 if FlagPageCrossPenalty and the indexed fetch crossed a page
+//         + branch penalties (+1 taken, +1 more if the target crossed a page)
+// Store and memory read-modify-write variants of the indexed modes never take
+// the page-cross penalty; their fixed cost is folded into base_cycles.
+// ---------------------------------------------------------------------------
+
+enum class AddrMode : std::uint8_t {
+    Implied,
+    Accumulator,
+    Immediate,
+    ZeroPage,
+    ZeroPageX,
+    ZeroPageY,
+    Absolute,
+    AbsoluteX,
+    AbsoluteY,
+    IndirectX,
+    IndirectY,
+    Indirect,  // JMP ($addr) only; honors the 6502 page-wrap fetch bug
+    Relative,  // branches; the branch operation fetches its own offset
+};
+
+enum class Op : std::uint8_t {
+    Illegal,
+    LDA, LDX, LDY, STA, STX, STY,
+    TAX, TAY, TXA, TYA, TSX, TXS,
+    PHA, PHP, PLA, PLP,
+    ORA, AND, EOR, ADC, SBC,
+    CMP, CPX, CPY, BIT,
+    INC, DEC, INX, INY, DEX, DEY,
+    ASL, LSR, ROL, ROR,
+    JMP, JSR, RTS, RTI, BRK, Branch,
+    CLC, SEC, CLI, SEI, CLV, CLD, SED,
+    NOP,
+};
+
+enum DecodeFlags : std::uint8_t {
+    FlagNone = 0,
+    FlagPageCrossPenalty = 1u << 0,  // read variants of absx/absy/indy: +1 on page cross
+    FlagRmw = 1u << 1,               // memory read-modify-write (shift/inc/dec on memory)
+    FlagStore = 1u << 2,             // memory store; fixed cycles, no page-cross penalty
+    FlagIllegal = 1u << 3,           // unofficial opcode: traps on device, throws on host
+};
+
+struct DecodeEntry {
+    AddrMode mode;
+    Op op;
+    std::uint8_t base_cycles;
+    std::uint8_t flags;
+};
+
+namespace detail {
+
+struct DecodeTable {
+    DecodeEntry entries[256];
+};
+
+constexpr DecodeTable make_decode_table() {
+    DecodeTable table{};
+    for (auto& entry : table.entries) {
+        entry = DecodeEntry{AddrMode::Implied, Op::Illegal, 0, FlagIllegal};
+    }
+    const auto set = [&table](std::uint8_t opcode, AddrMode mode, Op op,
+                              std::uint8_t base_cycles, std::uint8_t flags = FlagNone) {
+        table.entries[opcode] = DecodeEntry{mode, op, base_cycles, flags};
+    };
+
+    set(0x00, AddrMode::Implied, Op::BRK, 7);
+    set(0x01, AddrMode::IndirectX, Op::ORA, 6);
+    set(0x05, AddrMode::ZeroPage, Op::ORA, 3);
+    set(0x06, AddrMode::ZeroPage, Op::ASL, 5, FlagRmw);
+    set(0x08, AddrMode::Implied, Op::PHP, 3);
+    set(0x09, AddrMode::Immediate, Op::ORA, 2);
+    set(0x0A, AddrMode::Accumulator, Op::ASL, 2);
+    set(0x0D, AddrMode::Absolute, Op::ORA, 4);
+    set(0x0E, AddrMode::Absolute, Op::ASL, 6, FlagRmw);
+    set(0x10, AddrMode::Relative, Op::Branch, 2);
+    set(0x11, AddrMode::IndirectY, Op::ORA, 5, FlagPageCrossPenalty);
+    set(0x15, AddrMode::ZeroPageX, Op::ORA, 4);
+    set(0x16, AddrMode::ZeroPageX, Op::ASL, 6, FlagRmw);
+    set(0x18, AddrMode::Implied, Op::CLC, 2);
+    set(0x19, AddrMode::AbsoluteY, Op::ORA, 4, FlagPageCrossPenalty);
+    set(0x1D, AddrMode::AbsoluteX, Op::ORA, 4, FlagPageCrossPenalty);
+    set(0x1E, AddrMode::AbsoluteX, Op::ASL, 7, FlagRmw);
+    set(0x20, AddrMode::Absolute, Op::JSR, 6);
+    set(0x21, AddrMode::IndirectX, Op::AND, 6);
+    set(0x24, AddrMode::ZeroPage, Op::BIT, 3);
+    set(0x25, AddrMode::ZeroPage, Op::AND, 3);
+    set(0x26, AddrMode::ZeroPage, Op::ROL, 5, FlagRmw);
+    set(0x28, AddrMode::Implied, Op::PLP, 4);
+    set(0x29, AddrMode::Immediate, Op::AND, 2);
+    set(0x2A, AddrMode::Accumulator, Op::ROL, 2);
+    set(0x2C, AddrMode::Absolute, Op::BIT, 4);
+    set(0x2D, AddrMode::Absolute, Op::AND, 4);
+    set(0x2E, AddrMode::Absolute, Op::ROL, 6, FlagRmw);
+    set(0x30, AddrMode::Relative, Op::Branch, 2);
+    set(0x31, AddrMode::IndirectY, Op::AND, 5, FlagPageCrossPenalty);
+    set(0x35, AddrMode::ZeroPageX, Op::AND, 4);
+    set(0x36, AddrMode::ZeroPageX, Op::ROL, 6, FlagRmw);
+    set(0x38, AddrMode::Implied, Op::SEC, 2);
+    set(0x39, AddrMode::AbsoluteY, Op::AND, 4, FlagPageCrossPenalty);
+    set(0x3D, AddrMode::AbsoluteX, Op::AND, 4, FlagPageCrossPenalty);
+    set(0x3E, AddrMode::AbsoluteX, Op::ROL, 7, FlagRmw);
+    set(0x40, AddrMode::Implied, Op::RTI, 6);
+    set(0x41, AddrMode::IndirectX, Op::EOR, 6);
+    set(0x45, AddrMode::ZeroPage, Op::EOR, 3);
+    set(0x46, AddrMode::ZeroPage, Op::LSR, 5, FlagRmw);
+    set(0x48, AddrMode::Implied, Op::PHA, 3);
+    set(0x49, AddrMode::Immediate, Op::EOR, 2);
+    set(0x4A, AddrMode::Accumulator, Op::LSR, 2);
+    set(0x4C, AddrMode::Absolute, Op::JMP, 3);
+    set(0x4D, AddrMode::Absolute, Op::EOR, 4);
+    set(0x4E, AddrMode::Absolute, Op::LSR, 6, FlagRmw);
+    set(0x50, AddrMode::Relative, Op::Branch, 2);
+    set(0x51, AddrMode::IndirectY, Op::EOR, 5, FlagPageCrossPenalty);
+    set(0x55, AddrMode::ZeroPageX, Op::EOR, 4);
+    set(0x56, AddrMode::ZeroPageX, Op::LSR, 6, FlagRmw);
+    set(0x58, AddrMode::Implied, Op::CLI, 2);
+    set(0x59, AddrMode::AbsoluteY, Op::EOR, 4, FlagPageCrossPenalty);
+    set(0x5D, AddrMode::AbsoluteX, Op::EOR, 4, FlagPageCrossPenalty);
+    set(0x5E, AddrMode::AbsoluteX, Op::LSR, 7, FlagRmw);
+    set(0x60, AddrMode::Implied, Op::RTS, 6);
+    set(0x61, AddrMode::IndirectX, Op::ADC, 6);
+    set(0x65, AddrMode::ZeroPage, Op::ADC, 3);
+    set(0x66, AddrMode::ZeroPage, Op::ROR, 5, FlagRmw);
+    set(0x68, AddrMode::Implied, Op::PLA, 4);
+    set(0x69, AddrMode::Immediate, Op::ADC, 2);
+    set(0x6A, AddrMode::Accumulator, Op::ROR, 2);
+    set(0x6C, AddrMode::Indirect, Op::JMP, 5);
+    set(0x6D, AddrMode::Absolute, Op::ADC, 4);
+    set(0x6E, AddrMode::Absolute, Op::ROR, 6, FlagRmw);
+    set(0x70, AddrMode::Relative, Op::Branch, 2);
+    set(0x71, AddrMode::IndirectY, Op::ADC, 5, FlagPageCrossPenalty);
+    set(0x75, AddrMode::ZeroPageX, Op::ADC, 4);
+    set(0x76, AddrMode::ZeroPageX, Op::ROR, 6, FlagRmw);
+    set(0x78, AddrMode::Implied, Op::SEI, 2);
+    set(0x79, AddrMode::AbsoluteY, Op::ADC, 4, FlagPageCrossPenalty);
+    set(0x7D, AddrMode::AbsoluteX, Op::ADC, 4, FlagPageCrossPenalty);
+    set(0x7E, AddrMode::AbsoluteX, Op::ROR, 7, FlagRmw);
+    set(0x81, AddrMode::IndirectX, Op::STA, 6, FlagStore);
+    set(0x84, AddrMode::ZeroPage, Op::STY, 3, FlagStore);
+    set(0x85, AddrMode::ZeroPage, Op::STA, 3, FlagStore);
+    set(0x86, AddrMode::ZeroPage, Op::STX, 3, FlagStore);
+    set(0x88, AddrMode::Implied, Op::DEY, 2);
+    set(0x8A, AddrMode::Implied, Op::TXA, 2);
+    set(0x8C, AddrMode::Absolute, Op::STY, 4, FlagStore);
+    set(0x8D, AddrMode::Absolute, Op::STA, 4, FlagStore);
+    set(0x8E, AddrMode::Absolute, Op::STX, 4, FlagStore);
+    set(0x90, AddrMode::Relative, Op::Branch, 2);
+    set(0x91, AddrMode::IndirectY, Op::STA, 6, FlagStore);
+    set(0x94, AddrMode::ZeroPageX, Op::STY, 4, FlagStore);
+    set(0x95, AddrMode::ZeroPageX, Op::STA, 4, FlagStore);
+    set(0x96, AddrMode::ZeroPageY, Op::STX, 4, FlagStore);
+    set(0x98, AddrMode::Implied, Op::TYA, 2);
+    set(0x99, AddrMode::AbsoluteY, Op::STA, 5, FlagStore);
+    set(0x9A, AddrMode::Implied, Op::TXS, 2);
+    set(0x9D, AddrMode::AbsoluteX, Op::STA, 5, FlagStore);
+    set(0xA0, AddrMode::Immediate, Op::LDY, 2);
+    set(0xA1, AddrMode::IndirectX, Op::LDA, 6);
+    set(0xA2, AddrMode::Immediate, Op::LDX, 2);
+    set(0xA4, AddrMode::ZeroPage, Op::LDY, 3);
+    set(0xA5, AddrMode::ZeroPage, Op::LDA, 3);
+    set(0xA6, AddrMode::ZeroPage, Op::LDX, 3);
+    set(0xA8, AddrMode::Implied, Op::TAY, 2);
+    set(0xA9, AddrMode::Immediate, Op::LDA, 2);
+    set(0xAA, AddrMode::Implied, Op::TAX, 2);
+    set(0xAC, AddrMode::Absolute, Op::LDY, 4);
+    set(0xAD, AddrMode::Absolute, Op::LDA, 4);
+    set(0xAE, AddrMode::Absolute, Op::LDX, 4);
+    set(0xB0, AddrMode::Relative, Op::Branch, 2);
+    set(0xB1, AddrMode::IndirectY, Op::LDA, 5, FlagPageCrossPenalty);
+    set(0xB4, AddrMode::ZeroPageX, Op::LDY, 4);
+    set(0xB5, AddrMode::ZeroPageX, Op::LDA, 4);
+    set(0xB6, AddrMode::ZeroPageY, Op::LDX, 4);
+    set(0xB8, AddrMode::Implied, Op::CLV, 2);
+    set(0xB9, AddrMode::AbsoluteY, Op::LDA, 4, FlagPageCrossPenalty);
+    set(0xBA, AddrMode::Implied, Op::TSX, 2);
+    set(0xBC, AddrMode::AbsoluteX, Op::LDY, 4, FlagPageCrossPenalty);
+    set(0xBD, AddrMode::AbsoluteX, Op::LDA, 4, FlagPageCrossPenalty);
+    set(0xBE, AddrMode::AbsoluteY, Op::LDX, 4, FlagPageCrossPenalty);
+    set(0xC0, AddrMode::Immediate, Op::CPY, 2);
+    set(0xC1, AddrMode::IndirectX, Op::CMP, 6);
+    set(0xC4, AddrMode::ZeroPage, Op::CPY, 3);
+    set(0xC5, AddrMode::ZeroPage, Op::CMP, 3);
+    set(0xC6, AddrMode::ZeroPage, Op::DEC, 5, FlagRmw);
+    set(0xC8, AddrMode::Implied, Op::INY, 2);
+    set(0xC9, AddrMode::Immediate, Op::CMP, 2);
+    set(0xCA, AddrMode::Implied, Op::DEX, 2);
+    set(0xCC, AddrMode::Absolute, Op::CPY, 4);
+    set(0xCD, AddrMode::Absolute, Op::CMP, 4);
+    set(0xCE, AddrMode::Absolute, Op::DEC, 6, FlagRmw);
+    set(0xD0, AddrMode::Relative, Op::Branch, 2);
+    set(0xD1, AddrMode::IndirectY, Op::CMP, 5, FlagPageCrossPenalty);
+    set(0xD5, AddrMode::ZeroPageX, Op::CMP, 4);
+    set(0xD6, AddrMode::ZeroPageX, Op::DEC, 6, FlagRmw);
+    set(0xD8, AddrMode::Implied, Op::CLD, 2);
+    set(0xD9, AddrMode::AbsoluteY, Op::CMP, 4, FlagPageCrossPenalty);
+    set(0xDD, AddrMode::AbsoluteX, Op::CMP, 4, FlagPageCrossPenalty);
+    set(0xDE, AddrMode::AbsoluteX, Op::DEC, 7, FlagRmw);
+    set(0xE0, AddrMode::Immediate, Op::CPX, 2);
+    set(0xE1, AddrMode::IndirectX, Op::SBC, 6);
+    set(0xE4, AddrMode::ZeroPage, Op::CPX, 3);
+    set(0xE5, AddrMode::ZeroPage, Op::SBC, 3);
+    set(0xE6, AddrMode::ZeroPage, Op::INC, 5, FlagRmw);
+    set(0xE8, AddrMode::Implied, Op::INX, 2);
+    set(0xE9, AddrMode::Immediate, Op::SBC, 2);
+    set(0xEA, AddrMode::Implied, Op::NOP, 2);
+    set(0xEC, AddrMode::Absolute, Op::CPX, 4);
+    set(0xED, AddrMode::Absolute, Op::SBC, 4);
+    set(0xEE, AddrMode::Absolute, Op::INC, 6, FlagRmw);
+    set(0xF0, AddrMode::Relative, Op::Branch, 2);
+    set(0xF1, AddrMode::IndirectY, Op::SBC, 5, FlagPageCrossPenalty);
+    set(0xF5, AddrMode::ZeroPageX, Op::SBC, 4);
+    set(0xF6, AddrMode::ZeroPageX, Op::INC, 6, FlagRmw);
+    set(0xF8, AddrMode::Implied, Op::SED, 2);
+    set(0xF9, AddrMode::AbsoluteY, Op::SBC, 4, FlagPageCrossPenalty);
+    set(0xFD, AddrMode::AbsoluteX, Op::SBC, 4, FlagPageCrossPenalty);
+    set(0xFE, AddrMode::AbsoluteX, Op::INC, 7, FlagRmw);
+
+    return table;
+}
+
+// Plain constexpr (not __constant__) so the header stays host+device
+// compilable.
+inline constexpr DecodeTable kDecodeTable = make_decode_table();
+
+#ifdef __CUDACC__
+// nvcc does not allow device code to odr-use a host constexpr array, so an
+// identical table is materialized in device memory. constexpr implies const,
+// giving the variable internal linkage: each .cu translation unit carries its
+// own ~1 KB copy, which is harmless.
+__device__ constexpr DecodeTable kDecodeTableDevice = make_decode_table();
+#endif
+
+[[nodiscard]] NESLE_CPU_HD inline DecodeEntry decode(std::uint8_t opcode) noexcept {
+#ifdef __CUDA_ARCH__
+    return kDecodeTableDevice.entries[opcode];
+#else
+    return kDecodeTable.entries[opcode];
+#endif
+}
+
+}  // namespace detail
+
 template <typename Bus>
 NESLE_CPU_HD StepResult step(CpuState& state, Bus& bus) {
     const std::uint16_t start_pc = state.pc;
@@ -300,7 +552,7 @@ NESLE_CPU_HD StepResult step(CpuState& state, Bus& bus) {
 
     auto branch = [&](bool condition) {
         const auto offset = static_cast<std::int8_t>(fetch8());
-        cycles = 2;
+        // Base cost (2 cycles) comes from the decode table; only penalties here.
         if (condition) {
             const auto old_pc = state.pc;
             state.pc = static_cast<std::uint16_t>(state.pc + offset);
@@ -312,177 +564,166 @@ NESLE_CPU_HD StepResult step(CpuState& state, Bus& bus) {
     };
 
     const auto opcode = fetch8();
+    const DecodeEntry entry = detail::decode(opcode);
+    const bool page_penalty = (entry.flags & FlagPageCrossPenalty) != 0;
 
-    switch (opcode) {
-        case 0x00: {  // BRK
+    // Effective-address dispatch.
+    std::uint16_t addr = 0;
+    switch (entry.mode) {
+        case AddrMode::Implied:
+        case AddrMode::Accumulator:
+        case AddrMode::Relative:
+            break;
+        case AddrMode::Immediate: addr = imm(); break;
+        case AddrMode::ZeroPage: addr = zp(); break;
+        case AddrMode::ZeroPageX: addr = zpx(); break;
+        case AddrMode::ZeroPageY: addr = zpy(); break;
+        case AddrMode::Absolute: addr = abs(); break;
+        case AddrMode::AbsoluteX: addr = absx(page_penalty); break;
+        case AddrMode::AbsoluteY: addr = absy(page_penalty); break;
+        case AddrMode::IndirectX: addr = indx(); break;
+        case AddrMode::IndirectY: addr = indy(page_penalty); break;
+        case AddrMode::Indirect: addr = read16_jmp_bug(abs()); break;
+    }
+
+    // Operation dispatch.
+    switch (entry.op) {
+        case Op::LDA: load(state.a, read8(bus, addr)); break;
+        case Op::LDX: load(state.x, read8(bus, addr)); break;
+        case Op::LDY: load(state.y, read8(bus, addr)); break;
+        case Op::STA: write8(bus, addr, state.a); break;
+        case Op::STX: write8(bus, addr, state.x); break;
+        case Op::STY: write8(bus, addr, state.y); break;
+        case Op::TAX: load(state.x, state.a); break;
+        case Op::TAY: load(state.y, state.a); break;
+        case Op::TXA: load(state.a, state.x); break;
+        case Op::TYA: load(state.a, state.y); break;
+        case Op::TSX: load(state.x, state.sp); break;
+        case Op::TXS: state.sp = state.x; break;
+        case Op::PHA: push(state.a); break;
+        case Op::PHP: push(static_cast<std::uint8_t>(state.p | Break | Unused)); break;
+        case Op::PLA: state.a = pull(); set_zn(state, state.a); break;
+        case Op::PLP: state.p = static_cast<std::uint8_t>((pull() | Unused) & ~Break); break;
+        case Op::ORA: logical(read8(bus, addr), 'o'); break;
+        case Op::AND: logical(read8(bus, addr), 'a'); break;
+        case Op::EOR: logical(read8(bus, addr), 'e'); break;
+        case Op::ADC: adc(read8(bus, addr)); break;
+        case Op::SBC: sbc(read8(bus, addr)); break;
+        case Op::CMP: compare(state.a, read8(bus, addr)); break;
+        case Op::CPX: compare(state.x, read8(bus, addr)); break;
+        case Op::CPY: compare(state.y, read8(bus, addr)); break;
+        case Op::BIT: {
+            const auto v = read8(bus, addr);
+            set_flag(state, Zero, (state.a & v) == 0);
+            set_flag(state, Negative, (v & 0x80) != 0);
+            set_flag(state, Overflow, (v & 0x40) != 0);
+            break;
+        }
+        case Op::INC: {
+            const auto v = static_cast<std::uint8_t>(read8(bus, addr) + 1);
+            write8(bus, addr, v);
+            set_zn(state, v);
+            break;
+        }
+        case Op::DEC: {
+            const auto v = static_cast<std::uint8_t>(read8(bus, addr) - 1);
+            write8(bus, addr, v);
+            set_zn(state, v);
+            break;
+        }
+        case Op::INX: ++state.x; set_zn(state, state.x); break;
+        case Op::INY: ++state.y; set_zn(state, state.y); break;
+        case Op::DEX: --state.x; set_zn(state, state.x); break;
+        case Op::DEY: --state.y; set_zn(state, state.y); break;
+        case Op::ASL:
+            if (entry.mode == AddrMode::Accumulator) {
+                state.a = asl_value(state.a);
+            } else {
+                write8(bus, addr, asl_value(read8(bus, addr)));
+            }
+            break;
+        case Op::LSR:
+            if (entry.mode == AddrMode::Accumulator) {
+                state.a = lsr_value(state.a);
+            } else {
+                write8(bus, addr, lsr_value(read8(bus, addr)));
+            }
+            break;
+        case Op::ROL:
+            if (entry.mode == AddrMode::Accumulator) {
+                state.a = rol_value(state.a);
+            } else {
+                write8(bus, addr, rol_value(read8(bus, addr)));
+            }
+            break;
+        case Op::ROR:
+            if (entry.mode == AddrMode::Accumulator) {
+                state.a = ror_value(state.a);
+            } else {
+                write8(bus, addr, ror_value(read8(bus, addr)));
+            }
+            break;
+        case Op::JMP: state.pc = addr; break;
+        case Op::JSR: {
+            const auto ret = static_cast<std::uint16_t>(state.pc - 1);
+            push(static_cast<std::uint8_t>(ret >> 8));
+            push(static_cast<std::uint8_t>(ret));
+            state.pc = addr;
+            break;
+        }
+        case Op::RTS: {
+            const auto lo = pull();
+            const auto hi = pull();
+            state.pc = static_cast<std::uint16_t>((lo | (hi << 8)) + 1);
+            break;
+        }
+        case Op::RTI: {
+            state.p = static_cast<std::uint8_t>((pull() | Unused) & ~Break);
+            const auto lo = pull();
+            const auto hi = pull();
+            state.pc = static_cast<std::uint16_t>(lo | (hi << 8));
+            break;
+        }
+        case Op::BRK:
             ++state.pc;
             push(static_cast<std::uint8_t>((state.pc >> 8) & 0xFF));
             push(static_cast<std::uint8_t>(state.pc & 0xFF));
             push(static_cast<std::uint8_t>(state.p | Break | Unused));
             set_flag(state, InterruptDisable, true);
             state.pc = read16(bus, 0xFFFE);
-            cycles = 7;
+            break;
+        case Op::Branch: {
+            // Branch opcodes are xxy10000: bits 7-6 pick the flag
+            // (N, V, C, Z), bit 5 picks the value that takes the branch.
+            bool flag_value = false;
+            switch (opcode >> 6) {
+                case 0: flag_value = get_flag(state, Negative); break;
+                case 1: flag_value = get_flag(state, Overflow); break;
+                case 2: flag_value = get_flag(state, Carry); break;
+                default: flag_value = get_flag(state, Zero); break;
+            }
+            branch(flag_value == ((opcode & 0x20) != 0));
             break;
         }
-        case 0x01: logical(read8(bus, indx()), 'o'); cycles = 6; break;
-        case 0x05: logical(read8(bus, zp()), 'o'); cycles = 3; break;
-        case 0x06: { const auto a = zp(); write8(bus, a, asl_value(read8(bus, a))); cycles = 5; break; }
-        case 0x08: push(static_cast<std::uint8_t>(state.p | Break | Unused)); cycles = 3; break;
-        case 0x09: logical(read8(bus, imm()), 'o'); cycles = 2; break;
-        case 0x0A: state.a = asl_value(state.a); cycles = 2; break;
-        case 0x0D: logical(read8(bus, abs()), 'o'); cycles = 4; break;
-        case 0x0E: { const auto a = abs(); write8(bus, a, asl_value(read8(bus, a))); cycles = 6; break; }
-        case 0x10: branch(!get_flag(state, Negative)); break;
-        case 0x11: logical(read8(bus, indy(true)), 'o'); cycles += 5; break;
-        case 0x15: logical(read8(bus, zpx()), 'o'); cycles = 4; break;
-        case 0x16: { const auto a = zpx(); write8(bus, a, asl_value(read8(bus, a))); cycles = 6; break; }
-        case 0x18: set_flag(state, Carry, false); cycles = 2; break;
-        case 0x19: logical(read8(bus, absy(true)), 'o'); cycles += 4; break;
-        case 0x1D: logical(read8(bus, absx(true)), 'o'); cycles += 4; break;
-        case 0x1E: { const auto a = absx(false); write8(bus, a, asl_value(read8(bus, a))); cycles = 7; break; }
-        case 0x20: { const auto target = abs(); const auto ret = static_cast<std::uint16_t>(state.pc - 1); push(static_cast<std::uint8_t>(ret >> 8)); push(static_cast<std::uint8_t>(ret)); state.pc = target; cycles = 6; break; }
-        case 0x21: logical(read8(bus, indx()), 'a'); cycles = 6; break;
-        case 0x24: { const auto v = read8(bus, zp()); set_flag(state, Zero, (state.a & v) == 0); set_flag(state, Negative, (v & 0x80) != 0); set_flag(state, Overflow, (v & 0x40) != 0); cycles = 3; break; }
-        case 0x25: logical(read8(bus, zp()), 'a'); cycles = 3; break;
-        case 0x26: { const auto a = zp(); write8(bus, a, rol_value(read8(bus, a))); cycles = 5; break; }
-        case 0x28: state.p = static_cast<std::uint8_t>((pull() | Unused) & ~Break); cycles = 4; break;
-        case 0x29: logical(read8(bus, imm()), 'a'); cycles = 2; break;
-        case 0x2A: state.a = rol_value(state.a); cycles = 2; break;
-        case 0x2C: { const auto v = read8(bus, abs()); set_flag(state, Zero, (state.a & v) == 0); set_flag(state, Negative, (v & 0x80) != 0); set_flag(state, Overflow, (v & 0x40) != 0); cycles = 4; break; }
-        case 0x2D: logical(read8(bus, abs()), 'a'); cycles = 4; break;
-        case 0x2E: { const auto a = abs(); write8(bus, a, rol_value(read8(bus, a))); cycles = 6; break; }
-        case 0x30: branch(get_flag(state, Negative)); break;
-        case 0x31: logical(read8(bus, indy(true)), 'a'); cycles += 5; break;
-        case 0x35: logical(read8(bus, zpx()), 'a'); cycles = 4; break;
-        case 0x36: { const auto a = zpx(); write8(bus, a, rol_value(read8(bus, a))); cycles = 6; break; }
-        case 0x38: set_flag(state, Carry, true); cycles = 2; break;
-        case 0x39: logical(read8(bus, absy(true)), 'a'); cycles += 4; break;
-        case 0x3D: logical(read8(bus, absx(true)), 'a'); cycles += 4; break;
-        case 0x3E: { const auto a = absx(false); write8(bus, a, rol_value(read8(bus, a))); cycles = 7; break; }
-        case 0x40: state.p = static_cast<std::uint8_t>((pull() | Unused) & ~Break); { const auto lo = pull(); const auto hi = pull(); state.pc = static_cast<std::uint16_t>(lo | (hi << 8)); } cycles = 6; break;
-        case 0x41: logical(read8(bus, indx()), 'e'); cycles = 6; break;
-        case 0x45: logical(read8(bus, zp()), 'e'); cycles = 3; break;
-        case 0x46: { const auto a = zp(); write8(bus, a, lsr_value(read8(bus, a))); cycles = 5; break; }
-        case 0x48: push(state.a); cycles = 3; break;
-        case 0x49: logical(read8(bus, imm()), 'e'); cycles = 2; break;
-        case 0x4A: state.a = lsr_value(state.a); cycles = 2; break;
-        case 0x4C: state.pc = abs(); cycles = 3; break;
-        case 0x4D: logical(read8(bus, abs()), 'e'); cycles = 4; break;
-        case 0x4E: { const auto a = abs(); write8(bus, a, lsr_value(read8(bus, a))); cycles = 6; break; }
-        case 0x50: branch(!get_flag(state, Overflow)); break;
-        case 0x51: logical(read8(bus, indy(true)), 'e'); cycles += 5; break;
-        case 0x55: logical(read8(bus, zpx()), 'e'); cycles = 4; break;
-        case 0x56: { const auto a = zpx(); write8(bus, a, lsr_value(read8(bus, a))); cycles = 6; break; }
-        case 0x58: set_flag(state, InterruptDisable, false); cycles = 2; break;
-        case 0x59: logical(read8(bus, absy(true)), 'e'); cycles += 4; break;
-        case 0x5D: logical(read8(bus, absx(true)), 'e'); cycles += 4; break;
-        case 0x5E: { const auto a = absx(false); write8(bus, a, lsr_value(read8(bus, a))); cycles = 7; break; }
-        case 0x60: { const auto lo = pull(); const auto hi = pull(); state.pc = static_cast<std::uint16_t>((lo | (hi << 8)) + 1); cycles = 6; break; }
-        case 0x61: adc(read8(bus, indx())); cycles = 6; break;
-        case 0x65: adc(read8(bus, zp())); cycles = 3; break;
-        case 0x66: { const auto a = zp(); write8(bus, a, ror_value(read8(bus, a))); cycles = 5; break; }
-        case 0x68: state.a = pull(); set_zn(state, state.a); cycles = 4; break;
-        case 0x69: adc(read8(bus, imm())); cycles = 2; break;
-        case 0x6A: state.a = ror_value(state.a); cycles = 2; break;
-        case 0x6C: state.pc = read16_jmp_bug(abs()); cycles = 5; break;
-        case 0x6D: adc(read8(bus, abs())); cycles = 4; break;
-        case 0x6E: { const auto a = abs(); write8(bus, a, ror_value(read8(bus, a))); cycles = 6; break; }
-        case 0x70: branch(get_flag(state, Overflow)); break;
-        case 0x71: adc(read8(bus, indy(true))); cycles += 5; break;
-        case 0x75: adc(read8(bus, zpx())); cycles = 4; break;
-        case 0x76: { const auto a = zpx(); write8(bus, a, ror_value(read8(bus, a))); cycles = 6; break; }
-        case 0x78: set_flag(state, InterruptDisable, true); cycles = 2; break;
-        case 0x79: adc(read8(bus, absy(true))); cycles += 4; break;
-        case 0x7D: adc(read8(bus, absx(true))); cycles += 4; break;
-        case 0x7E: { const auto a = absx(false); write8(bus, a, ror_value(read8(bus, a))); cycles = 7; break; }
-        case 0x81: write8(bus, indx(), state.a); cycles = 6; break;
-        case 0x84: write8(bus, zp(), state.y); cycles = 3; break;
-        case 0x85: write8(bus, zp(), state.a); cycles = 3; break;
-        case 0x86: write8(bus, zp(), state.x); cycles = 3; break;
-        case 0x88: --state.y; set_zn(state, state.y); cycles = 2; break;
-        case 0x8A: load(state.a, state.x); cycles = 2; break;
-        case 0x8C: write8(bus, abs(), state.y); cycles = 4; break;
-        case 0x8D: write8(bus, abs(), state.a); cycles = 4; break;
-        case 0x8E: write8(bus, abs(), state.x); cycles = 4; break;
-        case 0x90: branch(!get_flag(state, Carry)); break;
-        case 0x91: write8(bus, indy(false), state.a); cycles = 6; break;
-        case 0x94: write8(bus, zpx(), state.y); cycles = 4; break;
-        case 0x95: write8(bus, zpx(), state.a); cycles = 4; break;
-        case 0x96: write8(bus, zpy(), state.x); cycles = 4; break;
-        case 0x98: load(state.a, state.y); cycles = 2; break;
-        case 0x99: write8(bus, absy(false), state.a); cycles = 5; break;
-        case 0x9A: state.sp = state.x; cycles = 2; break;
-        case 0x9D: write8(bus, absx(false), state.a); cycles = 5; break;
-        case 0xA0: load(state.y, read8(bus, imm())); cycles = 2; break;
-        case 0xA1: load(state.a, read8(bus, indx())); cycles = 6; break;
-        case 0xA2: load(state.x, read8(bus, imm())); cycles = 2; break;
-        case 0xA4: load(state.y, read8(bus, zp())); cycles = 3; break;
-        case 0xA5: load(state.a, read8(bus, zp())); cycles = 3; break;
-        case 0xA6: load(state.x, read8(bus, zp())); cycles = 3; break;
-        case 0xA8: load(state.y, state.a); cycles = 2; break;
-        case 0xA9: load(state.a, read8(bus, imm())); cycles = 2; break;
-        case 0xAA: load(state.x, state.a); cycles = 2; break;
-        case 0xAC: load(state.y, read8(bus, abs())); cycles = 4; break;
-        case 0xAD: load(state.a, read8(bus, abs())); cycles = 4; break;
-        case 0xAE: load(state.x, read8(bus, abs())); cycles = 4; break;
-        case 0xB0: branch(get_flag(state, Carry)); break;
-        case 0xB1: load(state.a, read8(bus, indy(true))); cycles += 5; break;
-        case 0xB4: load(state.y, read8(bus, zpx())); cycles = 4; break;
-        case 0xB5: load(state.a, read8(bus, zpx())); cycles = 4; break;
-        case 0xB6: load(state.x, read8(bus, zpy())); cycles = 4; break;
-        case 0xB8: set_flag(state, Overflow, false); cycles = 2; break;
-        case 0xB9: load(state.a, read8(bus, absy(true))); cycles += 4; break;
-        case 0xBA: load(state.x, state.sp); cycles = 2; break;
-        case 0xBC: load(state.y, read8(bus, absx(true))); cycles += 4; break;
-        case 0xBD: load(state.a, read8(bus, absx(true))); cycles += 4; break;
-        case 0xBE: load(state.x, read8(bus, absy(true))); cycles += 4; break;
-        case 0xC0: compare(state.y, read8(bus, imm())); cycles = 2; break;
-        case 0xC1: compare(state.a, read8(bus, indx())); cycles = 6; break;
-        case 0xC4: compare(state.y, read8(bus, zp())); cycles = 3; break;
-        case 0xC5: compare(state.a, read8(bus, zp())); cycles = 3; break;
-        case 0xC6: { const auto a = zp(); const auto v = static_cast<std::uint8_t>(read8(bus, a) - 1); write8(bus, a, v); set_zn(state, v); cycles = 5; break; }
-        case 0xC8: ++state.y; set_zn(state, state.y); cycles = 2; break;
-        case 0xC9: compare(state.a, read8(bus, imm())); cycles = 2; break;
-        case 0xCA: --state.x; set_zn(state, state.x); cycles = 2; break;
-        case 0xCC: compare(state.y, read8(bus, abs())); cycles = 4; break;
-        case 0xCD: compare(state.a, read8(bus, abs())); cycles = 4; break;
-        case 0xCE: { const auto a = abs(); const auto v = static_cast<std::uint8_t>(read8(bus, a) - 1); write8(bus, a, v); set_zn(state, v); cycles = 6; break; }
-        case 0xD0: branch(!get_flag(state, Zero)); break;
-        case 0xD1: compare(state.a, read8(bus, indy(true))); cycles += 5; break;
-        case 0xD5: compare(state.a, read8(bus, zpx())); cycles = 4; break;
-        case 0xD6: { const auto a = zpx(); const auto v = static_cast<std::uint8_t>(read8(bus, a) - 1); write8(bus, a, v); set_zn(state, v); cycles = 6; break; }
-        case 0xD8: set_flag(state, Decimal, false); cycles = 2; break;
-        case 0xD9: compare(state.a, read8(bus, absy(true))); cycles += 4; break;
-        case 0xDD: compare(state.a, read8(bus, absx(true))); cycles += 4; break;
-        case 0xDE: { const auto a = absx(false); const auto v = static_cast<std::uint8_t>(read8(bus, a) - 1); write8(bus, a, v); set_zn(state, v); cycles = 7; break; }
-        case 0xE0: compare(state.x, read8(bus, imm())); cycles = 2; break;
-        case 0xE1: sbc(read8(bus, indx())); cycles = 6; break;
-        case 0xE4: compare(state.x, read8(bus, zp())); cycles = 3; break;
-        case 0xE5: sbc(read8(bus, zp())); cycles = 3; break;
-        case 0xE6: { const auto a = zp(); const auto v = static_cast<std::uint8_t>(read8(bus, a) + 1); write8(bus, a, v); set_zn(state, v); cycles = 5; break; }
-        case 0xE8: ++state.x; set_zn(state, state.x); cycles = 2; break;
-        case 0xE9: sbc(read8(bus, imm())); cycles = 2; break;
-        case 0xEA: cycles = 2; break;
-        case 0xEC: compare(state.x, read8(bus, abs())); cycles = 4; break;
-        case 0xED: sbc(read8(bus, abs())); cycles = 4; break;
-        case 0xEE: { const auto a = abs(); const auto v = static_cast<std::uint8_t>(read8(bus, a) + 1); write8(bus, a, v); set_zn(state, v); cycles = 6; break; }
-        case 0xF0: branch(get_flag(state, Zero)); break;
-        case 0xF1: sbc(read8(bus, indy(true))); cycles += 5; break;
-        case 0xF5: sbc(read8(bus, zpx())); cycles = 4; break;
-        case 0xF6: { const auto a = zpx(); const auto v = static_cast<std::uint8_t>(read8(bus, a) + 1); write8(bus, a, v); set_zn(state, v); cycles = 6; break; }
-        case 0xF8: set_flag(state, Decimal, true); cycles = 2; break;
-        case 0xF9: sbc(read8(bus, absy(true))); cycles += 4; break;
-        case 0xFD: sbc(read8(bus, absx(true))); cycles += 4; break;
-        case 0xFE: { const auto a = absx(false); const auto v = static_cast<std::uint8_t>(read8(bus, a) + 1); write8(bus, a, v); set_zn(state, v); cycles = 7; break; }
+        case Op::CLC: set_flag(state, Carry, false); break;
+        case Op::SEC: set_flag(state, Carry, true); break;
+        case Op::CLI: set_flag(state, InterruptDisable, false); break;
+        case Op::SEI: set_flag(state, InterruptDisable, true); break;
+        case Op::CLV: set_flag(state, Overflow, false); break;
+        case Op::CLD: set_flag(state, Decimal, false); break;
+        case Op::SED: set_flag(state, Decimal, true); break;
+        case Op::NOP: break;
+        case Op::Illegal:
         default:
 #ifdef __CUDA_ARCH__
             asm("trap;");
-            cycles = 0;
             break;
 #else
             throw std::runtime_error("unimplemented or illegal 6502 opcode 0x" + std::to_string(opcode));
 #endif
     }
+
+    cycles = static_cast<std::uint8_t>(cycles + entry.base_cycles);
 
     state.cycles += cycles;
     return StepResult{start_pc, opcode, cycles};
