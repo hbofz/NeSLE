@@ -5,13 +5,17 @@
 #include "nesle/cuda/state.cuh"
 
 #ifdef __CUDACC__
-// __forceinline__ matters here: the per-pixel render path is a deep chain of
+// Forced inlining matters here: the per-pixel render path is a deep chain of
 // small helpers whose performance depends on full inlining. When the module
 // grew (table-driven CPU decode), nvcc's inlining heuristics backed off and
 // both render kernels slowed ~2.3x; forcing inlining restores them.
-#define NESLE_CUDA_RENDER_HD __host__ __device__ __forceinline__
+// __forceinline__ already implies `inline`, so it REPLACES the keyword — the
+// GNU-toolchain nvcc rejects the duplicate specifier that writing both causes.
+#define NESLE_CUDA_RENDER_HD __host__ __device__
+#define NESLE_CUDA_RENDER_INLINE __forceinline__
 #else
 #define NESLE_CUDA_RENDER_HD
+#define NESLE_CUDA_RENDER_INLINE inline
 #endif
 
 namespace nesle::cuda {
@@ -56,26 +60,26 @@ static __device__ __constant__ const std::uint8_t kNesPaletteRgbDevice[64 * 3] =
 };
 #endif
 
-NESLE_CUDA_RENDER_HD inline std::uint8_t* env_frame_rgb(BatchBuffers& buffers,
+NESLE_CUDA_RENDER_HD NESLE_CUDA_RENDER_INLINE std::uint8_t* env_frame_rgb(BatchBuffers& buffers,
                                                         std::uint32_t env) {
     return buffers.frames_rgb +
            static_cast<std::uint64_t>(env) * kFrameWidth * kFrameHeight * kRgbChannels;
 }
 
-NESLE_CUDA_RENDER_HD inline const std::uint8_t* env_nametable_ram(
+NESLE_CUDA_RENDER_HD NESLE_CUDA_RENDER_INLINE const std::uint8_t* env_nametable_ram(
     const BatchBuffers& buffers,
     std::uint32_t env) {
     return buffers.ppu.nametable_ram +
            static_cast<std::uint64_t>(env) * kNametableRamBytes;
 }
 
-NESLE_CUDA_RENDER_HD inline const std::uint8_t* env_palette_ram(
+NESLE_CUDA_RENDER_HD NESLE_CUDA_RENDER_INLINE const std::uint8_t* env_palette_ram(
     const BatchBuffers& buffers,
     std::uint32_t env) {
     return buffers.ppu.palette_ram + static_cast<std::uint64_t>(env) * kPaletteRamBytes;
 }
 
-NESLE_CUDA_RENDER_HD inline std::uint16_t mirror_batch_palette_address(
+NESLE_CUDA_RENDER_HD NESLE_CUDA_RENDER_INLINE std::uint16_t mirror_batch_palette_address(
     std::uint16_t address) {
     auto index = static_cast<std::uint16_t>(address & 0x001F);
     if (index == 0x10 || index == 0x14 || index == 0x18 || index == 0x1C) {
@@ -84,7 +88,7 @@ NESLE_CUDA_RENDER_HD inline std::uint16_t mirror_batch_palette_address(
     return index;
 }
 
-NESLE_CUDA_RENDER_HD inline std::uint16_t mirror_batch_nametable_address(
+NESLE_CUDA_RENDER_HD NESLE_CUDA_RENDER_INLINE std::uint16_t mirror_batch_nametable_address(
     const CartridgeView& cart,
     std::uint16_t address) {
     const auto index = static_cast<std::uint16_t>((address - 0x2000) & 0x0FFF);
@@ -97,7 +101,7 @@ NESLE_CUDA_RENDER_HD inline std::uint16_t mirror_batch_nametable_address(
     return static_cast<std::uint16_t>(index & 0x07FF);
 }
 
-NESLE_CUDA_RENDER_HD inline std::uint8_t batch_ppu_memory_read(const BatchBuffers& buffers,
+NESLE_CUDA_RENDER_HD NESLE_CUDA_RENDER_INLINE std::uint8_t batch_ppu_memory_read(const BatchBuffers& buffers,
                                                                std::uint32_t env,
                                                                std::uint16_t address) {
     address = static_cast<std::uint16_t>(address & 0x3FFF);
@@ -116,7 +120,7 @@ NESLE_CUDA_RENDER_HD inline std::uint8_t batch_ppu_memory_read(const BatchBuffer
     return env_palette_ram(buffers, env)[mirror_batch_palette_address(address)];
 }
 
-NESLE_CUDA_RENDER_HD inline std::uint8_t batch_palette_entry(const BatchBuffers& buffers,
+NESLE_CUDA_RENDER_HD NESLE_CUDA_RENDER_INLINE std::uint8_t batch_palette_entry(const BatchBuffers& buffers,
                                                              std::uint32_t env,
                                                              std::uint16_t index) {
     auto value = batch_ppu_memory_read(buffers, env, static_cast<std::uint16_t>(0x3F00 + index));
@@ -126,7 +130,7 @@ NESLE_CUDA_RENDER_HD inline std::uint8_t batch_palette_entry(const BatchBuffers&
     return static_cast<std::uint8_t>(value & 0x3F);
 }
 
-NESLE_CUDA_RENDER_HD inline void write_batch_rgb(std::uint8_t* frame,
+NESLE_CUDA_RENDER_HD NESLE_CUDA_RENDER_INLINE void write_batch_rgb(std::uint8_t* frame,
                                                  std::uint32_t pixel,
                                                  std::uint8_t palette_index) {
     const auto rgb = static_cast<std::uint16_t>((palette_index & 0x3F) * 3);
@@ -141,7 +145,7 @@ NESLE_CUDA_RENDER_HD inline void write_batch_rgb(std::uint8_t* frame,
 #endif
 }
 
-NESLE_CUDA_RENDER_HD inline std::uint8_t batch_pattern_pixel(const BatchBuffers& buffers,
+NESLE_CUDA_RENDER_HD NESLE_CUDA_RENDER_INLINE std::uint8_t batch_pattern_pixel(const BatchBuffers& buffers,
                                                              std::uint32_t env,
                                                              std::uint16_t tile_base,
                                                              std::uint8_t fine_x,
@@ -154,7 +158,7 @@ NESLE_CUDA_RENDER_HD inline std::uint8_t batch_pattern_pixel(const BatchBuffers&
     return static_cast<std::uint8_t>(((low >> bit) & 0x01) | (((high >> bit) & 0x01) << 1));
 }
 
-NESLE_CUDA_RENDER_HD inline std::uint8_t batch_background_color(const BatchBuffers& buffers,
+NESLE_CUDA_RENDER_HD NESLE_CUDA_RENDER_INLINE std::uint8_t batch_background_color(const BatchBuffers& buffers,
                                                                 std::uint32_t env,
                                                                 std::uint16_t x,
                                                                 std::uint16_t y) {
@@ -199,7 +203,7 @@ NESLE_CUDA_RENDER_HD inline std::uint8_t batch_background_color(const BatchBuffe
     return batch_palette_entry(buffers, env, static_cast<std::uint16_t>(palette * 4 + color));
 }
 
-NESLE_CUDA_RENDER_HD inline std::uint8_t batch_sprite_pattern_pixel(const BatchBuffers& buffers,
+NESLE_CUDA_RENDER_HD NESLE_CUDA_RENDER_INLINE std::uint8_t batch_sprite_pattern_pixel(const BatchBuffers& buffers,
                                                                     std::uint32_t env,
                                                                     std::uint8_t tile,
                                                                     std::uint8_t attributes,
@@ -240,7 +244,7 @@ NESLE_CUDA_RENDER_HD inline std::uint8_t batch_sprite_pattern_pixel(const BatchB
 // (SMB's status-bar scroll split). Callers without a presentation snapshot
 // pass the same buffers for all three with split_y = 0 — the original
 // live-state behavior.
-NESLE_CUDA_RENDER_HD inline void render_batch_rgb_frame_env_impl(BatchBuffers& target,
+NESLE_CUDA_RENDER_HD NESLE_CUDA_RENDER_INLINE void render_batch_rgb_frame_env_impl(BatchBuffers& target,
                                                                  BatchBuffers& hud,
                                                                  BatchBuffers& play,
                                                                  std::uint32_t env,
@@ -326,7 +330,7 @@ struct RenderEnvViews {
     int split_y;
 };
 
-NESLE_CUDA_RENDER_HD inline RenderEnvViews resolve_render_env_views(BatchBuffers& buffers,
+NESLE_CUDA_RENDER_HD NESLE_CUDA_RENDER_INLINE RenderEnvViews resolve_render_env_views(BatchBuffers& buffers,
                                                                     std::uint32_t env) {
     if (buffers.ppu.snap_nametable == nullptr) {
         // No presentation snapshot (host tests, legacy callers): render from
@@ -371,7 +375,7 @@ NESLE_CUDA_RENDER_HD inline RenderEnvViews resolve_render_env_views(BatchBuffers
 // pixel, the winner of that loop's last-drawn-wins (63 -> 0) sprite order is
 // the lowest-index sprite that is opaque and not occluded, so a 0 -> 63 scan
 // taking the first hit is equivalent.
-NESLE_CUDA_RENDER_HD inline void render_batch_rgb_pixel_env(BatchBuffers& target,
+NESLE_CUDA_RENDER_HD NESLE_CUDA_RENDER_INLINE void render_batch_rgb_pixel_env(BatchBuffers& target,
                                                             BatchBuffers& hud,
                                                             BatchBuffers& play,
                                                             std::uint32_t env,
@@ -429,7 +433,7 @@ NESLE_CUDA_RENDER_HD inline void render_batch_rgb_pixel_env(BatchBuffers& target
     write_batch_rgb(env_frame_rgb(target, env), pixel, color);
 }
 
-NESLE_CUDA_RENDER_HD inline void render_batch_rgb_frame_env(BatchBuffers& buffers,
+NESLE_CUDA_RENDER_HD NESLE_CUDA_RENDER_INLINE void render_batch_rgb_frame_env(BatchBuffers& buffers,
                                                             std::uint32_t env) {
     auto views = resolve_render_env_views(buffers, env);
     render_batch_rgb_frame_env_impl(buffers, views.hud, views.play, env, views.split_y);
