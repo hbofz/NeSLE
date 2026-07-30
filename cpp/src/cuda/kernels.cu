@@ -30,6 +30,13 @@ __global__ void console_step_kernel(BatchBuffers buffers,
     // PPU scalars stay in registers for the whole launch, like CpuState —
     // they are otherwise ~6-10 dependent global round-trips per instruction.
     auto hot = load_ppu_hot_state(buffers, env);
+    // Lazy PPU settlement: PPU scalar state only changes at three timing
+    // events (sprite-0 hit, vblank, pre-render), so instead of advancing the
+    // PPU every instruction we accumulate cycles and settle only when the
+    // accumulated span reaches the next event horizon. Between settles the
+    // register-resident PPU state the bus reads is exact by construction.
+    std::uint32_t pending_ppu_cycles = 0;
+    std::uint32_t dots_to_next_event = batch_ppu_cycles_until_next_timing_event_hot(hot);
     std::uint64_t total_instructions = 0;
     std::uint32_t total_frames_completed = 0;
     std::uint32_t budget_hits = 0;
@@ -37,7 +44,18 @@ __global__ void console_step_kernel(BatchBuffers buffers,
         std::uint64_t instructions = 0;
         std::uint32_t frames_completed = 0;
         while (instructions < max_instructions_per_frame && frames_completed == 0) {
-            const auto step = step_batch_console_instruction_hot(buffers, env, state, hot);
+            if (pending_ppu_cycles >= dots_to_next_event) {
+                const auto settled =
+                    batch_ppu_step_env_hot(buffers, env, pending_ppu_cycles, hot);
+                frames_completed += settled.frames_completed;
+                pending_ppu_cycles = 0;
+                dots_to_next_event = batch_ppu_cycles_until_next_timing_event_hot(hot);
+                if (frames_completed != 0) {
+                    break;
+                }
+            }
+            const auto step = step_batch_console_instruction_lazy(buffers, env, state, hot);
+            pending_ppu_cycles += step.ppu_cycles;
             if (stats.opcode_counts != nullptr) {
                 atomicAdd(&stats.opcode_counts[step.cpu.opcode], 1ULL);
             }
@@ -45,12 +63,24 @@ __global__ void console_step_kernel(BatchBuffers buffers,
                 atomicAdd(&stats.pc_counts[step.cpu.pc], 1ULL);
             }
             ++instructions;
-            frames_completed += step.frames_completed;
             if (step.cpu.opcode == 0x4C && state.pc == step.cpu.pc && frames_completed == 0) {
+                // Idle loop: settle what we owe, then fast-forward to the event.
+                const auto settled =
+                    batch_ppu_step_env_hot(buffers, env, pending_ppu_cycles, hot);
+                frames_completed += settled.frames_completed;
+                pending_ppu_cycles = 0;
                 const auto fast_forward =
                     fast_forward_batch_console_idle_loop_hot(buffers, env, state, hot);
                 frames_completed += fast_forward.frames_completed;
+                dots_to_next_event = batch_ppu_cycles_until_next_timing_event_hot(hot);
             }
+        }
+        // Settle the tail so frame accounting is exact at frameskip boundaries.
+        if (pending_ppu_cycles != 0) {
+            const auto settled = batch_ppu_step_env_hot(buffers, env, pending_ppu_cycles, hot);
+            frames_completed += settled.frames_completed;
+            pending_ppu_cycles = 0;
+            dots_to_next_event = batch_ppu_cycles_until_next_timing_event_hot(hot);
         }
         total_instructions += instructions;
         total_frames_completed += frames_completed;
