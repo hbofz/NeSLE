@@ -48,10 +48,13 @@ Honest list of what's broken, deferred, or unverified. Kept current as of
 
 ## Unverified claims (recorded, not reproduced on current hardware)
 
-- The A100 numbers (`docs/phase6-report.md`, README A100 table, 75M-step /
-  40-min PPO run) were recorded in May 2026 on Colab A100 hardware. They cannot
-  be re-verified on the local GTX 1050 Ti; re-run
-  `scripts/legacy/reproduce_phase6.sh` on an A100 to refresh them.
+- ~~The A100 numbers were recorded in May 2026 and not re-verified.~~
+  **Superseded 2026-07-29:** a fresh Colab A100-SXM4-80GB run of the current
+  build measured 161,430 env-steps/s at 4,096 envs (746× that VM's CPU) and a
+  peak of **699,456 env-steps/s at 65,536 envs**, with 69/69 tests green from
+  a clean clone. The May phase-6 mode-ablation numbers remain as recorded
+  (different measurement modes), but the headline throughput is now current
+  and verified.
 - The C++ tests in `tests/cpp/` are compiled ad hoc by `scripts/verify.sh`
   (POSIX) and are not wired into pytest or CI on Windows.
 
