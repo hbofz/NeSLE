@@ -34,6 +34,10 @@ class NativePPOConfig:
     max_grad_norm: float = 0.5
     hidden_size: int = 256
     reward_mode: str = "minimal"
+    # Smart-reward overrides (None keeps TorchSmartMarioReward's defaults).
+    flag_bonus: float | None = None
+    finish_zone_bonus: float | None = None
+    death_penalty: float | None = None
     seed: int = 1
     checkpoint_path: str = "nesle_native_ppo.pt"
     log_interval: int = 1
@@ -419,6 +423,12 @@ def train_native_ppo(config: NativePPOConfig, resume_from: str | None = None) ->
     rewarder = None
     if config.reward_mode == "smart":
         rewarder = TorchSmartMarioReward(config.num_envs)
+        if config.flag_bonus is not None:
+            rewarder.flag_bonus = config.flag_bonus
+        if config.finish_zone_bonus is not None:
+            rewarder.finish_zone_bonus = config.finish_zone_bonus
+        if config.death_penalty is not None:
+            rewarder.death_penalty = config.death_penalty
         rewarder.reset(obs)
     elif config.reward_mode != "minimal":
         raise ValueError(f"unknown reward mode: {config.reward_mode!r}")
@@ -656,6 +666,12 @@ def parse_args() -> tuple[NativePPOConfig, str | None]:
     parser.add_argument("--max-grad-norm", type=float, default=0.5)
     parser.add_argument("--hidden-size", type=int, default=256)
     parser.add_argument("--reward-mode", default="minimal", choices=["minimal", "smart"])
+    parser.add_argument("--flag-bonus", type=float, default=None,
+                        help="override TorchSmartMarioReward.flag_bonus (smart mode only)")
+    parser.add_argument("--finish-zone-bonus", type=float, default=None,
+                        help="override TorchSmartMarioReward.finish_zone_bonus (smart mode only)")
+    parser.add_argument("--death-penalty", type=float, default=None,
+                        help="override TorchSmartMarioReward.death_penalty (smart mode only)")
     parser.add_argument("--seed", type=int, default=1)
     parser.add_argument("--checkpoint-path", default="nesle_native_ppo.pt")
     parser.add_argument("--resume-from", default=None)
@@ -683,6 +699,9 @@ def parse_args() -> tuple[NativePPOConfig, str | None]:
         max_grad_norm=args.max_grad_norm,
         hidden_size=args.hidden_size,
         reward_mode=args.reward_mode,
+        flag_bonus=args.flag_bonus,
+        finish_zone_bonus=args.finish_zone_bonus,
+        death_penalty=args.death_penalty,
         seed=args.seed,
         checkpoint_path=args.checkpoint_path,
         log_interval=args.log_interval,
