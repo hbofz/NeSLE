@@ -5,7 +5,11 @@
 #include "nesle/cuda/state.cuh"
 
 #ifdef __CUDACC__
-#define NESLE_CUDA_RENDER_HD __host__ __device__
+// __forceinline__ matters here: the per-pixel render path is a deep chain of
+// small helpers whose performance depends on full inlining. When the module
+// grew (table-driven CPU decode), nvcc's inlining heuristics backed off and
+// both render kernels slowed ~2.3x; forcing inlining restores them.
+#define NESLE_CUDA_RENDER_HD __host__ __device__ __forceinline__
 #else
 #define NESLE_CUDA_RENDER_HD
 #endif
