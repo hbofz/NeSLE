@@ -53,8 +53,7 @@ int main() {
     std::vector<std::uint8_t> ppu_status(kNumEnvs, 0);
     std::vector<std::uint8_t> ppu_oam_addr(kNumEnvs, 0);
     std::vector<std::uint8_t> ppu_nmi_pending(kNumEnvs, 0);
-    std::vector<std::int16_t> ppu_scanline(kNumEnvs, 0);
-    std::vector<std::uint16_t> ppu_dot(kNumEnvs, 0);
+    std::vector<std::uint32_t> ppu_frame_dot(kNumEnvs, 0);
     std::vector<std::uint64_t> ppu_frame(kNumEnvs, 0);
     std::vector<std::uint16_t> ppu_v(kNumEnvs, 0);
     std::vector<std::uint16_t> ppu_t(kNumEnvs, 0);
@@ -92,8 +91,7 @@ int main() {
     buffers.ppu.status = ppu_status.data();
     buffers.ppu.oam_addr = ppu_oam_addr.data();
     buffers.ppu.nmi_pending = ppu_nmi_pending.data();
-    buffers.ppu.scanline = ppu_scanline.data();
-    buffers.ppu.dot = ppu_dot.data();
+    buffers.ppu.frame_dot = ppu_frame_dot.data();
     buffers.ppu.frame = ppu_frame.data();
     buffers.ppu.v = ppu_v.data();
     buffers.ppu.t = ppu_t.data();
@@ -119,8 +117,7 @@ int main() {
     prg_ram[3] = 0xBB;
     ppu_ctrl[0] = 0x80;
     ppu_status[0] = 0x40;
-    ppu_scanline[0] = 7;
-    ppu_dot[0] = 9;
+    ppu_frame_dot[0] = 7u * nesle::cuda::kPpuDotsPerScanline + 9u;
     ppu_frame[0] = 2;
     ppu_open_bus[0] = 0x12;
     ppu_read_buffer[0] = 0x34;
@@ -158,8 +155,7 @@ int main() {
     assert(prg_ram[3] == 0xBB);
     assert(ppu_ctrl[0] == 0x80);
     assert(ppu_status[0] == 0x40);
-    assert(ppu_scanline[0] == 7);
-    assert(ppu_dot[0] == 9);
+    assert(ppu_frame_dot[0] == 7u * nesle::cuda::kPpuDotsPerScanline + 9u);
     assert(ppu_frame[0] == 2);
     assert(ppu_open_bus[0] == 0x12);
     assert(ppu_read_buffer[0] == 0x34);

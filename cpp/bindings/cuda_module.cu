@@ -1010,8 +1010,7 @@ private:
         device_ppu_status_ = cuda_alloc<std::uint8_t>(num_env_, "cudaMalloc ppu status");
         device_ppu_oam_addr_ = cuda_alloc<std::uint8_t>(num_env_, "cudaMalloc ppu oam addr");
         device_ppu_nmi_pending_ = cuda_alloc<std::uint8_t>(num_env_, "cudaMalloc ppu nmi pending");
-        device_ppu_scanline_ = cuda_alloc<std::int16_t>(num_env_, "cudaMalloc ppu scanline");
-        device_ppu_dot_ = cuda_alloc<std::uint16_t>(num_env_, "cudaMalloc ppu dot");
+        device_ppu_frame_dot_ = cuda_alloc<std::uint32_t>(num_env_, "cudaMalloc ppu frame_dot");
         device_ppu_frame_ = cuda_alloc<std::uint64_t>(num_env_, "cudaMalloc ppu frame");
         device_ppu_v_ = cuda_alloc<std::uint16_t>(num_env_, "cudaMalloc ppu v");
         device_ppu_t_ = cuda_alloc<std::uint16_t>(num_env_, "cudaMalloc ppu t");
@@ -1089,8 +1088,7 @@ private:
         buffers_.ppu.status = device_ppu_status_;
         buffers_.ppu.oam_addr = device_ppu_oam_addr_;
         buffers_.ppu.nmi_pending = device_ppu_nmi_pending_;
-        buffers_.ppu.scanline = device_ppu_scanline_;
-        buffers_.ppu.dot = device_ppu_dot_;
+        buffers_.ppu.frame_dot = device_ppu_frame_dot_;
         buffers_.ppu.frame = device_ppu_frame_;
         buffers_.ppu.v = device_ppu_v_;
         buffers_.ppu.t = device_ppu_t_;
@@ -1148,8 +1146,7 @@ private:
         cudaFree(device_ppu_status_);
         cudaFree(device_ppu_oam_addr_);
         cudaFree(device_ppu_nmi_pending_);
-        cudaFree(device_ppu_scanline_);
-        cudaFree(device_ppu_dot_);
+        cudaFree(device_ppu_frame_dot_);
         cudaFree(device_ppu_frame_);
         cudaFree(device_ppu_v_);
         cudaFree(device_ppu_t_);
@@ -1243,8 +1240,8 @@ private:
         std::vector<float> rewards(env_count, 0.0F);
         std::vector<std::uint8_t> done(env_count, 0);
         std::vector<std::uint32_t> step_counts(env_count, 0);
-        std::vector<std::int16_t> scanline(env_count, 0);
-        std::vector<std::uint16_t> dot(env_count, 0);
+        std::vector<std::uint32_t> frame_dot(env_count, 0);
+        std::vector<std::uint16_t> words(env_count, 0);
         std::vector<std::uint64_t> frame(env_count, 0);
         std::vector<std::uint8_t> nametable(env_count * nesle::cuda::kNametableRamBytes, 0);
         std::vector<std::uint8_t> palette(env_count * nesle::cuda::kPaletteRamBytes, 0);
@@ -1276,11 +1273,10 @@ private:
         copy_to_device(device_ppu_status_, bytes, "reset ppu status");
         copy_to_device(device_ppu_oam_addr_, bytes, "reset ppu oam addr");
         copy_to_device(device_ppu_nmi_pending_, bytes, "reset ppu nmi pending");
-        copy_to_device(device_ppu_scanline_, scanline, "reset ppu scanline");
-        copy_to_device(device_ppu_dot_, dot, "reset ppu dot");
+        copy_to_device(device_ppu_frame_dot_, frame_dot, "reset ppu frame_dot");
         copy_to_device(device_ppu_frame_, frame, "reset ppu frame");
-        copy_to_device(device_ppu_v_, dot, "reset ppu v");
-        copy_to_device(device_ppu_t_, dot, "reset ppu t");
+        copy_to_device(device_ppu_v_, words, "reset ppu v");
+        copy_to_device(device_ppu_t_, words, "reset ppu t");
         copy_to_device(device_ppu_x_, bytes, "reset ppu x");
         copy_to_device(device_ppu_w_, bytes, "reset ppu w");
         copy_to_device(device_ppu_open_bus_, bytes, "reset ppu open bus");
@@ -1500,8 +1496,7 @@ private:
     std::uint8_t* device_ppu_status_ = nullptr;
     std::uint8_t* device_ppu_oam_addr_ = nullptr;
     std::uint8_t* device_ppu_nmi_pending_ = nullptr;
-    std::int16_t* device_ppu_scanline_ = nullptr;
-    std::uint16_t* device_ppu_dot_ = nullptr;
+    std::uint32_t* device_ppu_frame_dot_ = nullptr;
     std::uint64_t* device_ppu_frame_ = nullptr;
     std::uint16_t* device_ppu_v_ = nullptr;
     std::uint16_t* device_ppu_t_ = nullptr;
