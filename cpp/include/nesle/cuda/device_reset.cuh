@@ -30,8 +30,7 @@ struct DeviceResetSnapshots {
     std::uint8_t* ppu_status = nullptr;
     std::uint8_t* ppu_oam_addr = nullptr;
     std::uint8_t* ppu_nmi_pending = nullptr;
-    std::int16_t* ppu_scanline = nullptr;
-    std::uint16_t* ppu_dot = nullptr;
+    std::uint32_t* ppu_frame_dot = nullptr;
     std::uint64_t* ppu_frame = nullptr;
     std::uint16_t* ppu_v = nullptr;
     std::uint16_t* ppu_t = nullptr;
@@ -101,8 +100,7 @@ NESLE_CUDA_DEVICE_RESET_HD inline void capture_device_reset_snapshot(
     snapshots.ppu_status[slot] = buffers.ppu.status[env];
     snapshots.ppu_oam_addr[slot] = buffers.ppu.oam_addr[env];
     snapshots.ppu_nmi_pending[slot] = buffers.ppu.nmi_pending[env];
-    snapshots.ppu_scanline[slot] = buffers.ppu.scanline[env];
-    snapshots.ppu_dot[slot] = buffers.ppu.dot[env];
+    snapshots.ppu_frame_dot[slot] = buffers.ppu.frame_dot[env];
     snapshots.ppu_frame[slot] = buffers.ppu.frame[env];
     if (buffers.ppu.v != nullptr && snapshots.ppu_v != nullptr) {
         snapshots.ppu_v[slot] = buffers.ppu.v[env];
@@ -197,8 +195,7 @@ NESLE_CUDA_DEVICE_RESET_HD inline void restore_device_reset_snapshot(
     buffers.ppu.status[env] = snapshots.ppu_status[slot];
     buffers.ppu.oam_addr[env] = snapshots.ppu_oam_addr[slot];
     buffers.ppu.nmi_pending[env] = snapshots.ppu_nmi_pending[slot];
-    buffers.ppu.scanline[env] = snapshots.ppu_scanline[slot];
-    buffers.ppu.dot[env] = snapshots.ppu_dot[slot];
+    buffers.ppu.frame_dot[env] = snapshots.ppu_frame_dot[slot];
     buffers.ppu.frame[env] = snapshots.ppu_frame[slot];
     if (buffers.ppu.v != nullptr && snapshots.ppu_v != nullptr) {
         buffers.ppu.v[env] = snapshots.ppu_v[slot];
