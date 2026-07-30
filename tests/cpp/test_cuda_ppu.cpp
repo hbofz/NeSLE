@@ -12,16 +12,14 @@ nesle::cuda::BatchBuffers make_buffers(std::vector<std::uint8_t>& ctrl,
                                         std::vector<std::uint8_t>& mask,
                                         std::vector<std::uint8_t>& status,
                                         std::vector<std::uint8_t>& nmi_pending,
-                                        std::vector<std::int16_t>& scanline,
-                                        std::vector<std::uint16_t>& dot,
+                                        std::vector<std::uint32_t>& frame_dot,
                                         std::vector<std::uint64_t>& frame) {
     nesle::cuda::BatchBuffers buffers{};
     buffers.ppu.ctrl = ctrl.data();
     buffers.ppu.mask = mask.data();
     buffers.ppu.status = status.data();
     buffers.ppu.nmi_pending = nmi_pending.data();
-    buffers.ppu.scanline = scanline.data();
-    buffers.ppu.dot = dot.data();
+    buffers.ppu.frame_dot = frame_dot.data();
     buffers.ppu.frame = frame.data();
     return buffers;
 }
@@ -31,8 +29,10 @@ void assert_matches_ppu(const nesle::cuda::BatchBuffers& buffers,
                         const nesle::Ppu& ppu) {
     assert(buffers.ppu.status[env] == ppu.status());
     assert(buffers.ppu.nmi_pending[env] == static_cast<std::uint8_t>(ppu.nmi_pending()));
-    assert(buffers.ppu.scanline[env] == ppu.scanline());
-    assert(buffers.ppu.dot[env] == ppu.dot());
+    assert(buffers.ppu.frame_dot[env] ==
+           static_cast<std::uint32_t>(ppu.scanline()) *
+                   static_cast<std::uint32_t>(nesle::cuda::kPpuDotsPerScanline) +
+               static_cast<std::uint32_t>(ppu.dot()));
     assert(buffers.ppu.frame[env] == ppu.frame());
 }
 
@@ -44,10 +44,9 @@ int main() {
     std::vector<std::uint8_t> mask(kNumEnvs, 0);
     std::vector<std::uint8_t> status(kNumEnvs, 0);
     std::vector<std::uint8_t> nmi_pending(kNumEnvs, 0);
-    std::vector<std::int16_t> scanline(kNumEnvs, 0);
-    std::vector<std::uint16_t> dot(kNumEnvs, 0);
+    std::vector<std::uint32_t> frame_dot(kNumEnvs, 0);
     std::vector<std::uint64_t> frame(kNumEnvs, 0);
-    auto buffers = make_buffers(ctrl, mask, status, nmi_pending, scanline, dot, frame);
+    auto buffers = make_buffers(ctrl, mask, status, nmi_pending, frame_dot, frame);
 
     {
         nesle::Ppu ppu;

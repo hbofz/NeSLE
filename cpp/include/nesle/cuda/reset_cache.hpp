@@ -25,8 +25,7 @@ struct EnvResetSnapshot {
     std::uint8_t ppu_status = 0;
     std::uint8_t ppu_oam_addr = 0;
     std::uint8_t ppu_nmi_pending = 0;
-    std::int16_t ppu_scanline = 0;
-    std::uint16_t ppu_dot = 0;
+    std::uint32_t ppu_frame_dot = 0;
     std::uint64_t ppu_frame = 0;
     std::uint16_t ppu_v = 0;
     std::uint16_t ppu_t = 0;
@@ -71,8 +70,7 @@ struct EnvResetSnapshot {
     snapshot.ppu_status = buffers.ppu.status[env];
     snapshot.ppu_oam_addr = buffers.ppu.oam_addr[env];
     snapshot.ppu_nmi_pending = buffers.ppu.nmi_pending[env];
-    snapshot.ppu_scanline = buffers.ppu.scanline[env];
-    snapshot.ppu_dot = buffers.ppu.dot[env];
+    snapshot.ppu_frame_dot = buffers.ppu.frame_dot[env];
     snapshot.ppu_frame = buffers.ppu.frame[env];
     if (buffers.ppu.v != nullptr) {
         snapshot.ppu_v = buffers.ppu.v[env];
@@ -155,8 +153,7 @@ inline void restore_reset_snapshot(BatchBuffers& buffers,
     buffers.ppu.status[env] = snapshot.ppu_status;
     buffers.ppu.oam_addr[env] = snapshot.ppu_oam_addr;
     buffers.ppu.nmi_pending[env] = snapshot.ppu_nmi_pending;
-    buffers.ppu.scanline[env] = snapshot.ppu_scanline;
-    buffers.ppu.dot[env] = snapshot.ppu_dot;
+    buffers.ppu.frame_dot[env] = snapshot.ppu_frame_dot;
     buffers.ppu.frame[env] = snapshot.ppu_frame;
     if (buffers.ppu.v != nullptr) {
         buffers.ppu.v[env] = snapshot.ppu_v;

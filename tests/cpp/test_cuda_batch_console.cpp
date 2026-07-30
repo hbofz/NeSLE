@@ -76,10 +76,11 @@ struct BatchStorage {
     std::vector<std::uint8_t> ppu_status;
     std::vector<std::uint8_t> ppu_oam_addr;
     std::vector<std::uint8_t> ppu_nmi_pending;
-    std::vector<std::int16_t> ppu_scanline;
-    std::vector<std::uint16_t> ppu_dot;
+    std::vector<std::uint32_t> ppu_frame_dot;
     std::vector<std::uint64_t> ppu_frame;
+    std::vector<std::uint16_t> ppu_t;
     std::vector<std::uint8_t> ppu_w;
+    std::vector<std::uint8_t> ppu_open_bus;
     std::vector<std::uint8_t> ppu_oam;
     std::vector<std::uint8_t> actions;
 
@@ -102,10 +103,11 @@ struct BatchStorage {
           ppu_status(num_envs, 0),
           ppu_oam_addr(num_envs, 0),
           ppu_nmi_pending(num_envs, 0),
-          ppu_scanline(num_envs, 0),
-          ppu_dot(num_envs, 0),
+          ppu_frame_dot(num_envs, 0),
           ppu_frame(num_envs, 0),
+          ppu_t(num_envs, 0),
           ppu_w(num_envs, 0),
+          ppu_open_bus(num_envs, 0),
           ppu_oam(num_envs * nesle::cuda::kOamBytes, 0),
           actions(num_envs, 0) {}
 };
@@ -130,10 +132,11 @@ nesle::cuda::BatchBuffers make_buffers(nesle::RomImage& rom, BatchStorage& stora
     buffers.ppu.status = storage.ppu_status.data();
     buffers.ppu.oam_addr = storage.ppu_oam_addr.data();
     buffers.ppu.nmi_pending = storage.ppu_nmi_pending.data();
-    buffers.ppu.scanline = storage.ppu_scanline.data();
-    buffers.ppu.dot = storage.ppu_dot.data();
+    buffers.ppu.frame_dot = storage.ppu_frame_dot.data();
     buffers.ppu.frame = storage.ppu_frame.data();
+    buffers.ppu.t = storage.ppu_t.data();
     buffers.ppu.w = storage.ppu_w.data();
+    buffers.ppu.open_bus = storage.ppu_open_bus.data();
     buffers.ppu.oam = storage.ppu_oam.data();
     buffers.cart.prg_rom = rom.prg_rom.data();
     buffers.cart.prg_rom_size = static_cast<std::uint32_t>(rom.prg_rom.size());
@@ -185,8 +188,10 @@ int main() {
         assert(frames == 1);
         assert(storage.ram[0] == 1);
         assert(storage.ppu_frame[0] == console.ppu().frame());
-        assert(storage.ppu_scanline[0] == console.ppu().scanline());
-        assert(storage.ppu_dot[0] == console.ppu().dot());
+        assert(storage.ppu_frame_dot[0] ==
+               static_cast<std::uint32_t>(console.ppu().scanline()) *
+                       static_cast<std::uint32_t>(nesle::cuda::kPpuDotsPerScanline) +
+                   static_cast<std::uint32_t>(console.ppu().dot()));
         assert((storage.ppu_status[0] & 0x80) == (console.ppu().status() & 0x80));
         assert(storage.ppu_nmi_pending[0] == 0);
     }

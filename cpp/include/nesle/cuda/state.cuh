@@ -9,6 +9,34 @@
 #define NESLE_CUDA_STATE_HD
 #endif
 
+// Portable restrict qualifier for the SoA member pointers below. Every array
+// behind a live BatchBuffers is its own allocation (distinct cudaMalloc calls
+// in the binding, distinct std::vector/std::array storage in the host tests),
+// so no two members of one struct instance ever alias — telling the compiler
+// so lets it keep loaded values in registers across stores through sibling
+// pointers.
+//
+// The render path (batch_render.cuh, resolve_render_env_views) copies
+// BatchBuffers into shadow views whose members are repointed at the snap_*
+// arrays, so ACROSS instances the same allocation is reachable through
+// several names (e.g. play.ppu.nametable_ram == buffers.ppu.snap_nametable,
+// and hud/play share every repointed array). That is still conforming:
+// restrict (C99 6.7.3.1 semantics, which the __restrict extensions follow)
+// only constrains objects that are MODIFIED during the pointers' lifetime,
+// and rendering writes nothing but frames_rgb — a distinct allocation only
+// ever accessed through the single `target` view. Everywhere state is
+// mutated (stepping, resets, snapshot capture/restore) only one BatchBuffers
+// instance is live and its members point at pairwise-distinct allocations.
+#if defined(__CUDACC__)
+#define NESLE_RESTRICT __restrict__
+#elif defined(_MSC_VER)
+#define NESLE_RESTRICT __restrict
+#elif defined(__GNUC__) || defined(__clang__)
+#define NESLE_RESTRICT __restrict__
+#else
+#define NESLE_RESTRICT
+#endif
+
 namespace nesle::cuda {
 
 // Copy `n` bytes from `src` to `dst` (non-overlapping). On the CUDA device
@@ -73,43 +101,46 @@ constexpr std::uint8_t kNametableHorizontal = 1;
 constexpr std::uint8_t kNametableFourScreen = 2;
 
 struct CpuStateSoA {
-    std::uint16_t* pc;
-    std::uint8_t* a;
-    std::uint8_t* x;
-    std::uint8_t* y;
-    std::uint8_t* sp;
-    std::uint8_t* p;
-    std::uint64_t* cycles;
-    std::uint8_t* nmi_pending;
-    std::uint8_t* irq_pending;
-    std::uint8_t* ram;
-    std::uint8_t* prg_ram;
-    std::uint8_t* controller1_shift;
-    std::uint8_t* controller1_shift_count;
-    std::uint8_t* controller1_strobe;
-    std::uint32_t* pending_dma_cycles;
+    std::uint16_t* NESLE_RESTRICT pc;
+    std::uint8_t* NESLE_RESTRICT a;
+    std::uint8_t* NESLE_RESTRICT x;
+    std::uint8_t* NESLE_RESTRICT y;
+    std::uint8_t* NESLE_RESTRICT sp;
+    std::uint8_t* NESLE_RESTRICT p;
+    std::uint64_t* NESLE_RESTRICT cycles;
+    std::uint8_t* NESLE_RESTRICT nmi_pending;
+    std::uint8_t* NESLE_RESTRICT irq_pending;
+    std::uint8_t* NESLE_RESTRICT ram;
+    std::uint8_t* NESLE_RESTRICT prg_ram;
+    std::uint8_t* NESLE_RESTRICT controller1_shift;
+    std::uint8_t* NESLE_RESTRICT controller1_shift_count;
+    std::uint8_t* NESLE_RESTRICT controller1_strobe;
+    std::uint32_t* NESLE_RESTRICT pending_dma_cycles;
 };
 
 struct PpuStateSoA {
-    std::uint8_t* ctrl;
-    std::uint8_t* mask;
-    std::uint8_t* status;
-    std::uint8_t* oam_addr;
-    std::uint8_t* nmi_pending;
-    std::int16_t* scanline;
-    std::uint16_t* dot;
-    std::uint64_t* frame;
-    std::uint16_t* v;
-    std::uint16_t* t;
-    std::uint8_t* x;
-    std::uint8_t* w;
-    std::uint8_t* open_bus;
-    std::uint8_t* read_buffer;
-    std::uint8_t* scroll_x;
-    std::uint8_t* scroll_y;
-    std::uint8_t* nametable_ram;
-    std::uint8_t* palette_ram;
-    std::uint8_t* oam;
+    std::uint8_t* NESLE_RESTRICT ctrl;
+    std::uint8_t* NESLE_RESTRICT mask;
+    std::uint8_t* NESLE_RESTRICT status;
+    std::uint8_t* NESLE_RESTRICT oam_addr;
+    std::uint8_t* NESLE_RESTRICT nmi_pending;
+    // Merged frame position: scanline * kPpuDotsPerScanline + dot. Stored as
+    // one word so the per-launch hot-state load/store is a single 32-bit
+    // access instead of two dependent 16-bit ones (PpuHotState composes the
+    // same value in registers).
+    std::uint32_t* NESLE_RESTRICT frame_dot;
+    std::uint64_t* NESLE_RESTRICT frame;
+    std::uint16_t* NESLE_RESTRICT v;
+    std::uint16_t* NESLE_RESTRICT t;
+    std::uint8_t* NESLE_RESTRICT x;
+    std::uint8_t* NESLE_RESTRICT w;
+    std::uint8_t* NESLE_RESTRICT open_bus;
+    std::uint8_t* NESLE_RESTRICT read_buffer;
+    std::uint8_t* NESLE_RESTRICT scroll_x;
+    std::uint8_t* NESLE_RESTRICT scroll_y;
+    std::uint8_t* NESLE_RESTRICT nametable_ram;
+    std::uint8_t* NESLE_RESTRICT palette_ram;
+    std::uint8_t* NESLE_RESTRICT oam;
 
     // Presentation snapshot — frozen at each vblank start so render() sees an
     // internally consistent picture of the just-finished frame no matter where
@@ -119,19 +150,19 @@ struct PpuStateSoA {
     // them into `snap_*_start` so start/end pairs always describe one frame.
     // Two-region rendering uses `snap_*_start` above sprite-0's bottom edge
     // (SMB's status-bar split) and `snap_*_end` below it.
-    std::uint8_t* lat_scroll_x;
-    std::uint8_t* lat_scroll_y;
-    std::uint8_t* lat_ctrl;
-    std::uint8_t* snap_scroll_x_start;
-    std::uint8_t* snap_scroll_y_start;
-    std::uint8_t* snap_ctrl_start;
-    std::uint8_t* snap_scroll_x_end;
-    std::uint8_t* snap_scroll_y_end;
-    std::uint8_t* snap_ctrl_end;
-    std::uint8_t* snap_mask;
-    std::uint8_t* snap_oam;        // kOamBytes per env
-    std::uint8_t* snap_nametable;  // kNametableRamBytes per env
-    std::uint8_t* snap_palette;    // kPaletteRamBytes per env
+    std::uint8_t* NESLE_RESTRICT lat_scroll_x;
+    std::uint8_t* NESLE_RESTRICT lat_scroll_y;
+    std::uint8_t* NESLE_RESTRICT lat_ctrl;
+    std::uint8_t* NESLE_RESTRICT snap_scroll_x_start;
+    std::uint8_t* NESLE_RESTRICT snap_scroll_y_start;
+    std::uint8_t* NESLE_RESTRICT snap_ctrl_start;
+    std::uint8_t* NESLE_RESTRICT snap_scroll_x_end;
+    std::uint8_t* NESLE_RESTRICT snap_scroll_y_end;
+    std::uint8_t* NESLE_RESTRICT snap_ctrl_end;
+    std::uint8_t* NESLE_RESTRICT snap_mask;
+    std::uint8_t* NESLE_RESTRICT snap_oam;        // kOamBytes per env
+    std::uint8_t* NESLE_RESTRICT snap_nametable;  // kNametableRamBytes per env
+    std::uint8_t* NESLE_RESTRICT snap_palette;    // kPaletteRamBytes per env
 };
 
 struct CartridgeView {
@@ -163,12 +194,12 @@ struct BatchBuffers {
     CpuStateSoA cpu;
     PpuStateSoA ppu;
     CartridgeView cart;
-    std::uint8_t* action_masks;
-    std::uint8_t* done;
-    float* rewards;
-    int* previous_mario_x;
-    int* previous_mario_time;
-    std::uint8_t* frames_rgb;
+    std::uint8_t* NESLE_RESTRICT action_masks;
+    std::uint8_t* NESLE_RESTRICT done;
+    float* NESLE_RESTRICT rewards;
+    int* NESLE_RESTRICT previous_mario_x;
+    int* NESLE_RESTRICT previous_mario_time;
+    std::uint8_t* NESLE_RESTRICT frames_rgb;
 };
 
 // Read-only "bank" of N snapshot templates used by snapshot-based env resets. Each top-level
@@ -230,3 +261,4 @@ NESLE_CUDA_STATE_HD inline std::uint8_t* env_oam(BatchBuffers& buffers, std::uin
 }  // namespace nesle::cuda
 
 #undef NESLE_CUDA_STATE_HD
+#undef NESLE_RESTRICT

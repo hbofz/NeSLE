@@ -81,8 +81,7 @@ struct ConsoleTraceResult {
     std::uint32_t second_ppu_cycles = 0;
     std::uint32_t pending_dma_cycles = 0;
     std::uint64_t total_cpu_cycles = 0;
-    std::int16_t scanline = 0;
-    std::uint16_t dot = 0;
+    std::uint32_t frame_dot = 0;
     std::uint8_t oam0 = 0;
     std::uint8_t oam1 = 0;
     std::uint8_t oam255 = 0;
@@ -102,8 +101,7 @@ __global__ void console_dma_trace_kernel(nesle::cuda::BatchBuffers buffers,
     result->second_ppu_cycles = second.ppu_cycles;
     result->pending_dma_cycles = buffers.cpu.pending_dma_cycles[0];
     result->total_cpu_cycles = buffers.cpu.cycles[0];
-    result->scanline = buffers.ppu.scanline[0];
-    result->dot = buffers.ppu.dot[0];
+    result->frame_dot = buffers.ppu.frame_dot[0];
     result->oam0 = oam[0];
     result->oam1 = oam[1];
     result->oam255 = oam[255];
@@ -114,8 +112,8 @@ __global__ void console_dma_trace_kernel(nesle::cuda::BatchBuffers buffers,
                              result->second_ppu_cycles == 1551 &&
                              result->pending_dma_cycles == 0 &&
                              result->total_cpu_cycles == 526 &&
-                             result->scanline == 4 &&
-                             result->dot == 193 &&
+                             result->frame_dot ==
+                                 4u * nesle::cuda::kPpuDotsPerScanline + 193u &&
                              result->oam0 == 0xFF &&
                              result->oam1 == 0xFE &&
                              result->oam255 == 0x00
@@ -132,8 +130,7 @@ __global__ void device_reset_trace_kernel(nesle::cuda::BatchBuffers buffers,
     buffers.ppu.status[0] = 0;
     buffers.ppu.oam_addr[0] = 0;
     buffers.ppu.nmi_pending[0] = 0;
-    buffers.ppu.scanline[0] = 0;
-    buffers.ppu.dot[0] = 0;
+    buffers.ppu.frame_dot[0] = 0;
     buffers.ppu.frame[0] = 0;
 
     nesle::cuda::reset_batch_cpu_env(buffers, 0);
@@ -148,8 +145,7 @@ __global__ void device_reset_trace_kernel(nesle::cuda::BatchBuffers buffers,
     buffers.cpu.a[0] = 0x56;
     buffers.cpu.cycles[0] = 99;
     buffers.cpu.pending_dma_cycles[0] = 99;
-    buffers.ppu.scanline[0] = 99;
-    buffers.ppu.dot[0] = 99;
+    buffers.ppu.frame_dot[0] = 99;
     ram[0x0200] = 0;
     prg_ram[0] = 0x5A;
     oam[0] = 0;
@@ -160,8 +156,7 @@ __global__ void device_reset_trace_kernel(nesle::cuda::BatchBuffers buffers,
     result->pc = buffers.cpu.pc[0];
     result->pending_dma_cycles = buffers.cpu.pending_dma_cycles[0];
     result->total_cpu_cycles = buffers.cpu.cycles[0];
-    result->scanline = buffers.ppu.scanline[0];
-    result->dot = buffers.ppu.dot[0];
+    result->frame_dot = buffers.ppu.frame_dot[0];
     result->oam0 = oam[0];
     result->oam1 = oam[1];
     result->oam255 = oam[255];
@@ -169,8 +164,8 @@ __global__ void device_reset_trace_kernel(nesle::cuda::BatchBuffers buffers,
                              buffers.cpu.a[0] == 0x02 &&
                              result->pending_dma_cycles == 0 &&
                              result->total_cpu_cycles == 526 &&
-                             result->scanline == 4 &&
-                             result->dot == 193 &&
+                             result->frame_dot ==
+                                 4u * nesle::cuda::kPpuDotsPerScanline + 193u &&
                              ram[0x0200] == 0xFF &&
                              prg_ram[0] == 0 &&
                              result->oam0 == 0xFF &&
@@ -507,8 +502,7 @@ int main() {
     std::uint8_t host_console_ppu_status = 0;
     std::uint8_t host_console_oam_addr = 0;
     std::uint8_t host_console_ppu_nmi_pending = 0;
-    std::int16_t host_console_scanline = 0;
-    std::uint16_t host_console_dot = 0;
+    std::uint32_t host_console_frame_dot = 0;
     std::uint64_t host_console_frame = 0;
     ConsoleTraceResult host_console_result{};
 
@@ -529,8 +523,7 @@ int main() {
     std::uint8_t* device_console_ppu_status = nullptr;
     std::uint8_t* device_console_oam_addr = nullptr;
     std::uint8_t* device_console_ppu_nmi_pending = nullptr;
-    std::int16_t* device_console_scanline = nullptr;
-    std::uint16_t* device_console_dot = nullptr;
+    std::uint32_t* device_console_frame_dot = nullptr;
     std::uint64_t* device_console_frame = nullptr;
     ConsoleTraceResult* device_console_result = nullptr;
 
@@ -562,9 +555,8 @@ int main() {
     check(cudaMalloc(&device_console_ppu_nmi_pending,
                      sizeof(host_console_ppu_nmi_pending)),
           "cudaMalloc console ppu_nmi_pending");
-    check(cudaMalloc(&device_console_scanline, sizeof(host_console_scanline)),
-          "cudaMalloc console scanline");
-    check(cudaMalloc(&device_console_dot, sizeof(host_console_dot)), "cudaMalloc console dot");
+    check(cudaMalloc(&device_console_frame_dot, sizeof(host_console_frame_dot)),
+          "cudaMalloc console frame_dot");
     check(cudaMalloc(&device_console_frame, sizeof(host_console_frame)),
           "cudaMalloc console frame");
     check(cudaMalloc(&device_console_result, sizeof(host_console_result)),
@@ -655,16 +647,11 @@ int main() {
                      sizeof(host_console_ppu_nmi_pending),
                      cudaMemcpyHostToDevice),
           "cudaMemcpy console ppu_nmi_pending");
-    check(cudaMemcpy(device_console_scanline,
-                     &host_console_scanline,
-                     sizeof(host_console_scanline),
+    check(cudaMemcpy(device_console_frame_dot,
+                     &host_console_frame_dot,
+                     sizeof(host_console_frame_dot),
                      cudaMemcpyHostToDevice),
-          "cudaMemcpy console scanline");
-    check(cudaMemcpy(device_console_dot,
-                     &host_console_dot,
-                     sizeof(host_console_dot),
-                     cudaMemcpyHostToDevice),
-          "cudaMemcpy console dot");
+          "cudaMemcpy console frame_dot");
     check(cudaMemcpy(device_console_frame,
                      &host_console_frame,
                      sizeof(host_console_frame),
@@ -692,8 +679,7 @@ int main() {
     console_buffers.ppu.status = device_console_ppu_status;
     console_buffers.ppu.oam_addr = device_console_oam_addr;
     console_buffers.ppu.nmi_pending = device_console_ppu_nmi_pending;
-    console_buffers.ppu.scanline = device_console_scanline;
-    console_buffers.ppu.dot = device_console_dot;
+    console_buffers.ppu.frame_dot = device_console_frame_dot;
     console_buffers.ppu.frame = device_console_frame;
     console_buffers.ppu.oam = device_console_oam;
     console_buffers.cart.prg_rom = device_console_prg_rom;
@@ -715,8 +701,7 @@ int main() {
                   << host_console_result.second_cpu_cycles
                   << " ppu_cycles=" << host_console_result.first_ppu_cycles << ","
                   << host_console_result.second_ppu_cycles
-                  << " scanline=" << host_console_result.scanline
-                  << " dot=" << host_console_result.dot
+                  << " frame_dot=" << host_console_result.frame_dot
                   << " oam=" << static_cast<int>(host_console_result.oam0) << ","
                   << static_cast<int>(host_console_result.oam1) << ","
                   << static_cast<int>(host_console_result.oam255) << '\n';
@@ -730,8 +715,9 @@ int main() {
               << " oam=" << static_cast<int>(host_console_result.oam0) << ","
               << static_cast<int>(host_console_result.oam1) << ","
               << static_cast<int>(host_console_result.oam255)
-              << " ppu=" << host_console_result.scanline << ":"
-              << host_console_result.dot << '\n';
+              << " ppu=" << host_console_result.frame_dot / nesle::cuda::kPpuDotsPerScanline
+              << ":" << host_console_result.frame_dot % nesle::cuda::kPpuDotsPerScanline
+              << '\n';
 
     nesle::cuda::DeviceResetSnapshots device_snapshots{};
     std::uint16_t* device_snapshot_pc = nullptr;
@@ -747,8 +733,7 @@ int main() {
     std::uint8_t* device_snapshot_ppu_status = nullptr;
     std::uint8_t* device_snapshot_oam_addr = nullptr;
     std::uint8_t* device_snapshot_ppu_nmi_pending = nullptr;
-    std::int16_t* device_snapshot_scanline = nullptr;
-    std::uint16_t* device_snapshot_dot = nullptr;
+    std::uint32_t* device_snapshot_frame_dot = nullptr;
     std::uint64_t* device_snapshot_frame = nullptr;
     std::uint8_t* device_snapshot_ram = nullptr;
     std::uint8_t* device_snapshot_prg_ram = nullptr;
@@ -775,9 +760,8 @@ int main() {
           "cudaMalloc snapshot oam_addr");
     check(cudaMalloc(&device_snapshot_ppu_nmi_pending, sizeof(std::uint8_t)),
           "cudaMalloc snapshot ppu_nmi_pending");
-    check(cudaMalloc(&device_snapshot_scanline, sizeof(std::int16_t)),
-          "cudaMalloc snapshot scanline");
-    check(cudaMalloc(&device_snapshot_dot, sizeof(std::uint16_t)), "cudaMalloc snapshot dot");
+    check(cudaMalloc(&device_snapshot_frame_dot, sizeof(std::uint32_t)),
+          "cudaMalloc snapshot frame_dot");
     check(cudaMalloc(&device_snapshot_frame, sizeof(std::uint64_t)),
           "cudaMalloc snapshot frame");
     check(cudaMalloc(&device_snapshot_ram, nesle::cuda::kCpuRamBytes),
@@ -800,8 +784,7 @@ int main() {
     device_snapshots.ppu_status = device_snapshot_ppu_status;
     device_snapshots.ppu_oam_addr = device_snapshot_oam_addr;
     device_snapshots.ppu_nmi_pending = device_snapshot_ppu_nmi_pending;
-    device_snapshots.ppu_scanline = device_snapshot_scanline;
-    device_snapshots.ppu_dot = device_snapshot_dot;
+    device_snapshots.ppu_frame_dot = device_snapshot_frame_dot;
     device_snapshots.ppu_frame = device_snapshot_frame;
     device_snapshots.ram = device_snapshot_ram;
     device_snapshots.prg_ram = device_snapshot_prg_ram;
@@ -834,8 +817,7 @@ int main() {
     check(cudaFree(device_snapshot_ppu_status), "cudaFree snapshot ppu_status");
     check(cudaFree(device_snapshot_oam_addr), "cudaFree snapshot oam_addr");
     check(cudaFree(device_snapshot_ppu_nmi_pending), "cudaFree snapshot ppu_nmi_pending");
-    check(cudaFree(device_snapshot_scanline), "cudaFree snapshot scanline");
-    check(cudaFree(device_snapshot_dot), "cudaFree snapshot dot");
+    check(cudaFree(device_snapshot_frame_dot), "cudaFree snapshot frame_dot");
     check(cudaFree(device_snapshot_frame), "cudaFree snapshot frame");
     check(cudaFree(device_snapshot_ram), "cudaFree snapshot ram");
     check(cudaFree(device_snapshot_prg_ram), "cudaFree snapshot prg_ram");
@@ -846,7 +828,7 @@ int main() {
                   << " pc=0x" << std::hex << host_reset_result.pc << std::dec
                   << " cycles=" << host_reset_result.total_cpu_cycles
                   << " dma=" << host_reset_result.pending_dma_cycles
-                  << " ppu=" << host_reset_result.scanline << ":" << host_reset_result.dot
+                  << " frame_dot=" << host_reset_result.frame_dot
                   << " oam=" << static_cast<int>(host_reset_result.oam0) << ","
                   << static_cast<int>(host_reset_result.oam1) << ","
                   << static_cast<int>(host_reset_result.oam255) << '\n';
@@ -854,8 +836,8 @@ int main() {
     }
     std::cout << "cuda_device_reset pc=0x8005 cycles="
               << host_reset_result.total_cpu_cycles
-              << " ppu=" << host_reset_result.scanline << ":"
-              << host_reset_result.dot
+              << " ppu=" << host_reset_result.frame_dot / nesle::cuda::kPpuDotsPerScanline
+              << ":" << host_reset_result.frame_dot % nesle::cuda::kPpuDotsPerScanline
               << " oam=" << static_cast<int>(host_reset_result.oam0) << ","
               << static_cast<int>(host_reset_result.oam1) << ","
               << static_cast<int>(host_reset_result.oam255) << '\n';
@@ -877,8 +859,7 @@ int main() {
     check(cudaFree(device_console_ppu_status), "cudaFree console ppu_status");
     check(cudaFree(device_console_oam_addr), "cudaFree console oam_addr");
     check(cudaFree(device_console_ppu_nmi_pending), "cudaFree console ppu_nmi_pending");
-    check(cudaFree(device_console_scanline), "cudaFree console scanline");
-    check(cudaFree(device_console_dot), "cudaFree console dot");
+    check(cudaFree(device_console_frame_dot), "cudaFree console frame_dot");
     check(cudaFree(device_console_frame), "cudaFree console frame");
     check(cudaFree(device_console_result), "cudaFree console result");
 
@@ -894,8 +875,7 @@ int main() {
     std::uint8_t host_render_status = 0;
     std::uint8_t host_render_oam_addr = 0;
     std::uint8_t host_render_nmi_pending = 0;
-    std::int16_t host_render_scanline = 0;
-    std::uint16_t host_render_dot = 0;
+    std::uint32_t host_render_frame_dot = 0;
     std::uint64_t host_render_frame_count = 0;
 
     host_render_chr_rom[0x0010] = 0x80;
@@ -930,8 +910,7 @@ int main() {
     std::uint8_t* device_render_status = nullptr;
     std::uint8_t* device_render_oam_addr = nullptr;
     std::uint8_t* device_render_nmi_pending = nullptr;
-    std::int16_t* device_render_scanline = nullptr;
-    std::uint16_t* device_render_dot = nullptr;
+    std::uint32_t* device_render_frame_dot = nullptr;
     std::uint64_t* device_render_frame_count = nullptr;
 
     check(cudaMalloc(&device_render_chr_rom, host_render_chr_rom.size()),
@@ -950,9 +929,8 @@ int main() {
           "cudaMalloc render oam_addr");
     check(cudaMalloc(&device_render_nmi_pending, sizeof(host_render_nmi_pending)),
           "cudaMalloc render nmi_pending");
-    check(cudaMalloc(&device_render_scanline, sizeof(host_render_scanline)),
-          "cudaMalloc render scanline");
-    check(cudaMalloc(&device_render_dot, sizeof(host_render_dot)), "cudaMalloc render dot");
+    check(cudaMalloc(&device_render_frame_dot, sizeof(host_render_frame_dot)),
+          "cudaMalloc render frame_dot");
     check(cudaMalloc(&device_render_frame_count, sizeof(host_render_frame_count)),
           "cudaMalloc render frame_count");
 
@@ -1006,16 +984,11 @@ int main() {
                      sizeof(host_render_nmi_pending),
                      cudaMemcpyHostToDevice),
           "cudaMemcpy render nmi_pending");
-    check(cudaMemcpy(device_render_scanline,
-                     &host_render_scanline,
-                     sizeof(host_render_scanline),
+    check(cudaMemcpy(device_render_frame_dot,
+                     &host_render_frame_dot,
+                     sizeof(host_render_frame_dot),
                      cudaMemcpyHostToDevice),
-          "cudaMemcpy render scanline");
-    check(cudaMemcpy(device_render_dot,
-                     &host_render_dot,
-                     sizeof(host_render_dot),
-                     cudaMemcpyHostToDevice),
-          "cudaMemcpy render dot");
+          "cudaMemcpy render frame_dot");
     check(cudaMemcpy(device_render_frame_count,
                      &host_render_frame_count,
                      sizeof(host_render_frame_count),
@@ -1028,8 +1001,7 @@ int main() {
     render_buffers.ppu.status = device_render_status;
     render_buffers.ppu.oam_addr = device_render_oam_addr;
     render_buffers.ppu.nmi_pending = device_render_nmi_pending;
-    render_buffers.ppu.scanline = device_render_scanline;
-    render_buffers.ppu.dot = device_render_dot;
+    render_buffers.ppu.frame_dot = device_render_frame_dot;
     render_buffers.ppu.frame = device_render_frame_count;
     render_buffers.ppu.nametable_ram = device_render_nametable;
     render_buffers.ppu.palette_ram = device_render_palette;
@@ -1061,8 +1033,7 @@ int main() {
     check(cudaFree(device_render_status), "cudaFree render status");
     check(cudaFree(device_render_oam_addr), "cudaFree render oam_addr");
     check(cudaFree(device_render_nmi_pending), "cudaFree render nmi_pending");
-    check(cudaFree(device_render_scanline), "cudaFree render scanline");
-    check(cudaFree(device_render_dot), "cudaFree render dot");
+    check(cudaFree(device_render_frame_dot), "cudaFree render frame_dot");
     check(cudaFree(device_render_frame_count), "cudaFree render frame_count");
 
     const auto render_hash = fnv1a64(host_render_frame.data(), host_render_frame.size());
