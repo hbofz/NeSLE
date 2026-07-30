@@ -68,6 +68,46 @@ step_batch_console_instruction_hot(BatchBuffers& buffers,
     };
 }
 
+// Lazy variant: executes the CPU instruction WITHOUT advancing the PPU.
+// Returns the ppu_cycles the caller must account for. Valid only while the
+// caller guarantees no PPU timing event lies inside the un-settled span
+// (PPU scalar state — status bits, nmi_pending — changes exclusively at the
+// three timing events, so between events the register-resident snapshot the
+// bus reads is exact). See the console step kernel for the settle protocol.
+[[nodiscard]] NESLE_CUDA_BATCH_CONSOLE_HD inline BatchConsoleStepResult
+step_batch_console_instruction_lazy(BatchBuffers& buffers,
+                                    std::uint32_t env,
+                                    cpu::CpuState& state,
+                                    PpuHotState& hot) {
+    const auto cycles_before = state.cycles;
+    bool nmi_serviced = false;
+    BatchCpuBus bus(buffers, env, hot);
+
+    if (hot.nmi_pending != 0) {
+        hot.nmi_pending = 0;
+        cpu::nmi(state, bus);
+        nmi_serviced = true;
+    }
+
+    const auto cpu_step = cpu::step(state, bus);
+    if (buffers.cpu.pending_dma_cycles != nullptr && buffers.cpu.pending_dma_cycles[env] != 0) {
+        state.cycles += buffers.cpu.pending_dma_cycles[env];
+        buffers.cpu.pending_dma_cycles[env] = 0;
+    }
+
+    const auto cpu_cycles = static_cast<std::uint32_t>(state.cycles - cycles_before);
+    const auto ppu_cycles = cpu_cycles * kPpuCyclesPerCpuCycle;
+
+    return BatchConsoleStepResult{
+        cpu_step,
+        cpu_cycles,
+        ppu_cycles,
+        0,      // frames_completed: accounted at settle time by the caller
+        nmi_serviced,
+        false,  // nmi_started: likewise
+    };
+}
+
 [[nodiscard]] NESLE_CUDA_BATCH_CONSOLE_HD inline BatchConsoleStepResult
 step_batch_console_instruction(BatchBuffers& buffers,
                                std::uint32_t env,
