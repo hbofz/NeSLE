@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "nesle"
-version = "0.0.1"
+version = "0.2.0"
 description = "GPU-native NES learning environment for reinforcement learning"
 readme = "README.md"
 requires-python = ">=3.10"
