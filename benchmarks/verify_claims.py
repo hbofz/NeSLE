@@ -155,8 +155,13 @@ def nespy_baseline(venv: Path) -> dict:
     """nes-py needs an old gym/numpy combination, so it runs isolated."""
     pkgs = ["numpy<2", "gym>=0.25,<0.26", "nes-py>=8.2,<8.3",
             "gym-super-mario-bros>=7.4,<7.5"]
+    py = venv / "bin" / "python"
     try:
-        if not venv.exists():
+        if not py.exists():
+            # A failed `python -m venv` still leaves the directory behind, so
+            # test for the interpreter and clear any partial tree first.
+            if venv.exists():
+                shutil.rmtree(venv, ignore_errors=True)
             # nes-py needs an old gym/numpy pair on Python <= 3.11. Colab's
             # python3-venv ships without ensurepip, so stdlib venv exits 1
             # there; uv brings its own interpreter and sidesteps both problems.
@@ -170,7 +175,7 @@ def nespy_baseline(venv: Path) -> dict:
             else:
                 subprocess.run([str(venv / "bin" / "pip"), "install", "-q", *pkgs],
                                check=True)
-        r = sh(str(venv / "bin" / "python"), "benchmarks/nespy_baseline.py", timeout=900)
+        r = sh(str(py), "benchmarks/nespy_baseline.py", timeout=900)
         m = re.search(r"([\d,.]+)\s*env-steps/s", r.stdout)
         if m:
             return {"status": "ok", "env_steps_per_s": float(m.group(1).replace(",", ""))}
@@ -202,12 +207,13 @@ print(f"workers={N} env_steps_per_s={N*FRAMES/el/4:.1f}")
 
 def nespy_multicore(venv: Path, workers: int) -> dict:
     """The comparison a skeptical reader asks for: nes-py on every core."""
-    if not venv.exists():
+    py = venv / "bin" / "python"
+    if not py.exists():
         return {"status": "skipped", "reason": "nes-py venv unavailable"}
     try:
         script = Path("/tmp/nespy_multi.py")
         script.write_text(MULTICORE_SRC)
-        r = sh(str(venv / "bin" / "python"), str(script), str(workers), timeout=1800)
+        r = sh(str(py), str(script), str(workers), timeout=1800)
         m = re.search(r"env_steps_per_s=([\d.]+)", r.stdout)
         if m:
             return {"status": "ok", "workers": workers,
@@ -318,6 +324,25 @@ def main() -> int:
     cpu = bench_cpu_single()
     print(f"   native CPU, 1 env: {cpu['env_steps_per_s']:,.0f} env-steps/s")
 
+    state = {"environment": {"gpu": gpu, "memory_total_mib": total_mib,
+                             "device_class": dev, "python": platform.python_version(),
+                             "platform": platform.platform(),
+                             "utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())},
+             "commit": sh("git", "rev-parse", "HEAD").stdout.strip(),
+             "protocol": {"frameskip": 4, "action": "RIGHT", "warmup_steps": 30,
+                          "timed_steps": 200, "render_frame": False, "copy_obs": False},
+             "tests": tests, "correctness": correct, "cpu_single_env": cpu}
+
+    out = Path(args.out)
+
+    def save(**kw):
+        """Persist after every stage; a lost runtime should not cost a rerun."""
+        state.update(kw)
+        out.write_text(json.dumps(state, indent=2))
+
+    save()
+    print(f"   (progress saved to {out})")
+
     print("\n[4/6] GPU sweep ...")
     if args.env_counts:
         counts = [int(x) for x in args.env_counts.split(",")]
@@ -328,9 +353,11 @@ def main() -> int:
     rows = sweep(counts, cpu["env_steps_per_s"])
     crossover = next((r["num_envs"] for r in rows if r["vs_cpu"] >= 1.0), None)
     peak = max(rows, key=lambda r: r["env_steps_per_s"]) if rows else None
+    save(sweep=rows, crossover_envs=crossover, peak=peak)
 
     print("\n[5/6] memory at peak batch ...")
     memory = measure_memory(repo, peak["num_envs"]) if peak else {}
+    save(memory=memory)
     if memory:
         print(f"   {memory['attributable_mib']:,} MiB attributable "
               f"({memory['attributable_mib']/1024:.1f} GiB)")
@@ -344,20 +371,11 @@ def main() -> int:
     verdicts = report(dev, gpu, rows, tests, correct, memory, single, multi,
                       crossover, peak)
 
-    out = Path(args.out)
-    out.write_text(json.dumps({
-        "environment": {"gpu": gpu, "memory_total_mib": total_mib,
-                        "device_class": dev, "python": platform.python_version(),
-                        "platform": platform.platform(),
-                        "utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())},
-        "commit": sh("git", "rev-parse", "HEAD").stdout.strip(),
-        "protocol": {"frameskip": 4, "action": "RIGHT", "warmup_steps": 30,
-                     "timed_steps": 200, "render_frame": False, "copy_obs": False},
-        "cpu_single_env": cpu, "sweep": rows, "crossover_envs": crossover,
-        "peak": peak, "memory": memory, "tests": tests, "correctness": correct,
-        "nespy_single": single, "nespy_multicore": multi, "verdicts": verdicts,
-    }, indent=2))
+    save(nespy_single=single, nespy_multicore=multi, verdicts=verdicts)
     print(f"\nwrote {out} ({out.stat().st_size:,} bytes)")
+    print("\n----- BEGIN verification.json (copy this if the download fails) -----")
+    print(out.read_text())
+    print("----- END verification.json -----")
 
     failed = [v for v in verdicts if v["verdict"].startswith("FAIL")]
     return 1 if (failed or not tests["passed"] or not correct["passed"]) else 0
