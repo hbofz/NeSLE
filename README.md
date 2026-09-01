@@ -12,7 +12,6 @@ Super Mario Bros. reward and RAM parsing.
 [![CI](https://github.com/hbofz/NeSLE/actions/workflows/ci.yml/badge.svg)](https://github.com/hbofz/NeSLE/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/downloads/)
-[![Verify in Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/hbofz/NeSLE/blob/main/notebooks/verify_claims.ipynb)
 
 ![PPO agent trained in NeSLE clearing World 1-1](docs/assets/agent-flag-run.gif)
 
@@ -212,11 +211,6 @@ colab exec   -s nesle -f benchmarks/verify_claims.py
 colab download -s nesle /content/verification.json ./docs/data/
 colab stop -s nesle
 ```
-
-Or in a browser with
-[`notebooks/verify_claims.ipynb`](notebooks/verify_claims.ipynb)
-([one click](https://colab.research.google.com/github/hbofz/NeSLE/blob/main/notebooks/verify_claims.ipynb)),
-which is a thin wrapper over the same script.
 
 The 6502 core is gated on the Klaus functional test suite
 ([docs/cpu-validation.md](docs/cpu-validation.md)). The table-driven decoder was

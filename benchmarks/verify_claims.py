@@ -6,8 +6,8 @@ reimplementing the protocol, so results are directly comparable to the
 published tables: frameskip 4, RIGHT held, 30 warmup + 200 timed steps,
 ``render_frame=False, copy_obs=False``.
 
-Runs anywhere with a CUDA GPU. Designed to be driven either locally, from the
-Colab CLI, or from ``notebooks/verify_claims.ipynb``:
+Runs anywhere with a CUDA GPU. Drive it locally, or on a rented GPU through the
+Colab CLI:
 
     colab new -s nesle --gpu A100
     colab upload -s nesle "Super Mario Bros. (World).nes" /content/rom.nes

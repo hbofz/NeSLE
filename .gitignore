@@ -35,11 +35,8 @@ nesle_native_ppo*.pt
 .claude/
 
 # Ad-hoc Colab / training notebooks at the repo root. Root-anchored so the
-# vendored project/mario-rl-ram/notebooks/ stays tracked. Excludes contents
-# rather than the directory itself, so deliberate notebooks can be re-included
-# below (git cannot re-include a file whose parent directory is excluded).
-/notebooks/*
-!/notebooks/verify_claims.ipynb
+# vendored project/mario-rl-ram/notebooks/ stays tracked.
+/notebooks/
 
 # Ad-hoc notebooks dropped at the repo root (experiments, scratch runs).
 /*.ipynb
