@@ -257,9 +257,10 @@ Open work, roughly in increasing order of difficulty:
 
 ## Contributing
 
-Issues and pull requests are welcome. Changes to the CUDA kernel should include
-before and after output from `benchmarks/gpu_vs_cpu.py`, and the full test suite
-should pass.
+Issues and pull requests are welcome. See
+[CONTRIBUTING.md](CONTRIBUTING.md) for setup, the checks to run, and the bar for
+emulator and performance changes (kernel work needs before/after numbers from
+`benchmarks/gpu_vs_cpu.py`).
 
 [docs/gpu-scaling.md](docs/gpu-scaling.md) documents the optimization program
 including the rejected approaches and the measurements that ruled them out
