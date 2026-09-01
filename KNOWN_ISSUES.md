@@ -62,8 +62,9 @@ Honest list of what's broken, deferred, or unverified. Kept current as of
   decode and lazy PPU settlement.) The May phase-6 mode-ablation numbers remain as recorded
   (different measurement modes), but the headline throughput is now current
   and verified.
-- The C++ tests in `tests/cpp/` are compiled ad hoc by `scripts/verify.sh`
-  (POSIX) and are not wired into pytest or CI on Windows.
+- The C++ tests in `tests/cpp/` run in CI on Ubuntu (the `cpp-tests` job runs
+  `scripts/run_cpp_tests.sh`). They are not run on Windows and are not visible
+  to pytest, so a local `pytest` run does not cover them.
 
 ## Windows/WDDM training-throughput ceiling (measured 2026-07-29)
 

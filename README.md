@@ -247,12 +247,12 @@ Open work, roughly in increasing order of difficulty:
 | Task | Entry point |
 |---|---|
 | Multi-core CPU baseline for a fair comparison against a loaded CPU (measured by the verification notebook; needs folding back into the docs) | `benchmarks/nespy_baseline.py` |
-| Wire the C++ tests in `tests/cpp/` into CI | `.github/workflows/ci.yml` |
+| Run the C++ tests on Windows too, and surface them through pytest (they run on Ubuntu today) | `.github/workflows/ci.yml` |
 | Unify the POSIX and Windows build recipes into `setup.py` | `scripts/build_cuda_extension.py` |
 | **Mapper support (MMC1, MMC3).** Extends NeSLE from a Mario trainer to a general NES RL platform | `cpp/include/nesle/cuda/batch_bus.cuh` |
 | Residual renderer lag-frame artifacts | [KNOWN_ISSUES.md](KNOWN_ISSUES.md) |
 | Title-screen PPU timing bug | [KNOWN_ISSUES.md](KNOWN_ISSUES.md) |
-| State-correlation scheduling: group environments by reset state so warps share game phase. Cheap to prototype, payoff unmeasured | [docs/gpu-scaling.md](docs/gpu-scaling.md) |
+| State-correlation scheduling: multi-snapshot runs assign levels round-robin, so a 32-lane warp spans every world at once. Block assignment is a one-line change with an unmeasured payoff | `src/nesle/env.py:412` |
 | Windows WDDM throughput ceiling | [KNOWN_ISSUES.md](KNOWN_ISSUES.md) |
 
 ## Contributing
