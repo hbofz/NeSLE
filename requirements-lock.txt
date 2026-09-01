@@ -1,4 +1,4 @@
-﻿# Frozen from the tested environment (Windows 11, Python 3.14.4, GTX 1050 Ti,
+# Frozen from the tested environment (Windows 11, Python 3.14.4, GTX 1050 Ti,
 # CUDA 12.6 torch build) on 2026-07-28. torch comes from the cu126 index:
 #   pip install torch --index-url https://download.pytorch.org/whl/cu126
 # Install everything else with: pip install -r requirements-lock.txt

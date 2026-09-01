@@ -80,7 +80,8 @@ committing to long training runs on Windows.
 ## Reproducing an exact environment
 
 `requirements-lock.txt` is a frozen snapshot of a known-good environment
-(Windows 11, GTX 1050 Ti, CUDA Toolkit 12.9, recorded 2026-07-28). It is a
+(Windows 11, Python 3.14.4, GTX 1050 Ti, cu126 torch build, recorded
+2026-07-28). It is a
 reference for pinning down a version-related failure, not the normal install
 path; `pip install -e '.[dev,rl]'` above is.
 
