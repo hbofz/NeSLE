@@ -69,7 +69,8 @@ configuration on that same machine is roughly **1,370x** that baseline.
 
 The A100 figures were re-measured on 2026-09-01 from a clean clone with all 69
 tests passing and all three falsifiability checks green; every published value
-reproduced at or above its claim. Raw output: `docs/data/`.
+reproduced at or above its claim. Full run:
+[docs/data/verification-2026-09-01.md](docs/data/verification-2026-09-01.md).
 
 **Methodology note.** The `nes-py` baseline is single-process and is not a
 fully loaded multi-core CPU. Measuring it under `SubprocVecEnv` across all
