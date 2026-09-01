@@ -1,6 +1,6 @@
 include LICENSE
 include README.md
-include CLAUDE.md
+include CONTRIBUTING.md
 include setup.py
 
 # C++/CUDA extension sources and headers (needed to build from an sdist).
@@ -9,8 +9,9 @@ recursive-include cpp *.cpp *.cu *.h *.hpp *.cuh
 # Bundled FCEUX save states used for snapshot reset / curriculum.
 recursive-include docs/data *.state
 
-# Build helper scripts referenced by the docs.
-recursive-include scripts *.sh
+# Build helper scripts referenced by the docs. The .py build script is the
+# one the README tells users to run, so an sdist without it is unusable.
+recursive-include scripts *.sh *.py
 
 global-exclude *.py[cod]
 global-exclude __pycache__

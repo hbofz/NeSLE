@@ -77,6 +77,13 @@ Windows has a known training-throughput ceiling under the WDDM driver model
 that does not affect Linux. Review [KNOWN_ISSUES.md](../KNOWN_ISSUES.md) before
 committing to long training runs on Windows.
 
+## Reproducing an exact environment
+
+`requirements-lock.txt` is a frozen snapshot of a known-good environment
+(Windows 11, GTX 1050 Ti, CUDA Toolkit 12.9, recorded 2026-07-28). It is a
+reference for pinning down a version-related failure, not the normal install
+path; `pip install -e '.[dev,rl]'` above is.
+
 ## Docker
 
 `docker/cuda.Dockerfile` provides a CUDA build and test image as an alternative

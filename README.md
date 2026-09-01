@@ -295,7 +295,8 @@ examples/       Training and evaluation entry points
 benchmarks/     Throughput and correctness benchmarks
 scripts/        Build and verification scripts
 docs/           Guides, benchmark reports, bundled save states
-project/        Vendored mario-rl-ram baseline (CPU Stable-Retro stack)
+project/        Vendored mario-rl-ram baseline: the CPU Stable-Retro Mario
+                stack NeSLE's throughput is measured against
 docker/         CUDA build and test image
 ```
 
