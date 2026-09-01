@@ -8,9 +8,11 @@ design costs, what the literature says, and a ranked roadmap. Companion to
 
 One CUDA thread runs one complete NES (`cpp/src/cuda/kernels.cu:19-69`,
 128 threads/block). CPU registers are cached in hardware registers for the
-whole kernel (`load_cpu_state` once at entry). Measured throughput: ~29.5k
-env-steps/s at 4,096 envs on a GTX 1050 Ti; ~1.0M steps/s (no-copy) at 128
-envs on an A100.
+whole kernel (`load_cpu_state` once at entry). Measured throughput at the time
+this note was written: ~29.5k env-steps/s at 4,096 envs on a GTX 1050 Ti;
+~1.0M steps/s (no-copy) at 128 envs on an A100. **These are the pre-sprint
+baseline.** The Tier 0 section below walks them to 180,437 on the same card;
+current figures are in the [README](../README.md).
 
 The same design choice has published precedent: NVIDIA's **CuLE** (CUDA Atari,
 NeurIPS 2020) maps one thread to one Atari 2600 — whose 6507 CPU is nearly
@@ -21,7 +23,8 @@ way … but it makes the implementation relatively straightforward."
 ## The two costs, and which one is bigger
 
 **Divergence.** Every lane runs an env at a different program counter, so the
-~151-case opcode switch (`cpp/include/nesle/cpu.hpp:316-485`) serializes over
+151-entry decode table (`cpp/include/nesle/cpu.hpp:200-350`) and its
+50-case operation switch (`cpu.hpp:590`) serializes over
 the distinct opcodes present in each warp iteration, bus accesses take
 different range branches (`batch_bus.cuh:148-292`), and per-frame events
 (vblank snapshot copy, OAM DMA) hit lanes at different times as fully

@@ -34,23 +34,23 @@ snapshot at `docs/data/smb_level1_1.state`.
 For a shell-only Colab setup:
 
 ```bash
-git clone https://github.com/hbofz/Nesle-codex.git /content/Nesle-codex
-cd /content/Nesle-codex
+git clone https://github.com/hbofz/NeSLE.git /content/NeSLE
+cd /content/NeSLE
 python -m pip install -U pip setuptools wheel pybind11 numpy
 python -m pip install -e .
-cd /content/Nesle-codex/project/mario-rl-ram
+cd /content/NeSLE/project/mario-rl-ram
 python -m pip install -e . --no-deps
-cd /content/Nesle-codex
+cd /content/NeSLE
 NESLE_REQUIRE_CUDA=1 NESLE_CUDA_ARCH=sm_80 PYTHON=$(which python) sh scripts/build_cuda_extension.sh
 ```
 
 The benchmark CLI auto-discovers the NeSLE root when this repo is nested under
-`Nesle-codex`.  If your layout is different, pass `--nesle-root`.
+`NeSLE`.  If your layout is different, pass `--nesle-root`.
 
 ## One-Command Campaign
 
 ```bash
-cd /content/Nesle-codex/project/mario-rl-ram
+cd /content/NeSLE/project/mario-rl-ram
 mario-nesle-bench all \
   --run-correctness \
   --cuda-arch sm_80 \

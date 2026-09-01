@@ -34,9 +34,10 @@ happen inside the kernel, so one launch advances all N consoles by
   ever touching the GPU.
 - **The cost:** warp divergence. 32 consoles share a warp; when their
   instruction streams diverge (they always do), threads serialize. This is the
-  known headroom in the design — measured throughput still reaches ~30k
-  env-steps/s on a GTX 1050 Ti and ~1M steps/s (no-copy) on an A100 at just
-  128 envs, because the sheer batch width buries the inefficiency.
+  known headroom in the design, and yet measured throughput still reaches
+  180,437 env-steps/s at 4,096 envs on a GTX 1050 Ti and 3.27M env-steps/s at
+  65,536 envs on an A100, because the sheer batch width buries the
+  inefficiency.
 
 State is laid out as structure-of-arrays indexed by env id, so the frequent
 fields (registers, cycle counters, RAM) coalesce across threads.
@@ -124,14 +125,15 @@ the current code:
 
 ## The next frontier: killing the launch round-trip
 
-Every `step()` is still one kernel launch plus a Python round-trip (~3 ms of
-fixed overhead — the reason a *single* GPU env runs at only ~18 steps/s while
-4096 of them hit 29k). The natural evolution:
+Every `step()` is still one kernel launch plus a Python round-trip. That fixed
+overhead is why a *single* GPU env runs at only 82 env-steps/s while 4,096 of
+them reach 310,903 (measured 2026-09-01 on an A100; see the README). The
+natural evolution:
 
 1. **CUDA Graphs** over the step+inference sequence — cheap to try, cuts
    launch overhead.
 2. **Persistent rollout kernel** — run the entire n-step rollout inside one
    launch. With a policy as small as the RAM MLP, even inference could move
    into the kernel, making the rollout loop fully GPU-resident. At that point
-   the environment's cost per step approaches its arithmetic cost, which the
-   A100 ablation shows is ~1M steps/s territory.
+   the environment's cost per step approaches its arithmetic cost, which on an
+   A100 is measured in millions of env-steps/s.

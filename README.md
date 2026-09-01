@@ -51,9 +51,11 @@ Environment steps per second, frameskip 4 (one env-step is four NES frames):
 | A100 40 GB | 16,384 | 1,108,937 | 4,435,748 |
 | A100 40 GB | 32,768 | 2,004,806 | 8,019,223 |
 | A100 40 GB | 65,536 | **3,267,050** | **13,068,201** |
-| A100 40 GB | 131,072 | 3,055,618 | past the saturation knee |
+| A100 40 GB | 131,072 | 3,055,618 | 12,222,474 |
 
-Peak is about 13.1M NES frames/s, roughly 218,000x real time. At one
+Throughput peaks at 65,536 environments and falls off past it; 131,072 is
+beyond the saturation knee. Peak is about 13.1M NES frames/s, roughly
+218,000x real time. At one
 environment the GPU loses to a single-environment CPU emulator (0.4x), because
 per-step launch overhead dominates; it overtakes the CPU baseline by 8
 environments and then scales almost exactly linearly through 4,096, holding to
@@ -69,7 +71,7 @@ configuration on that same machine is roughly **1,370x** that baseline.
 
 These figures were re-measured on 2026-09-01 from a clean clone with all 69
 tests passing and all three falsifiability checks green. Two independent runs,
-on a 40 GB and an 80 GB A100, agreed to within 0.2% and reproduced every
+on a 40 GB and an 80 GB A100, agreed to within 0.3% and reproduced every
 previously published value at or above its claim. Raw output:
 [docs/data/verification-2026-09-01-a100.json](docs/data/verification-2026-09-01-a100.json).
 Reproduce it yourself with `benchmarks/verify_claims.py` (see below).

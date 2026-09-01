@@ -1,17 +1,17 @@
 # Known issues
 
 Honest list of what's broken, deferred, or unverified. Kept current as of
-2026-07-30 (v0.3.0).
+2026-09-01.
 
 ## Deferred bugs
 
 - **Renderer samples live PPU state mid-frame, causing transient visual
   artifacts in recordings** (found 2026-07-29 via a user report of GIF
-  flicker; game state and RAM-based training are unaffected — render-only).
+  flicker; game state and RAM-based training are unaffected (render-only).
   One root cause, three observed symptom classes, all confirmed frame-by-frame:
   1. *HUD-less wrong-scroll frames* (~⅓ of frames in a scrolling recording):
      the whole frame renders at the playfield scroll, scrolling the status bar
-     away — real SMB holds the HUD still via a mid-frame scroll change
+     away. Real SMB holds the HUD still via a mid-frame scroll change
      (sprite-0 split) that the renderer doesn't emulate.
   2. *Objects flashing in/out*: sprite (OAM) state sampled mid-update.
   3. *Future level content materializing* (e.g. a flagpole appearing
@@ -25,7 +25,7 @@ Honest list of what's broken, deferred, or unverified. Kept current as of
   scrolling run: object-pop events fell 130 → 21 (−84%), and part of the
   residue is legitimate game animation (score popups, spawns). Remaining
   honest caveat: ~14% of frames during heavy action lose the status bar for
-  one frame — these are SMB *lag frames* where the game skips its scroll
+  one frame. These are SMB *lag frames* where the game skips its scroll
   reset (real hardware glitches these frames too, our timing makes them more
   frequent); the recorder's HUD filter drops them from GIFs.
 
@@ -56,7 +56,8 @@ Honest list of what's broken, deferred, or unverified. Kept current as of
   or above its published value (4,096 to four significant figures). Also
   measured for the first time: crossover versus a single-env CPU at 8 envs, and
   ~195 KB of device memory per environment (12.2 GiB at the 65,536-env peak),
-  which confirms the previously unbacked "13 GB" figure. Raw output:
+  which confirms the rough "13 GB" figure the README asserted before this run
+  without any measurement behind it. Raw output:
   `docs/data/verification-2026-09-01-a100.json`.
   (The interim 2026-07-29 figures of 161,430 and 699,456 predate table-driven
   decode and lazy PPU settlement.) The May phase-6 mode-ablation numbers remain as recorded
@@ -69,14 +70,14 @@ Honest list of what's broken, deferred, or unverified. Kept current as of
 ## Windows/WDDM training-throughput ceiling (measured 2026-07-29)
 
 On Windows (WDDM driver model, GTX 1050 Ti), interleaving torch CUDA *kernels*
-(gather/`copy_`/sampling — memcpy-class ops are exempt) with the emulator's
+(gather/`copy_`/sampling; memcpy-class ops are exempt) with the emulator's
 step-kernel launches costs ~100–200 ms per interleaved kernel class per step,
 capping the native-PPO rollout at ~3k env-steps/s at 2048 envs even though raw
 stepping does ~25k and policy inference alone takes ~2.5 ms. Reproduce with
 `benchmarks/profile_native_ppo.py`. Measured to be independent of: sync flavor
 (device sync vs event sync vs no sync), action-tensor allocation pattern
 (fresh vs persistent), and cudart linkage (static vs shared). CUDA graphs on
-the policy forward did not help. The pathology does not appear on Linux — the
+the policy forward did not help. The pathology does not appear on Linux: the
 A100 (Colab, Linux) training run sustained ~31k env-steps/s end-to-end. If you
 train on Windows, this is the known ceiling; the suspected culprit is WDDM
 command-buffer scheduling, and the practical fix is training on Linux/WSL or a

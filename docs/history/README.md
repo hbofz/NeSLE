@@ -6,7 +6,7 @@ For the current state of the project, see:
 
 - [../training.md](../training.md) — how to actually train an SMB agent
 - [../architecture.md](../architecture.md) — current system design
-- [../phase6-report.md](../phase6-report.md) — current A100 throughput benchmark methodology and results
+- [../phase6-report.md](../phase6-report.md) — archived May 2026 A100 observation-mode ablations (1 to 128 envs); current numbers are in the root README
 - [../benchmark-gpu-vs-cpu.md](../benchmark-gpu-vs-cpu.md) — local GTX 1050 Ti validation
 
 | File | What it covers |
