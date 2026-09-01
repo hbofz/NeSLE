@@ -41,6 +41,9 @@ nesle_native_ppo*.pt
 /notebooks/*
 !/notebooks/verify_claims.ipynb
 
+# Ad-hoc notebooks dropped at the repo root (experiments, scratch runs).
+/*.ipynb
+
 # Sibling checkout of the Mario RL project at the repo root; the canonical
 # vendored copy lives at project/mario-rl-ram/.
 /mario-rl-ram/
