@@ -169,7 +169,10 @@ def nespy_baseline(venv: Path) -> dict:
                 if not shutil.which("uv"):
                     subprocess.run([sys.executable, "-m", "pip", "install", "-q", "uv"],
                                    check=True)
-                subprocess.run(["uv", "venv", "--python", "3.11", str(venv)], check=True)
+                # The failed stdlib attempt recreates the directory, so uv
+                # would otherwise stop to ask whether to replace it.
+                subprocess.run(["uv", "venv", "--clear", "--python", "3.11",
+                                str(venv)], check=True)
                 subprocess.run(["uv", "pip", "install", "--python",
                                 str(venv / "bin" / "python"), *pkgs], check=True)
             else:
