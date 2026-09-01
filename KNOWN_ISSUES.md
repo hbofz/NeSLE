@@ -1,7 +1,7 @@
 # Known issues
 
 Honest list of what's broken, deferred, or unverified. Kept current as of
-2026-07-28.
+2026-07-30 (v0.3.0).
 
 ## Deferred bugs
 
@@ -49,10 +49,15 @@ Honest list of what's broken, deferred, or unverified. Kept current as of
 ## Unverified claims (recorded, not reproduced on current hardware)
 
 - ~~The A100 numbers were recorded in May 2026 and not re-verified.~~
-  **Superseded 2026-07-29:** a fresh Colab A100-SXM4-80GB run of the current
-  build measured 161,430 env-steps/s at 4,096 envs (746× that VM's CPU) and a
-  peak of **699,456 env-steps/s at 65,536 envs**, with 69/69 tests green from
-  a clean clone. The May phase-6 mode-ablation numbers remain as recorded
+  **Resolved 2026-09-01.** Independently re-measured on a Colab
+  A100-SXM4-80GB from a clean clone: 311,770 env-steps/s at 4,096 envs and a
+  peak of **3,274,290 env-steps/s at 65,536 envs**, with 69/69 tests passing
+  and all three falsifiability checks green. Every v0.3.0 claim reproduced at
+  or above its published value (4,096 to four significant figures). Also
+  measured for the first time: crossover versus a single-env CPU at 8 envs, and
+  ~195 KB of device memory per environment (24.3 GiB at 131,072 envs).
+  (The interim 2026-07-29 figures of 161,430 and 699,456 predate table-driven
+  decode and lazy PPU settlement.) The May phase-6 mode-ablation numbers remain as recorded
   (different measurement modes), but the headline throughput is now current
   and verified.
 - The C++ tests in `tests/cpp/` are compiled ad hoc by `scripts/verify.sh`

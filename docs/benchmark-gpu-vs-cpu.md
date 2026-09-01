@@ -1,5 +1,19 @@
 # NeSLE throughput: GPU vs CPU on a GTX 1050 Ti
 
+> **Status: superseded.** The sweep below was measured before the 2026-07-29
+> optimization program (table-driven 6502 decode, register-resident PPU state,
+> lazy PPU settlement, hybrid render dispatch), which raised 4,096-env
+> throughput from 29,670 to **180,437 env-steps/s**, about 6x. The methodology,
+> hardware description, and the shape of the scaling curve remain accurate; the
+> absolute numbers, the CPU-relative multipliers, and the crossover point do
+> not. In particular the crossover below is reported at 64 envs; re-measured on
+> an A100 on 2026-09-01 it is **8 envs**, and scaling stays linear to ~8,192
+> rather than ~2,048. Current figures are in the [README](../README.md);
+> per-change measurements are in [gpu-scaling.md](gpu-scaling.md). Re-running
+> `python benchmarks/gpu_vs_cpu.py` on the 1050 Ti to regenerate this table is a
+> [tracked task](../README.md#roadmap).
+
+
 **Hardware**
 - GPU: NVIDIA GeForce GTX 1050 Ti (Pascal, sm_61, 4 GB VRAM, 2017-era)
 - Driver: 582.28 (CUDA 13.0 runtime)
