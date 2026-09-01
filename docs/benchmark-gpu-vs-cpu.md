@@ -11,7 +11,7 @@
 > rather than ~2,048. Current figures are in the [README](../README.md);
 > per-change measurements are in [gpu-scaling.md](gpu-scaling.md). Re-running
 > `python benchmarks/gpu_vs_cpu.py` on the 1050 Ti to regenerate this table is a
-> [tracked task](../README.md#roadmap).
+> [tracked task](https://github.com/hbofz/NeSLE/issues/4).
 
 
 **Hardware**

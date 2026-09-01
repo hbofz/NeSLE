@@ -77,7 +77,7 @@ Reproduce it yourself with `benchmarks/verify_claims.py` (see below).
 
 **Methodology note.** The `nes-py` baseline is single-process and is not a
 fully loaded multi-core CPU. Measuring it under `SubprocVecEnv` across all
-cores is a [tracked task](#roadmap). At training scale the PPO learner rather
+cores is [issue #2](https://github.com/hbofz/NeSLE/issues/2). At training scale the PPO learner rather
 than the emulator is the bottleneck, which is the intended outcome.
 
 Reproduce with `python benchmarks/gpu_vs_cpu.py` (about three minutes).
@@ -238,7 +238,10 @@ Detail and reproduction steps for each: [KNOWN_ISSUES.md](KNOWN_ISSUES.md).
 
 ## Contributing
 
-Issues and pull requests are welcome. See
+Issues and pull requests are welcome. The
+[open issues](https://github.com/hbofz/NeSLE/issues) are the live backlog, each
+pointing at a specific file; the largest is
+[mapper support beyond NROM](https://github.com/hbofz/NeSLE/issues/5). See
 [CONTRIBUTING.md](CONTRIBUTING.md) for setup, the checks to run, and the bar for
 emulator and performance changes (kernel work needs before/after numbers from
 `benchmarks/gpu_vs_cpu.py`).

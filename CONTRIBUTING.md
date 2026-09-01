@@ -93,8 +93,8 @@ settled ground.
 
 ## Where to start
 
-The [Roadmap](README.md#roadmap) in the README is the live backlog, ordered
-roughly by difficulty. Good entry points:
+The [open issues](https://github.com/hbofz/NeSLE/issues) are the live backlog,
+labelled by difficulty. Good entry points:
 
 - Wire the C++ tests in `tests/cpp/` into CI.
 - Unify the POSIX and Windows build recipes into `setup.py`.
