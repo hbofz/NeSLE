@@ -228,16 +228,7 @@ docker/         CUDA build/test image
 - [Headless runner](docs/headless-runner.md) — low-level ROM runner for debugging
 - [Project history](docs/history/) — archived phase-by-phase development docs
 
-## Citation
 
-```bibtex
-@misc{nesle2026,
-  author       = {Azzam, Hamzah},
-  title        = {NeSLE: a GPU-native NES emulator and reinforcement-learning environment},
-  year         = {2026},
-  howpublished = {\url{https://github.com/hbofz/NeSLE}}
-}
-```
 
 ## License and disclaimer
 
