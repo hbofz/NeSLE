@@ -187,41 +187,33 @@ def nespy_baseline(venv: Path) -> dict:
         return {"status": "failed", "error": f"{type(exc).__name__}: {exc}"}
 
 
-MULTICORE_SRC = '''
-import sys, time
-import gym_super_mario_bros
-from gym_super_mario_bros.actions import RIGHT_ONLY
-from nes_py.wrappers import JoypadSpace
-from gym.vector import AsyncVectorEnv
-
-N = int(sys.argv[1]); FRAMES = 600; RIGHT_B = 3
-mk = lambda: JoypadSpace(gym_super_mario_bros.make("SuperMarioBros-v0"), RIGHT_ONLY)
-envs = AsyncVectorEnv([mk for _ in range(N)])
-envs.reset()
-acts = [RIGHT_B] * N
-for _ in range(60): envs.step(acts)
-t0 = time.perf_counter()
-for _ in range(FRAMES): envs.step(acts)
-el = time.perf_counter() - t0
-envs.close()
-print(f"workers={N} env_steps_per_s={N*FRAMES/el/4:.1f}")
-'''
-
-
 def nespy_multicore(venv: Path, workers: int) -> dict:
-    """The comparison a skeptical reader asks for: nes-py on every core."""
+    """nes-py throughput with every core loaded.
+
+    gym 0.25's AsyncVectorEnv deepcopies its RNG, which raises
+    ``RandomNumberGenerator._generator_ctor() takes from 0 to 1 positional
+    arguments`` on numpy >= 1.25. Independent processes measure the same thing
+    (aggregate throughput under full CPU load) without touching that path, and
+    reuse the single-process benchmark verbatim.
+    """
     py = venv / "bin" / "python"
     if not py.exists():
         return {"status": "skipped", "reason": "nes-py venv unavailable"}
     try:
-        script = Path("/tmp/nespy_multi.py")
-        script.write_text(MULTICORE_SRC)
-        r = sh(str(py), str(script), str(workers), timeout=1800)
-        m = re.search(r"env_steps_per_s=([\d.]+)", r.stdout)
-        if m:
-            return {"status": "ok", "workers": workers,
-                    "env_steps_per_s": float(m.group(1))}
-        return {"status": "ran", "raw": r.stdout[-400:], "err": r.stderr[-400:]}
+        procs = [subprocess.Popen([str(py), "benchmarks/nespy_baseline.py"],
+                                  stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                                  text=True)
+                 for _ in range(workers)]
+        rates = []
+        for proc in procs:
+            out, _ = proc.communicate(timeout=1800)
+            m = re.search(r"([\d,.]+)\s*env-steps/s", out or "")
+            if m:
+                rates.append(float(m.group(1).replace(",", "")))
+        if not rates:
+            return {"status": "failed", "error": "no worker reported a rate"}
+        return {"status": "ok", "workers": workers, "workers_reporting": len(rates),
+                "env_steps_per_s": sum(rates), "per_worker": rates}
     except Exception as exc:
         return {"status": "failed", "error": f"{type(exc).__name__}: {exc}"}
 

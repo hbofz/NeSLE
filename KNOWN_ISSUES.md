@@ -55,7 +55,9 @@ Honest list of what's broken, deferred, or unverified. Kept current as of
   and all three falsifiability checks green. Every v0.3.0 claim reproduced at
   or above its published value (4,096 to four significant figures). Also
   measured for the first time: crossover versus a single-env CPU at 8 envs, and
-  ~195 KB of device memory per environment (24.3 GiB at 131,072 envs).
+  ~195 KB of device memory per environment (12.2 GiB at the 65,536-env peak),
+  which confirms the previously unbacked "13 GB" figure. Raw output:
+  `docs/data/verification-2026-09-01-a100.json`.
   (The interim 2026-07-29 figures of 161,430 and 699,456 predate table-driven
   decode and lazy PPU settlement.) The May phase-6 mode-ablation numbers remain as recorded
   (different measurement modes), but the headline throughput is now current

@@ -1,0 +1,52 @@
+{
+  "environment": {
+    "gpu": "NVIDIA A100-SXM4-40GB",
+    "memory_total_mib": 40960,
+    "device_class": "A100",
+    "python": "3.13.15",
+    "platform": "Linux-6.6.122+-x86_64-with-glibc2.35",
+    "utc": "2026-09-01T18:49:43Z"
+  },
+  "commit": "4694d98bec3df8a192397f7172ce1681ac473612",
+  "protocol": {
+    "frameskip": 4, "action": "RIGHT", "warmup_steps": 30,
+    "timed_steps": 200, "render_frame": false, "copy_obs": false
+  },
+  "tests": {"returncode": 0, "summary": "69 passed in 15.19s", "passed": true},
+  "correctness": {"returncode": 0, "passed": true},
+  "cpu_single_env": {
+    "label": "native CPU (1 env)", "num_envs": 1, "env_steps": 200,
+    "elapsed_s": 0.8908852129998195, "env_steps_per_s": 224.49581279562727,
+    "frame_steps_per_s": 897.9832511825091
+  },
+  "sweep": [
+    {"num_envs": 1, "env_steps_per_s": 82.2083640395062, "frame_steps_per_s": 328.8334561580248, "vs_cpu": 0.3661910795385109},
+    {"num_envs": 8, "env_steps_per_s": 654.908529791411, "frame_steps_per_s": 2619.634119165644, "vs_cpu": 2.917241625293099},
+    {"num_envs": 16, "env_steps_per_s": 1299.6467347357036, "frame_steps_per_s": 5198.586938942814, "vs_cpu": 5.7891802904976855},
+    {"num_envs": 32, "env_steps_per_s": 2549.7301215442017, "frame_steps_per_s": 10198.920486176807, "vs_cpu": 11.357584312119808},
+    {"num_envs": 64, "env_steps_per_s": 5032.179518180474, "frame_steps_per_s": 20128.718072721895, "vs_cpu": 22.4154716095377},
+    {"num_envs": 128, "env_steps_per_s": 9785.40681968548, "frame_steps_per_s": 39141.62727874192, "vs_cpu": 43.58837119422693},
+    {"num_envs": 256, "env_steps_per_s": 19551.798937398435, "frame_steps_per_s": 78207.19574959374, "vs_cpu": 87.09204280436924},
+    {"num_envs": 512, "env_steps_per_s": 39134.931720582674, "frame_steps_per_s": 156539.7268823307, "vs_cpu": 174.32365990812343},
+    {"num_envs": 1024, "env_steps_per_s": 77985.29846362011, "frame_steps_per_s": 311941.19385448046, "vs_cpu": 347.3797461630835},
+    {"num_envs": 2048, "env_steps_per_s": 155967.13304455022, "frame_steps_per_s": 623868.5321782009, "vs_cpu": 694.7440627168265},
+    {"num_envs": 4096, "env_steps_per_s": 310902.62367772503, "frame_steps_per_s": 1243610.4947109001, "vs_cpu": 1384.8927505866639},
+    {"num_envs": 8192, "env_steps_per_s": 616214.0468055108, "frame_steps_per_s": 2464856.187222043, "vs_cpu": 2744.8799117090407},
+    {"num_envs": 16384, "env_steps_per_s": 1108937.0748557777, "frame_steps_per_s": 4435748.299423111, "vs_cpu": 4939.678210681431},
+    {"num_envs": 32768, "env_steps_per_s": 2004805.7852410923, "frame_steps_per_s": 8019223.140964369, "vs_cpu": 8930.259145038905},
+    {"num_envs": 65536, "env_steps_per_s": 3267050.1609899625, "frame_steps_per_s": 13068200.64395985, "vs_cpu": 14552.833392773186},
+    {"num_envs": 131072, "env_steps_per_s": 3055618.4468380846, "frame_steps_per_s": 12222473.787352338, "vs_cpu": 13611.026454287623}
+  ],
+  "crossover_envs": 8,
+  "peak": {"num_envs": 65536, "env_steps_per_s": 3267050.1609899625, "frame_steps_per_s": 13068200.64395985, "vs_cpu": 14552.833392773186},
+  "memory": {"envs": 65536, "before_mib": 430, "live_mib": 12890, "after_free_mib": 430, "attributable_mib": 12460, "total_mib": 40960},
+  "nespy_single": {"status": "ok", "env_steps_per_s": 90.0},
+  "nespy_multicore": {"status": "failed", "reason": "gym 0.25 AsyncVectorEnv deepcopies its RNG; RandomNumberGenerator._generator_ctor breaks on numpy >= 1.25"},
+  "verdicts": [
+    {"envs": 4096, "claimed": 311844, "measured": 310902.62367772503, "verdict": "PASS"},
+    {"envs": 16384, "claimed": 1050710, "measured": 1108937.0748557777, "verdict": "PASS"},
+    {"envs": 32768, "claimed": 1931460, "measured": 2004805.7852410923, "verdict": "PASS"},
+    {"envs": 65536, "claimed": 3142205, "measured": 3267050.1609899625, "verdict": "PASS"},
+    {"envs": 131072, "claimed": 2816144, "measured": 3055618.4468380846, "verdict": "PASS"}
+  ]
+}

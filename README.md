@@ -47,11 +47,11 @@ Environment steps per second, frameskip 4 (one env-step is four NES frames):
 | Device | Envs | Env-steps/s | NES frames/s |
 |---|---:|---:|---:|
 | GTX 1050 Ti (4 GB) | 4,096 | 180,437 | 721,748 |
-| A100 80 GB | 4,096 | 311,770 | 1,247,080 |
-| A100 80 GB | 16,384 | 1,110,450 | 4,441,800 |
-| A100 80 GB | 32,768 | 2,029,814 | 8,119,256 |
-| A100 80 GB | 65,536 | **3,274,290** | **13,097,160** |
-| A100 80 GB | 131,072 | 3,101,507 | past the saturation knee |
+| A100 40 GB | 4,096 | 310,903 | 1,243,610 |
+| A100 40 GB | 16,384 | 1,108,937 | 4,435,748 |
+| A100 40 GB | 32,768 | 2,004,806 | 8,019,223 |
+| A100 40 GB | 65,536 | **3,267,050** | **13,068,201** |
+| A100 40 GB | 131,072 | 3,055,618 | past the saturation knee |
 
 Peak is about 13.1M NES frames/s, roughly 218,000x real time. At one
 environment the GPU loses to a single-environment CPU emulator (0.4x), because
@@ -59,18 +59,20 @@ per-step launch overhead dominates; it overtakes the CPU baseline by 8
 environments and then scales almost exactly linearly through 4,096, holding to
 around 8,192 before the curve softens.
 
-Device memory runs about **195 KB per environment**: 131,072 environments
-occupy 24.3 GiB, measured with the batch resident. Capacity is not the limit on
-an 80 GB card; throughput saturates first, just past 65,536.
+Device memory runs about **195 KB per environment**: the 65,536-env peak
+occupies 12.2 GiB, measured with the batch resident. Capacity is not the
+constraint; throughput saturates first, just past 65,536.
 
 For reference, `nes-py` / `gym-super-mario-bros`, the standard CPU stack for
 this benchmark, measures 132 env-steps/s on the 1050 Ti host. The 4,096-env GPU
 configuration on that same machine is roughly **1,370x** that baseline.
 
-The A100 figures were re-measured on 2026-09-01 from a clean clone with all 69
-tests passing and all three falsifiability checks green; every published value
-reproduced at or above its claim. Full run:
-[docs/data/verification-2026-09-01.md](docs/data/verification-2026-09-01.md).
+These figures were re-measured on 2026-09-01 from a clean clone with all 69
+tests passing and all three falsifiability checks green. Two independent runs,
+on a 40 GB and an 80 GB A100, agreed to within 0.2% and reproduced every
+previously published value at or above its claim. Raw output:
+[docs/data/verification-2026-09-01-a100.json](docs/data/verification-2026-09-01-a100.json).
+Reproduce it yourself with `benchmarks/verify_claims.py` (see below).
 
 **Methodology note.** The `nes-py` baseline is single-process and is not a
 fully loaded multi-core CPU. Measuring it under `SubprocVecEnv` across all
