@@ -91,7 +91,8 @@ def bootstrap(repo: Path, build: bool) -> None:
 
 def run_tests() -> dict:
     r = sh(sys.executable, "-m", "pytest", "tests/", "-q")
-    lines = [l for l in r.stdout.splitlines() if " passed" in l or " failed" in l]
+    lines = [ln for ln in r.stdout.splitlines()
+             if " passed" in ln or " failed" in ln]
     return {"returncode": r.returncode,
             "summary": lines[-1].strip() if lines else "no summary",
             "passed": r.returncode == 0}
@@ -133,7 +134,8 @@ def measure_memory(repo: Path, envs: int) -> dict:
     rom = (repo / ROM_NAME).read_bytes()
     state = gzip.decompress((repo / "docs/data/smb_level1_1.state").read_bytes())
 
-    gc.collect(); time.sleep(2)
+    gc.collect()
+    time.sleep(2)
     before = mem_used_mib()
 
     batch = CudaBatch(envs, 4, rom, state)
@@ -144,7 +146,8 @@ def measure_memory(repo: Path, envs: int) -> dict:
     live = mem_used_mib()          # batch is still alive here
 
     del batch, acts
-    gc.collect(); time.sleep(2)
+    gc.collect()
+    time.sleep(2)
 
     return {"envs": envs, "before_mib": before, "live_mib": live,
             "after_free_mib": mem_used_mib(), "attributable_mib": live - before,
@@ -240,7 +243,7 @@ def report(dev: str, gpu: str, rows: list[dict], tests: dict, correct: dict,
             print(f"{envs:>9,} {claimed:>14,} "
                   f"{(f'{got:,.0f}' if got else '-'):>14} {ratio:>8}  {verdict}")
     else:
-        print(f"No published claim set for this GPU. Sweep recorded, not checked.")
+        print("No published claim set for this GPU. Sweep recorded, not checked.")
 
     print("\n--- other claims ---")
     print(f"test suite            : {tests['summary']}")
@@ -309,10 +312,12 @@ def main() -> int:
     importlib.invalidate_caches()
 
     print("\n[1/6] test suite ...")
-    tests = run_tests(); print("  ", tests["summary"])
+    tests = run_tests()
+    print("  ", tests["summary"])
 
     print("\n[2/6] falsifiability checks ...")
-    correct = run_correctness(); print("  ", "PASS" if correct["passed"] else "FAIL")
+    correct = run_correctness()
+    print("  ", "PASS" if correct["passed"] else "FAIL")
 
     print("\n[3/6] CPU baseline ...")
     from benchmarks.gpu_vs_cpu import bench_cpu_single
