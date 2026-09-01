@@ -249,15 +249,15 @@ issue, so pick one and comment on it.
 
 | Issue | Task | Entry point |
 |---|---|---|
-| [#3](https://github.com/hbofz/NeSLE/issues/3) | Multi-core CPU baseline, so the speedup is measured against a loaded CPU rather than one core | `benchmarks/nespy_baseline.py` |
-| [#2](https://github.com/hbofz/NeSLE/issues/2) | Run the C++ tests on Windows and surface them through pytest (Ubuntu-only today) | `.github/workflows/ci.yml` |
-| [#5](https://github.com/hbofz/NeSLE/issues/5) | Regenerate the 1050 Ti benchmark table, which predates the optimization program | `benchmarks/gpu_vs_cpu.py` |
-| [#4](https://github.com/hbofz/NeSLE/issues/4) | Fold the CUDA extension build into `setup.py`, so one `pip install -e .` is enough | `scripts/build_cuda_extension.py` |
-| [#9](https://github.com/hbofz/NeSLE/issues/9) | State-correlation scheduling: levels are assigned round-robin, so a 32-lane warp spans every world at once | `src/nesle/env.py:412` |
-| [#7](https://github.com/hbofz/NeSLE/issues/7) | Renderer lag frames still drop the status bar on ~14% of heavy-action frames | `cpp/include/nesle/cuda/batch_render.cuh` |
-| [#10](https://github.com/hbofz/NeSLE/issues/10) | Windows WDDM caps native PPO at ~3k env-steps/s; Linux is unaffected | `benchmarks/profile_native_ppo.py` |
-| [#8](https://github.com/hbofz/NeSLE/issues/8) | Title screen to gameplay transition stalls on PPU timing (bypassed by snapshot reset) | `cpp/include/nesle/cuda/batch_ppu.cuh` |
-| [#6](https://github.com/hbofz/NeSLE/issues/6) | **Mapper support (MMC1, MMC3).** The big one: takes NeSLE from a Mario trainer to a general NES RL platform | `cpp/include/nesle/cuda/batch_bus.cuh` |
+| [#2](https://github.com/hbofz/NeSLE/issues/2) | Multi-core CPU baseline, so the speedup is measured against a loaded CPU rather than one core | `benchmarks/nespy_baseline.py` |
+| [#1](https://github.com/hbofz/NeSLE/issues/1) | Run the C++ tests on Windows and surface them through pytest (Ubuntu-only today) | `.github/workflows/ci.yml` |
+| [#4](https://github.com/hbofz/NeSLE/issues/4) | Regenerate the 1050 Ti benchmark table, which predates the optimization program | `benchmarks/gpu_vs_cpu.py` |
+| [#3](https://github.com/hbofz/NeSLE/issues/3) | Fold the CUDA extension build into `setup.py`, so one `pip install -e .` is enough | `scripts/build_cuda_extension.py` |
+| [#8](https://github.com/hbofz/NeSLE/issues/8) | State-correlation scheduling: levels are assigned round-robin, so a 32-lane warp spans every world at once | `src/nesle/env.py:412` |
+| [#6](https://github.com/hbofz/NeSLE/issues/6) | Renderer lag frames still drop the status bar on ~14% of heavy-action frames | `cpp/include/nesle/cuda/batch_render.cuh` |
+| [#9](https://github.com/hbofz/NeSLE/issues/9) | Windows WDDM caps native PPO at ~3k env-steps/s; Linux is unaffected | `benchmarks/profile_native_ppo.py` |
+| [#7](https://github.com/hbofz/NeSLE/issues/7) | Title screen to gameplay transition stalls on PPU timing (bypassed by snapshot reset) | `cpp/include/nesle/cuda/batch_ppu.cuh` |
+| [#5](https://github.com/hbofz/NeSLE/issues/5) | **Mapper support (MMC1, MMC3).** The big one: takes NeSLE from a Mario trainer to a general NES RL platform | `cpp/include/nesle/cuda/batch_bus.cuh` |
 
 ## Contributing
 
