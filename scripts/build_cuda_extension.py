@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import glob
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -39,24 +40,60 @@ def _skip(message: str) -> "int":
     return 1 if os.environ.get("NESLE_REQUIRE_CUDA") == "1" else 0
 
 
+def _nvcc_release_major(nvcc: str) -> int:
+    """Major version of a toolkit's nvcc, or 0 when it cannot be probed."""
+    try:
+        out = subprocess.run(
+            [nvcc, "--version"], capture_output=True, text=True, check=True
+        ).stdout
+    except (subprocess.CalledProcessError, OSError):
+        return 0
+    match = re.search(r"release (\d+)\.", out)
+    return int(match.group(1)) if match else 0
+
+
+def _discover_nvcc() -> list[str]:
+    patterns = [
+        r"C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v*\bin\nvcc.exe",
+        r"C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v1*\bin\nvcc.exe",
+        r"D:\Dev\CUDA\*\bin\nvcc.exe",
+        "/usr/local/cuda/bin/nvcc",
+        "/usr/local/cuda-12*/bin/nvcc",
+    ]
+    found: list[str] = []
+    for pattern in patterns:
+        found.extend(sorted(glob.glob(pattern)))
+    # Newest toolkit first, so a stale CUDA earlier on PATH cannot win.
+    return sorted(set(found), key=_nvcc_release_major, reverse=True)
+
+
 def find_nvcc() -> str | None:
+    """First usable nvcc, preferring a toolkit new enough for -std=c++20.
+
+    PATH usually wins on purpose (it is the toolchain the user has active),
+    but a 11.x toolkit is not even accepted by this script's -std=c++20, so in
+    that case fall through to the newest installed toolkit rather than failing.
+    """
     explicit = os.environ.get("NVCC")
     if explicit:
         return explicit if Path(explicit).exists() else None
-    found = shutil.which("nvcc")
-    if found:
-        return found
-    patterns = [
-        "/usr/local/cuda/bin/nvcc",
-        "/usr/local/cuda-12*/bin/nvcc",
-        r"C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12*\bin\nvcc.exe",
-        r"C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v13*\bin\nvcc.exe",
-        r"D:\Dev\CUDA\*\bin\nvcc.exe",
-    ]
+
     candidates: list[str] = []
-    for pattern in patterns:
-        candidates.extend(sorted(glob.glob(pattern)))
-    return candidates[-1] if candidates else None
+    on_path = shutil.which("nvcc")
+    if on_path:
+        candidates.append(on_path)
+    candidates.extend(c for c in _discover_nvcc() if c != on_path)
+    if not candidates:
+        return None
+
+    for candidate in candidates:
+        if _nvcc_release_major(candidate) >= 12:
+            if candidate != on_path:
+                print(
+                    f"nvcc on PATH is too old for -std=c++20; using {candidate} instead."
+                )
+            return candidate
+    return candidates[0]
 
 
 def detect_arch() -> str:

@@ -62,6 +62,9 @@ int main() {
     buffers.rewards = rewards.data();
     buffers.previous_mario_x = previous_x.data();
     buffers.previous_mario_time = previous_time.data();
+    // This test seeds SMB RAM directly, so it stands in for an SMB image; the
+    // gate is what keeps the scraper off non-SMB cartridges.
+    buffers.cart.reward_smb = 1;
 
     for (std::uint32_t env = 0; env < kNumEnvs; ++env) {
         const auto base = env * nesle::cuda::kCpuRamBytes;

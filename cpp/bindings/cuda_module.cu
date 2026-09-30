@@ -244,16 +244,44 @@ std::uint8_t cuda_nametable_arrangement(nesle::NametableArrangement arrangement)
             return nesle::cuda::kNametableHorizontal;
         case nesle::NametableArrangement::FourScreen:
             return nesle::cuda::kNametableFourScreen;
+        case nesle::NametableArrangement::SingleScreenLower:
+            return nesle::cuda::kNametableSingleScreenLower;
+        case nesle::NametableArrangement::SingleScreenUpper:
+            return nesle::cuda::kNametableSingleScreenUpper;
     }
     return nesle::cuda::kNametableVertical;
 }
 
 std::uint16_t reset_vector_from_prg(const std::vector<std::uint8_t>& prg_rom) {
-    if (prg_rom.size() != 16u * 1024u && prg_rom.size() != 32u * 1024u) {
-        throw std::invalid_argument("CUDA console mode currently supports NROM PRG sizes only");
+    // $FFFC/$FFFD sit in the fixed window. For NROM that is the last four bytes
+    // of the image, and for every UxROM-family board the fixed window is the
+    // top of the image too, so "last four bytes" covers the whole family.
+    if (prg_rom.size() < 4u * 1024u) {
+        throw std::invalid_argument("PRG ROM is too small to contain a reset vector");
     }
-    const auto base = prg_rom.size() == 16u * 1024u ? 0x3FFCu : 0x7FFCu;
-    return static_cast<std::uint16_t>(prg_rom[base] | (static_cast<std::uint16_t>(prg_rom[base + 1]) << 8));
+    const auto base = static_cast<std::size_t>(prg_rom.size() - 4u);
+    return static_cast<std::uint16_t>(prg_rom[base] |
+                                      (static_cast<std::uint16_t>(prg_rom[base + 1]) << 8));
+}
+
+void validate_cartridge(const nesle::RomImage& rom) {
+    if (rom.metadata.has_trainer) {
+        throw std::invalid_argument("ROM trainers are not supported");
+    }
+    if (rom.prg_rom.empty()) {
+        throw std::invalid_argument("CUDA console mode requires PRG ROM bytes");
+    }
+    if (!nesle::describe_mapper(rom.metadata).supported) {
+        throw std::invalid_argument(nesle::unsupported_mapper_reason(rom.metadata));
+    }
+}
+
+std::uint32_t window_shift(std::uint32_t window_bytes) noexcept {
+    std::uint32_t shift = 0;
+    while ((1u << shift) < window_bytes) {
+        ++shift;
+    }
+    return shift;
 }
 
 std::uintptr_t cuda_array_pointer(const py::object& object,
@@ -389,12 +417,7 @@ public:
         if (frameskip_ == 0) {
             throw std::invalid_argument("frameskip must be positive");
         }
-        if (!rom_.metadata.is_nrom()) {
-            throw std::invalid_argument("CUDA console mode currently supports mapper 0/NROM ROMs");
-        }
-        if (rom_.prg_rom.empty()) {
-            throw std::invalid_argument("CUDA console mode requires PRG ROM bytes");
-        }
+        validate_cartridge(rom_);
         allocate();
         upload_rom();
         reset();
@@ -964,12 +987,7 @@ private:
         if (frameskip_ == 0) {
             throw std::invalid_argument("frameskip must be positive");
         }
-        if (!rom_.metadata.is_nrom()) {
-            throw std::invalid_argument("CUDA console mode currently supports mapper 0/NROM ROMs");
-        }
-        if (rom_.prg_rom.empty()) {
-            throw std::invalid_argument("CUDA console mode requires PRG ROM bytes");
-        }
+        validate_cartridge(rom_);
     }
 
 public:
@@ -1023,6 +1041,20 @@ private:
         device_nametable_ = cuda_alloc<std::uint8_t>(
             static_cast<std::size_t>(num_env_) * nesle::cuda::kNametableRamBytes,
             "cudaMalloc nametable");
+        if (rom_.chr_rom.empty()) {
+            // CHR RAM board (BNROM, or any mapper here with no CHR ROM):
+            // 8 KB of power-on memory per environment, zeroed on cold reset.
+            device_chr_ram_ = cuda_alloc<std::uint8_t>(
+                static_cast<std::size_t>(num_env_) * nesle::cuda::kChrRamBytes,
+                "cudaMalloc chr ram");
+        }
+        // Mapper registers live per environment, not per cartridge, because
+        // every env in a batch runs the same game with a different bank.
+        device_prg_bank_ = cuda_alloc<std::uint8_t>(num_env_, "cudaMalloc prg bank");
+        device_chr_bank_ = cuda_alloc<std::uint8_t>(num_env_, "cudaMalloc chr bank");
+        device_chr_bank_hi_ = cuda_alloc<std::uint8_t>(num_env_, "cudaMalloc chr bank hi");
+        device_nametable_arrangement_ = cuda_alloc<std::uint8_t>(
+            num_env_, "cudaMalloc nametable arrangement");
         device_palette_ = cuda_alloc<std::uint8_t>(
             static_cast<std::size_t>(num_env_) * nesle::cuda::kPaletteRamBytes,
             "cudaMalloc palette");
@@ -1172,8 +1204,14 @@ private:
         cudaFree(device_snap_oam_);
         cudaFree(device_snap_nametable_);
         cudaFree(device_snap_palette_);
-        cudaFree(device_prg_rom_);
-        cudaFree(device_chr_rom_);
+    cudaFree(device_prg_rom_);
+    cudaFree(device_chr_rom_);
+    cudaFree(device_chr_ram_);
+    cudaFree(device_prg_bank_);
+    cudaFree(device_chr_bank_);
+    cudaFree(device_chr_bank_hi_);
+    cudaFree(device_nametable_arrangement_);
+
         cudaFree(device_frames_);
         cudaFree(device_reset_mask_);
         cudaFree(device_stat_instructions_);
@@ -1210,18 +1248,74 @@ private:
         if (rom_.prg_rom.empty()) {
             return;
         }
-        device_prg_rom_ = cuda_alloc<std::uint8_t>(rom_.prg_rom.size(), "cudaMalloc prg rom");
-        copy_to_device(device_prg_rom_, rom_.prg_rom, "copy prg rom");
+        const auto layout = nesle::describe_mapper(rom_.metadata);
+
+        // PRG is padded to a power of two so the device can mask instead of
+        // doing a divide per fetch. The pad is appended after the image, so the
+        // fixed window is still addressed from the real size and the padded
+        // tail is only ever reached by an out-of-range bank, where real
+        // hardware would also wrap.
+        const std::size_t real_prg_size = rom_.prg_rom.size();
+        std::size_t padded_prg_size = 1;
+        while (padded_prg_size < real_prg_size) {
+            padded_prg_size <<= 1u;
+        }
+        std::vector<std::uint8_t> prg_rom(padded_prg_size, 0);
+        std::copy(rom_.prg_rom.begin(), rom_.prg_rom.end(), prg_rom.begin());
+
+        device_prg_rom_ = cuda_alloc<std::uint8_t>(padded_prg_size, "cudaMalloc prg rom");
+        copy_to_device(device_prg_rom_, prg_rom, "copy prg rom");
         buffers_.cart.prg_rom = device_prg_rom_;
-        buffers_.cart.prg_rom_size = static_cast<std::uint32_t>(rom_.prg_rom.size());
+        buffers_.cart.prg_rom_size = static_cast<std::uint32_t>(padded_prg_size);
+        buffers_.cart.prg_rom_mask = static_cast<std::uint32_t>(padded_prg_size - 1u);
         if (!rom_.chr_rom.empty()) {
             device_chr_rom_ = cuda_alloc<std::uint8_t>(rom_.chr_rom.size(), "cudaMalloc chr rom");
             copy_to_device(device_chr_rom_, rom_.chr_rom, "copy chr rom");
             buffers_.cart.chr_rom = device_chr_rom_;
             buffers_.cart.chr_rom_size = static_cast<std::uint32_t>(rom_.chr_rom.size());
         }
-        buffers_.cart.mapper = static_cast<std::uint8_t>(rom_.metadata.mapper);
-        buffers_.cart.nametable_arrangement = cuda_nametable_arrangement(rom_.metadata.nametable_arrangement);
+        buffers_.ppu.chr_ram = device_chr_ram_;
+
+        buffers_.cart.mapper = rom_.metadata.mapper;
+        buffers_.cart.nametable_arrangement =
+            cuda_nametable_arrangement(rom_.metadata.nametable_arrangement);
+        buffers_.cart.bank_kind = layout.bank_kind;
+        buffers_.cart.bus_conflicts = layout.bus_conflicts ? 1 : 0;
+        buffers_.cart.chr_bank_mask = layout.chr_page_mask;
+        buffers_.cart.mapper_mirroring = layout.runtime_mirroring ? 1 : 0;
+        buffers_.cart.reward_smb = nesle::is_supported_mario_target(rom_.metadata) ? 1 : 0;
+        buffers_.cart.prg_window_start =
+            layout.window_at_top ? 0x10000u - layout.window_bytes : 0x8000u;
+        buffers_.cart.prg_window_shift = window_shift(layout.window_bytes);
+        buffers_.cart.prg_window_mask =
+            layout.window_bytes == 0 ? 0u : static_cast<std::uint32_t>(layout.window_bytes - 1u);
+        buffers_.cart.prg_bank_mask = layout.bank_mask;
+        buffers_.cart.prg_bank_shift = layout.bank_shift;
+        buffers_.cart.prg_fixed_base =
+            layout.window_at_top
+                ? 0u
+                : (layout.fixed_bytes >= real_prg_size
+                       ? 0u
+                       : static_cast<std::uint32_t>(real_prg_size - layout.fixed_bytes));
+        buffers_.cart.prg_fixed_mask =
+            layout.fixed_bytes == 0 ? 0u : static_cast<std::uint32_t>(layout.fixed_bytes - 1u);
+
+        // Mapper register state. Uploaded here rather than left to the reset
+        // kernel because a batch can be built from a snapshot without ever
+        // cold resetting, and uninitialized registers would read garbage PRG.
+        const auto env_count = static_cast<std::size_t>(num_env_);
+        const std::vector<std::uint8_t> zero(env_count, 0);
+        copy_to_device(device_prg_bank_, zero, "copy prg bank");
+        copy_to_device(device_chr_bank_, zero, "copy chr bank");
+        copy_to_device(device_chr_bank_hi_, zero, "copy chr bank hi");
+        const std::vector<std::uint8_t> arrangement(
+            env_count, cuda_nametable_arrangement(rom_.metadata.nametable_arrangement));
+        copy_to_device(device_nametable_arrangement_, arrangement,
+                       "copy nametable arrangement");
+        buffers_.mapper.prg_bank = device_prg_bank_;
+        buffers_.mapper.chr_bank = device_chr_bank_;
+        buffers_.mapper.chr_bank_hi = device_chr_bank_hi_;
+        buffers_.mapper.nametable_arrangement = device_nametable_arrangement_;
     }
 
     void reset_console() {
@@ -1511,6 +1605,11 @@ private:
     std::uint8_t* device_oam_ = nullptr;
     std::uint8_t* device_prg_rom_ = nullptr;
     std::uint8_t* device_chr_rom_ = nullptr;
+    std::uint8_t* device_chr_ram_ = nullptr;
+    std::uint8_t* device_prg_bank_ = nullptr;
+    std::uint8_t* device_chr_bank_ = nullptr;
+    std::uint8_t* device_chr_bank_hi_ = nullptr;
+    std::uint8_t* device_nametable_arrangement_ = nullptr;
     std::uint8_t* device_frames_ = nullptr;
     std::uint8_t* device_lat_scroll_x_ = nullptr;
     std::uint8_t* device_lat_scroll_y_ = nullptr;

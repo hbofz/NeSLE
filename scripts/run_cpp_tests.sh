@@ -28,5 +28,6 @@ run test_cuda_ppu
 run test_cuda_render
 run test_cuda_batch_console cpp/src/rom.cpp
 run test_cuda_reset_cache
+run test_mapper cpp/src/rom.cpp
 
 echo "all C++ tests passed"

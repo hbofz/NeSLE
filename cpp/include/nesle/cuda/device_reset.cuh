@@ -41,6 +41,11 @@ struct DeviceResetSnapshots {
     std::uint8_t* ppu_scroll_x = nullptr;
     std::uint8_t* ppu_scroll_y = nullptr;
 
+    std::uint8_t* prg_bank = nullptr;
+    std::uint8_t* chr_bank = nullptr;
+    std::uint8_t* chr_bank_hi = nullptr;
+    std::uint8_t* nametable_arrangement = nullptr;
+
     int* previous_mario_x = nullptr;
     int* previous_mario_time = nullptr;
     float* rewards = nullptr;
@@ -125,6 +130,20 @@ NESLE_CUDA_DEVICE_RESET_HD inline void capture_device_reset_snapshot(
     }
     if (buffers.ppu.scroll_y != nullptr && snapshots.ppu_scroll_y != nullptr) {
         snapshots.ppu_scroll_y[slot] = buffers.ppu.scroll_y[env];
+    }
+
+    if (buffers.mapper.prg_bank != nullptr && snapshots.prg_bank != nullptr) {
+        snapshots.prg_bank[slot] = buffers.mapper.prg_bank[env];
+    }
+    if (buffers.mapper.chr_bank != nullptr && snapshots.chr_bank != nullptr) {
+        snapshots.chr_bank[slot] = buffers.mapper.chr_bank[env];
+    }
+    if (buffers.mapper.chr_bank_hi != nullptr && snapshots.chr_bank_hi != nullptr) {
+        snapshots.chr_bank_hi[slot] = buffers.mapper.chr_bank_hi[env];
+    }
+    if (buffers.mapper.nametable_arrangement != nullptr &&
+        snapshots.nametable_arrangement != nullptr) {
+        snapshots.nametable_arrangement[slot] = buffers.mapper.nametable_arrangement[env];
     }
 
     if (buffers.previous_mario_x != nullptr && snapshots.previous_mario_x != nullptr) {
@@ -220,6 +239,20 @@ NESLE_CUDA_DEVICE_RESET_HD inline void restore_device_reset_snapshot(
     }
     if (buffers.ppu.scroll_y != nullptr && snapshots.ppu_scroll_y != nullptr) {
         buffers.ppu.scroll_y[env] = snapshots.ppu_scroll_y[slot];
+    }
+
+    if (buffers.mapper.prg_bank != nullptr && snapshots.prg_bank != nullptr) {
+        buffers.mapper.prg_bank[env] = snapshots.prg_bank[slot];
+    }
+    if (buffers.mapper.chr_bank != nullptr && snapshots.chr_bank != nullptr) {
+        buffers.mapper.chr_bank[env] = snapshots.chr_bank[slot];
+    }
+    if (buffers.mapper.chr_bank_hi != nullptr && snapshots.chr_bank_hi != nullptr) {
+        buffers.mapper.chr_bank_hi[env] = snapshots.chr_bank_hi[slot];
+    }
+    if (buffers.mapper.nametable_arrangement != nullptr &&
+        snapshots.nametable_arrangement != nullptr) {
+        buffers.mapper.nametable_arrangement[env] = snapshots.nametable_arrangement[slot];
     }
 
     if (buffers.previous_mario_x != nullptr && snapshots.previous_mario_x != nullptr) {

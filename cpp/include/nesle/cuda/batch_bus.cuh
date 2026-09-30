@@ -2,6 +2,7 @@
 
 #include <cstdint>
 
+#include "nesle/cuda/mapper.cuh"
 #include "nesle/cuda/state.cuh"
 
 #ifdef __CUDACC__
@@ -21,17 +22,6 @@ NESLE_CUDA_HD inline const std::uint8_t* env_prg_ram(const BatchBuffers& buffers
     return buffers.cpu.prg_ram + static_cast<std::uint64_t>(env) * kPrgRamBytes;
 }
 
-NESLE_CUDA_HD inline std::uint8_t read_nrom_prg(const CartridgeView& cart,
-                                                std::uint16_t address) {
-    auto index = static_cast<std::uint32_t>(address - 0x8000);
-    if (cart.prg_rom_size == 16u * 1024u) {
-        index &= 0x3FFFu;
-    } else {
-        index &= 0x7FFFu;
-    }
-    return cart.prg_rom[index];
-}
-
 NESLE_CUDA_HD inline std::uint16_t bus_mirror_palette_address(std::uint16_t address) {
     auto index = static_cast<std::uint16_t>(address & 0x001F);
     if (index == 0x10 || index == 0x14 || index == 0x18 || index == 0x1C) {
@@ -42,14 +32,7 @@ NESLE_CUDA_HD inline std::uint16_t bus_mirror_palette_address(std::uint16_t addr
 
 NESLE_CUDA_HD inline std::uint16_t bus_mirror_nametable_address(const CartridgeView& cart,
                                                                 std::uint16_t address) {
-    const auto index = static_cast<std::uint16_t>((address - 0x2000) & 0x0FFF);
-    if (cart.nametable_arrangement == kNametableFourScreen) {
-        return index;
-    }
-    if (cart.nametable_arrangement == kNametableHorizontal) {
-        return static_cast<std::uint16_t>((index & 0x03FF) | ((index & 0x0800) >> 1));
-    }
-    return static_cast<std::uint16_t>(index & 0x07FF);
+    return mirror_nametable_address(cart.nametable_arrangement, address);
 }
 
 NESLE_CUDA_HD inline std::uint8_t bus_ppu_memory_read(BatchBuffers& buffers,
@@ -57,18 +40,15 @@ NESLE_CUDA_HD inline std::uint8_t bus_ppu_memory_read(BatchBuffers& buffers,
                                                       std::uint16_t address) {
     address = static_cast<std::uint16_t>(address & 0x3FFF);
     if (address < 0x2000) {
-        if (buffers.cart.chr_rom != nullptr && buffers.cart.chr_rom_size != 0) {
-            return buffers.cart.chr_rom[address % buffers.cart.chr_rom_size];
-        }
-        return 0;
+        return read_chr(buffers, env, address);
     }
     if (address < 0x3F00) {
         if (address >= 0x3000) {
             address = static_cast<std::uint16_t>(address - 0x1000);
         }
-        return buffers.ppu.nametable_ram[
-            static_cast<std::uint64_t>(env) * kNametableRamBytes +
-            bus_mirror_nametable_address(buffers.cart, address)];
+        return buffers.ppu.nametable_ram[static_cast<std::uint64_t>(env) * kNametableRamBytes +
+                                        mirror_nametable_address(
+                                            env_nametable_arrangement(buffers, env), address)];
     }
     return buffers.ppu.palette_ram[
         static_cast<std::uint64_t>(env) * kPaletteRamBytes + bus_mirror_palette_address(address)];
@@ -80,6 +60,7 @@ NESLE_CUDA_HD inline void bus_ppu_memory_write(BatchBuffers& buffers,
                                                std::uint8_t value) {
     address = static_cast<std::uint16_t>(address & 0x3FFF);
     if (address < 0x2000) {
+        write_chr(buffers, env, address, value);
         return;
     }
     if (address < 0x3F00) {
@@ -87,7 +68,8 @@ NESLE_CUDA_HD inline void bus_ppu_memory_write(BatchBuffers& buffers,
             address = static_cast<std::uint16_t>(address - 0x1000);
         }
         buffers.ppu.nametable_ram[static_cast<std::uint64_t>(env) * kNametableRamBytes +
-                                  bus_mirror_nametable_address(buffers.cart, address)] = value;
+                                  mirror_nametable_address(env_nametable_arrangement(buffers, env),
+                                                            address)] = value;
         return;
     }
     buffers.ppu.palette_ram[static_cast<std::uint64_t>(env) * kPaletteRamBytes +
@@ -207,7 +189,7 @@ NESLE_CUDA_HD inline std::uint8_t batch_cpu_read(BatchBuffers& buffers,
         return env_prg_ram(buffers, env)[address - 0x6000];
     }
     if (address >= 0x8000) {
-        return read_nrom_prg(buffers.cart, address);
+        return read_prg(buffers, env, address);
     }
     return 0;
 }
@@ -300,6 +282,16 @@ NESLE_CUDA_HD inline void batch_cpu_write(BatchBuffers& buffers,
     }
     if (address >= 0x6000 && address < 0x8000) {
         env_prg_ram(buffers, env)[address - 0x6000] = value;
+        // NINA-001 wires its three mapper registers on top of PRG RAM: the
+        // write also lands in RAM, and reads of $7FFD-$7FFF return the
+        // register. The RAM store above gives both for free.
+        if (buffers.cart.bank_kind == kBankingNina8k && address >= 0x7FFD) {
+            write_mapper_register(buffers, env, address, value);
+        }
+        return;
+    }
+    if (address >= 0x8000) {
+        write_mapper_register(buffers, env, address, value);
     }
 }
 
