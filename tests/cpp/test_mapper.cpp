@@ -3,6 +3,13 @@
 #include <string>
 #include <vector>
 
+// Every check below is a bare assert(), so a build with NDEBUG would compile them
+// all away and this binary would report success having tested nothing. Fail loudly
+// instead of passing vacuously.
+#ifdef NDEBUG
+#error "test_mapper must be built without NDEBUG: its checks are assert()"
+#endif
+
 #include "nesle/console.hpp"
 #include "nesle/cuda/batch_bus.cuh"
 #include "nesle/rom.hpp"

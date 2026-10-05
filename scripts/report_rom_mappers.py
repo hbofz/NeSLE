@@ -1,8 +1,8 @@
 r"""Report the iNES header of every ROM given, so new test carts can be vetted
 without trusting the filename.
 
-    python scripts/report_rom_mappers.py C:/games/nes
-    python scripts/report_rom_mappers.py C:/games/nes/Crazy\ Climber\ \(J\).nes
+    python scripts/report_rom_mappers.py <rom-dir>
+    python scripts/report_rom_mappers.py "<rom-dir>/Crazy Climber (J).nes"
 
 The mapper number is the thing under test here, and it lives only in the
 header: a translation of a mapper 94 or 180 board is often re-tagged as plain
