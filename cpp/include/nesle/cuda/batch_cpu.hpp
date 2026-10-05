@@ -13,27 +13,31 @@
 
 namespace nesle::cuda {
 
-class BatchCpuBus {
+// The banking shape is a template parameter so the console step kernel can
+// instantiate the NROM bus without the per-access mapper tests. Callers that do
+// not know the cartridge keep the runtime dispatch via the alias below.
+template <BankMode Mode = kBankModeRuntime>
+class BatchCpuBusT {
 public:
-    NESLE_CUDA_BATCH_CPU_HD BatchCpuBus(BatchBuffers& buffers, std::uint32_t env) noexcept
+    NESLE_CUDA_BATCH_CPU_HD BatchCpuBusT(BatchBuffers& buffers, std::uint32_t env) noexcept
         : buffers_(buffers),
           env_(env) {}
 
     // Hot variant: PPU register accesses go through the caller's
     // register-resident PpuHotState instead of global memory.
-    NESLE_CUDA_BATCH_CPU_HD BatchCpuBus(BatchBuffers& buffers,
-                                        std::uint32_t env,
-                                        PpuHotState& hot) noexcept
+    NESLE_CUDA_BATCH_CPU_HD BatchCpuBusT(BatchBuffers& buffers,
+                                         std::uint32_t env,
+                                         PpuHotState& hot) noexcept
         : buffers_(buffers),
           env_(env),
           hot_(&hot) {}
 
     [[nodiscard]] NESLE_CUDA_BATCH_CPU_HD std::uint8_t read(std::uint16_t address) {
-        return batch_cpu_read(buffers_, env_, address, hot_);
+        return batch_cpu_read<Mode>(buffers_, env_, address, hot_);
     }
 
     NESLE_CUDA_BATCH_CPU_HD void write(std::uint16_t address, std::uint8_t value) {
-        batch_cpu_write(buffers_, env_, address, value, hot_);
+        batch_cpu_write<Mode>(buffers_, env_, address, value, hot_);
     }
 
 private:
@@ -41,6 +45,8 @@ private:
     std::uint32_t env_ = 0;
     PpuHotState* hot_ = nullptr;
 };
+
+using BatchCpuBus = BatchCpuBusT<kBankModeRuntime>;
 
 [[nodiscard]] NESLE_CUDA_BATCH_CPU_HD inline cpu::CpuState load_cpu_state(
     const BatchBuffers& buffers,
