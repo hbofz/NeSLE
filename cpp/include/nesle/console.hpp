@@ -114,7 +114,7 @@ public:
             nmi_serviced = true;
         }
 
-        auto cpu_step = cpu::step(state, *this);
+        auto cpu_step = cpu::step_or_throw(state, *this);
         if (pending_dma_cycles_ != 0) {
             state.cycles += pending_dma_cycles_;
             pending_dma_cycles_ = 0;

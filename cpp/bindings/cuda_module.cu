@@ -67,7 +67,7 @@ struct DLManagedTensorContext {
     // The view's pybind keep_alive ties it to the owning CudaBatch, so as long
     // as the consumer's tensor lives, the device memory it points at cannot be
     // cudaFree'd underneath it. Without this the capsule held only a raw
-    // pointer — a use-after-free once the batch was garbage collected.
+    // pointer - a use-after-free once the batch was garbage collected.
     py::object owner;
 };
 
@@ -102,14 +102,14 @@ void check_cuda(cudaError_t error, const char* label);
 void blocking_stream_sync(const char* label);
 
 // Read-only view into a device buffer owned by CudaBatchBinding. The view holds a bare
-// device pointer with no ownership — it is the *binding's* responsibility (via pybind
+// device pointer with no ownership - it is the *binding's* responsibility (via pybind
 // `py::keep_alive<0, 1>()` annotations on every method that returns a view) to keep the
 // owning CudaBatch alive as long as any Python caller might dereference the pointer.
 //
 // All kernel launches in this module go to the default stream (0). To make tensors
 // produced from these views safe to consume on any stream (PyTorch may bind them to a
 // non-default stream), `dlpack()` synchronizes the device before handing the capsule out
-// — i.e., we trade a tiny per-handoff cost for race-free interop. Callers chasing
+// - i.e., we trade a tiny per-handoff cost for race-free interop. Callers chasing
 // max throughput should batch up `step_device` calls between DLPack conversions.
 class CudaDeviceArrayView {
 public:
@@ -192,7 +192,7 @@ void check_cuda(cudaError_t error, const char* label) {
 // default stream) via an event instead of cudaDeviceSynchronize. Ordering
 // guarantees are identical for default-stream work. Note: end-to-end rollout
 // benchmarks on Windows/WDDM showed NO measurable difference between this and
-// cudaDeviceSynchronize — the dominant cost there is torch-kernel/step-kernel
+// cudaDeviceSynchronize - the dominant cost there is torch-kernel/step-kernel
 // submission interleaving itself (see benchmarks/profile_native_ppo.py and
 // KNOWN_ISSUES.md). Kept because event sync is never slower and scopes the
 // wait to this module's stream semantics rather than the whole device.
@@ -213,6 +213,17 @@ template <typename T>
 T* cuda_alloc(std::size_t count, const char* label) {
     T* ptr = nullptr;
     check_cuda(cudaMalloc(&ptr, count * sizeof(T)), label);
+    return ptr;
+}
+
+// Zero a device buffer that a consumer reads as "nothing to report". cuda_alloc does not
+// zero: the CUDA driver often hands back memory that still holds a previous process's
+// contents, so an "empty" report read straight after construction can come back
+// non-empty. Only used for buffers that are meant to start at zero.
+template <typename T>
+T* cuda_alloc_zeroed(std::size_t count, const char* label) {
+    T* ptr = cuda_alloc<T>(count, label);
+    check_cuda(cudaMemset(ptr, 0, count * sizeof(T)), label);
     return ptr;
 }
 
@@ -820,7 +831,7 @@ public:
     py::array_t<std::uint8_t> render() {
         // Always re-rasterize before the memcpy. Previously this was a const memcpy of
         // device_frames_, which silently returned whatever was last written by a step()
-        // with render_frame=True — turning the high-throughput step(render_frame=False)
+        // with render_frame=True - turning the high-throughput step(render_frame=False)
         // path into a "frozen frame" footgun. Re-rendering is one kernel launch; cheap.
         render_device();
         blocking_stream_sync("render synchronize");
@@ -899,6 +910,47 @@ public:
             {static_cast<py::ssize_t>(num_env_)},
             "|u1",
             false);
+    }
+
+    // Environments quarantined for reaching an opcode the core does not implement,
+    // as {env: (pc, opcode)}. Empty in normal operation; a non-empty result means
+    // those envs stopped stepping and were marked done, while every other env in the
+    // batch carried on. Before this existed the same situation aborted the whole
+    // launch from inside the kernel.
+    //
+    // Reading this is consuming: the fault is reported once and then cleared. It is
+    // read from the latch rather than from the live fault flag precisely because
+    // step_device resets a done env in the same call that faulted it, so the live flag
+    // is already back to 0 by the time a training loop asks. Pass clear=False to
+    // inspect without consuming.
+    py::dict faults(bool clear = true) const {
+        if (device_fault_pending_ == nullptr) {
+            return py::dict();
+        }
+        std::vector<std::uint32_t> host(num_env_);
+        check_cuda(cudaMemcpy(host.data(),
+                              device_fault_pending_,
+                              static_cast<std::size_t>(num_env_) * sizeof(std::uint32_t),
+                              cudaMemcpyDeviceToHost),
+                   "copy env faults");
+        py::dict out;
+        for (std::uint32_t env = 0; env < num_env_; ++env) {
+            if (host[env] == 0) {
+                continue;
+            }
+            out[py::int_(env)] = py::make_tuple(host[env] >> 8, host[env] & 0xFF);
+        }
+        if (clear) {
+            // Zero only the entries that were actually reported. Copying a whole
+            // prepared buffer would clobber envs that were not in `out`, and writing a
+            // sentinel would itself look like a fault on the next read.
+            for (const auto& item : out) {
+                const auto env = static_cast<std::uint32_t>(item.first.cast<py::int_>());
+                check_cuda(cudaMemset(device_fault_pending_ + env, 0, sizeof(std::uint32_t)),
+                           "clear env fault");
+            }
+        }
+        return out;
     }
 
     py::array_t<std::uint8_t> oam() const {
@@ -997,6 +1049,14 @@ private:
             "cudaMalloc controller shift count");
         device_controller_strobe_ = cuda_alloc<std::uint8_t>(num_env_, "cudaMalloc controller strobe");
         device_pending_dma_cycles_ = cuda_alloc<std::uint32_t>(num_env_, "cudaMalloc pending dma");
+        // One u32 per env: 0 while healthy, else (pc << 8) | opcode of the first
+        // unimplemented opcode this env executed. See CpuStateSoA::fault.
+        device_fault_ = cuda_alloc<std::uint32_t>(num_env_, "cudaMalloc env fault");
+        // Same encoding, but a one-shot report that a reset does not clear.
+        // See CpuStateSoA::fault_pending. Zeroed: an unwritten value here would be
+        // reported as a fault that never happened.
+        device_fault_pending_ =
+            cuda_alloc_zeroed<std::uint32_t>(num_env_, "cudaMalloc env fault pending");
         device_previous_x_ = cuda_alloc<int>(num_env_, "cudaMalloc previous_x");
         device_previous_time_ = cuda_alloc<int>(num_env_, "cudaMalloc previous_time");
         device_rewards_ = cuda_alloc<float>(num_env_, "cudaMalloc rewards");
@@ -1078,6 +1138,8 @@ private:
         buffers_.cpu.controller1_shift_count = device_controller_shift_count_;
         buffers_.cpu.controller1_strobe = device_controller_strobe_;
         buffers_.cpu.pending_dma_cycles = device_pending_dma_cycles_;
+        buffers_.cpu.fault = device_fault_;
+        buffers_.cpu.fault_pending = device_fault_pending_;
         buffers_.action_masks = device_actions_;
         buffers_.previous_mario_x = device_previous_x_;
         buffers_.previous_mario_time = device_previous_time_;
@@ -1133,6 +1195,8 @@ private:
         cudaFree(device_controller_shift_count_);
         cudaFree(device_controller_strobe_);
         cudaFree(device_pending_dma_cycles_);
+    cudaFree(device_fault_);
+        cudaFree(device_fault_pending_);
         cudaFree(device_previous_x_);
         cudaFree(device_previous_time_);
         cudaFree(device_rewards_);
@@ -1262,6 +1326,11 @@ private:
         copy_to_device(device_controller_shift_count_, shift_count, "reset controller shift count");
         copy_to_device(device_controller_strobe_, bytes, "reset controller strobe");
         copy_to_device(device_pending_dma_cycles_, pending_dma, "reset pending dma");
+        // A reset env is healthy again: a fault recorded before it says nothing
+        // about the env now, and leaving it set would keep the env skipped forever. The
+        // one-shot report in device_fault_pending_ is deliberately not cleared here,
+        // or faults() could never see the fault that caused this reset.
+        copy_to_device(device_fault_, pending_dma, "reset env fault");
         copy_to_device(device_previous_x_, previous_x, "reset previous_x");
         copy_to_device(device_previous_time_, previous_time, "reset previous_time");
         copy_to_device(device_rewards_, rewards, "reset rewards");
@@ -1416,7 +1485,7 @@ private:
 
     void reset_console_from_snapshot() {
         // Use the snapshot-restore kernel with an all-1s mask so every env is restored
-        // in a single launch — no host-side replication of snapshot arrays needed.
+        // in a single launch - no host-side replication of snapshot arrays needed.
         std::vector<std::uint8_t> mask(num_env_, 1);
         check_cuda(cudaMemcpy(device_reset_mask_, mask.data(),
                               mask.size(), cudaMemcpyHostToDevice),
@@ -1483,6 +1552,8 @@ private:
     std::uint8_t* device_controller_shift_count_ = nullptr;
     std::uint8_t* device_controller_strobe_ = nullptr;
     std::uint32_t* device_pending_dma_cycles_ = nullptr;
+    std::uint32_t* device_fault_ = nullptr;
+    std::uint32_t* device_fault_pending_ = nullptr;
     int* device_previous_x_ = nullptr;
     int* device_previous_time_ = nullptr;
     float* device_rewards_ = nullptr;
@@ -1667,6 +1738,11 @@ PYBIND11_MODULE(_cuda_core, m) {
         .def("frames_device", &CudaBatchBinding::frames_device, py::keep_alive<0, 1>())
         .def("rewards_device", &CudaBatchBinding::rewards_device, py::keep_alive<0, 1>())
         .def("last_done_device", &CudaBatchBinding::last_done_device, py::keep_alive<0, 1>())
+        .def("faults", &CudaBatchBinding::faults, py::arg("clear") = true,
+             "Environments quarantined for an unimplemented opcode, as "
+             "{env: (pc, opcode)}. Empty unless something went wrong. Survives the "
+             "automatic reset of a done env; reading consumes the report unless "
+             "clear=False.")
         .def("oam", &CudaBatchBinding::oam)
         .def("reset_envs", &CudaBatchBinding::reset_envs, py::arg("mask"))
         .def("poke_ram", &CudaBatchBinding::poke_ram, py::arg("address"), py::arg("value"))

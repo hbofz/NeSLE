@@ -1,6 +1,8 @@
 #pragma once
 
 #include <cstdint>
+#include <stdexcept>
+#include <string>
 
 #include "nesle/cpu.hpp"
 #include "nesle/cuda/batch_bus.cuh"
@@ -83,6 +85,16 @@ NESLE_CUDA_BATCH_CPU_HD inline void reset_batch_cpu_env(BatchBuffers& buffers, s
     BatchCpuBus bus(buffers, env);
     auto state = load_cpu_state(buffers, env);
     const auto result = cpu::step(state, bus);
+    // On the host this stays a throw, because the callers here (run_batch_cpu, the
+    // smoke tool) already isolate a failing env with try/catch and report it as
+    // CpuException. The device cannot throw, so the kernel reads StepResult::illegal
+    // and quarantines just that env.
+#ifndef __CUDA_ARCH__
+    if (result.illegal) {
+        throw std::runtime_error("unimplemented or illegal 6502 opcode 0x" +
+                                 cpu::detail::to_hex(result.opcode));
+    }
+#endif
     store_cpu_state(buffers, env, state);
     return result;
 }
