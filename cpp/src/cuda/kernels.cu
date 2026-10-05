@@ -16,6 +16,11 @@ __global__ void step_reward_kernel(BatchBuffers buffers, std::uint32_t num_envs)
     }
 }
 
+// Banked cartridges and mapper 0 are separate kernel instantiations, selected on
+// the host in launch_console_step_kernel. Keeping them in one __global__ would
+// make ptxas allocate for the worse of the two bodies and cost occupancy on the
+// NROM path (measured: 72 registers versus 56 when both live in one kernel).
+template <BankMode Mode>
 __global__ void console_step_kernel(BatchBuffers buffers,
                                     std::uint32_t num_envs,
                                     std::uint32_t frameskip,
@@ -54,7 +59,7 @@ __global__ void console_step_kernel(BatchBuffers buffers,
                     break;
                 }
             }
-            const auto step = step_batch_console_instruction_lazy(buffers, env, state, hot);
+            const auto step = step_batch_console_instruction_lazy<Mode>(buffers, env, state, hot);
             pending_ppu_cycles += step.ppu_cycles;
             if (stats.opcode_counts != nullptr) {
                 atomicAdd(&stats.opcode_counts[step.cpu.opcode], 1ULL);
@@ -149,12 +154,23 @@ void launch_console_step_kernel(const BatchBuffers& buffers,
                                 cudaStream_t stream) {
     constexpr int kThreads = 128;
     const int blocks = static_cast<int>((config.num_envs + kThreads - 1) / kThreads);
-    console_step_kernel<<<blocks, kThreads, 0, stream>>>(
-        buffers,
-        config.num_envs,
-        config.frameskip,
-        max_instructions_per_frame,
-        stats);
+    // bank_kind is fixed for the lifetime of a batch, so the specialization is
+    // chosen once per launch here instead of per bus access inside the kernel.
+    if (buffers.cart.bank_kind == kBankingNone) {
+        console_step_kernel<kBankModeNrom><<<blocks, kThreads, 0, stream>>>(
+            buffers,
+            config.num_envs,
+            config.frameskip,
+            max_instructions_per_frame,
+            stats);
+    } else {
+        console_step_kernel<kBankModeBanked><<<blocks, kThreads, 0, stream>>>(
+            buffers,
+            config.num_envs,
+            config.frameskip,
+            max_instructions_per_frame,
+            stats);
+    }
 }
 
 void launch_render_kernel(const BatchBuffers& buffers, StepConfig config, cudaStream_t stream) {

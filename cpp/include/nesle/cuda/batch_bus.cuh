@@ -35,12 +35,13 @@ NESLE_CUDA_HD inline std::uint16_t bus_mirror_nametable_address(const CartridgeV
     return mirror_nametable_address(cart.nametable_arrangement, address);
 }
 
+template <BankMode Mode = kBankModeRuntime>
 NESLE_CUDA_HD inline std::uint8_t bus_ppu_memory_read(BatchBuffers& buffers,
                                                       std::uint32_t env,
                                                       std::uint16_t address) {
     address = static_cast<std::uint16_t>(address & 0x3FFF);
     if (address < 0x2000) {
-        return read_chr(buffers, env, address);
+        return read_chr<Mode>(buffers, env, address);
     }
     if (address < 0x3F00) {
         if (address >= 0x3000) {
@@ -48,12 +49,13 @@ NESLE_CUDA_HD inline std::uint8_t bus_ppu_memory_read(BatchBuffers& buffers,
         }
         return buffers.ppu.nametable_ram[static_cast<std::uint64_t>(env) * kNametableRamBytes +
                                         mirror_nametable_address(
-                                            env_nametable_arrangement(buffers, env), address)];
+                                            env_nametable_arrangement<Mode>(buffers, env), address)];
     }
     return buffers.ppu.palette_ram[
         static_cast<std::uint64_t>(env) * kPaletteRamBytes + bus_mirror_palette_address(address)];
 }
 
+template <BankMode Mode = kBankModeRuntime>
 NESLE_CUDA_HD inline void bus_ppu_memory_write(BatchBuffers& buffers,
                                                std::uint32_t env,
                                                std::uint16_t address,
@@ -68,8 +70,8 @@ NESLE_CUDA_HD inline void bus_ppu_memory_write(BatchBuffers& buffers,
             address = static_cast<std::uint16_t>(address - 0x1000);
         }
         buffers.ppu.nametable_ram[static_cast<std::uint64_t>(env) * kNametableRamBytes +
-                                  mirror_nametable_address(env_nametable_arrangement(buffers, env),
-                                                            address)] = value;
+                                  mirror_nametable_address(
+                                      env_nametable_arrangement<Mode>(buffers, env), address)] = value;
         return;
     }
     buffers.ppu.palette_ram[static_cast<std::uint64_t>(env) * kPaletteRamBytes +
@@ -135,6 +137,7 @@ NESLE_CUDA_HD inline void batch_oam_dma(BatchBuffers& buffers,
     buffers.cpu.pending_dma_cycles[env] += 513;
 }
 
+template <BankMode Mode = kBankModeRuntime>
 NESLE_CUDA_HD inline std::uint8_t batch_cpu_read(BatchBuffers& buffers,
                                                  std::uint32_t env,
                                                  std::uint16_t address,
@@ -166,12 +169,12 @@ NESLE_CUDA_HD inline std::uint8_t batch_cpu_read(BatchBuffers& buffers,
             const auto ppu_address = static_cast<std::uint16_t>(buffers.ppu.v[env] & 0x3FFF);
             std::uint8_t value = 0;
             if (ppu_address >= 0x3F00) {
-                value = bus_ppu_memory_read(buffers, env, ppu_address);
+                value = bus_ppu_memory_read<Mode>(buffers, env, ppu_address);
                 buffers.ppu.read_buffer[env] =
-                    bus_ppu_memory_read(buffers, env, static_cast<std::uint16_t>(ppu_address - 0x1000));
+                    bus_ppu_memory_read<Mode>(buffers, env, static_cast<std::uint16_t>(ppu_address - 0x1000));
             } else {
                 value = buffers.ppu.read_buffer[env];
-                buffers.ppu.read_buffer[env] = bus_ppu_memory_read(buffers, env, ppu_address);
+                buffers.ppu.read_buffer[env] = bus_ppu_memory_read<Mode>(buffers, env, ppu_address);
             }
             bus_increment_vram_address(buffers, env, hot);
             buffers.ppu.open_bus[env] = value;
@@ -189,11 +192,12 @@ NESLE_CUDA_HD inline std::uint8_t batch_cpu_read(BatchBuffers& buffers,
         return env_prg_ram(buffers, env)[address - 0x6000];
     }
     if (address >= 0x8000) {
-        return read_prg(buffers, env, address);
+        return read_prg<Mode>(buffers, env, address);
     }
     return 0;
 }
 
+template <BankMode Mode = kBankModeRuntime>
 NESLE_CUDA_HD inline void batch_cpu_write(BatchBuffers& buffers,
                                           std::uint32_t env,
                                           std::uint16_t address,
@@ -266,7 +270,7 @@ NESLE_CUDA_HD inline void batch_cpu_write(BatchBuffers& buffers,
                 buffers.ppu.w[env] = 0;
             }
         } else if (reg == 7) {
-            bus_ppu_memory_write(buffers, env, buffers.ppu.v[env], value);
+            bus_ppu_memory_write<Mode>(buffers, env, buffers.ppu.v[env], value);
             bus_increment_vram_address(buffers, env, hot);
         }
         buffers.ppu.open_bus[env] = value;
@@ -286,12 +290,12 @@ NESLE_CUDA_HD inline void batch_cpu_write(BatchBuffers& buffers,
         // write also lands in RAM, and reads of $7FFD-$7FFF return the
         // register. The RAM store above gives both for free.
         if (buffers.cart.bank_kind == kBankingNina8k && address >= 0x7FFD) {
-            write_mapper_register(buffers, env, address, value);
+            write_mapper_register<Mode>(buffers, env, address, value);
         }
         return;
     }
     if (address >= 0x8000) {
-        write_mapper_register(buffers, env, address, value);
+        write_mapper_register<Mode>(buffers, env, address, value);
     }
 }
 
