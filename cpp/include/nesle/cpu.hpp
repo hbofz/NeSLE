@@ -43,6 +43,13 @@ struct StepResult {
     std::uint16_t pc = 0;
     std::uint8_t opcode = 0;
     std::uint8_t cycles = 0;
+    // True when the opcode at pc is not implemented. step() reports this instead of
+    // trapping or throwing, because it is compiled for the device too, where neither
+    // is possible: a throw cannot unwind out of a kernel, and asm("trap;") aborts the
+    // whole launch, so one bad env in a 16k batch would take every other env down with
+    // an opaque CUDA error. Callers decide what to do - see step_or_throw() for the
+    // host, and console_step_kernel for the device.
+    bool illegal = false;
 };
 
 [[nodiscard]] NESLE_CPU_HD inline bool get_flag(const CpuState& state, StatusFlag flag) noexcept {
@@ -182,6 +189,16 @@ struct DecodeEntry {
 };
 
 namespace detail {
+
+// Two-digit uppercase hex, for diagnostics. An opcode is a byte, so callers do not
+// need to worry about width.
+inline std::string to_hex(std::uint8_t value) {
+    constexpr char kHex[] = "0123456789ABCDEF";
+    std::string out(2, '0');
+    out[0] = kHex[(value >> 4) & 0x0F];
+    out[1] = kHex[value & 0x0F];
+    return out;
+}
 
 struct DecodeTable {
     DecodeEntry entries[256];
@@ -715,18 +732,37 @@ NESLE_CPU_HD StepResult step(CpuState& state, Bus& bus) {
         case Op::NOP: break;
         case Op::Illegal:
         default:
-#ifdef __CUDA_ARCH__
-            asm("trap;");
-            break;
-#else
-            throw std::runtime_error("unimplemented or illegal 6502 opcode 0x" + std::to_string(opcode));
-#endif
+            // Report it; do not trap and do not throw here. step() is __host__ __device__
+            // and this branch used to compile to asm("trap;") under __CUDA_ARCH__, which
+            // aborts the entire kernel: a single env reaching an unimplemented opcode
+            // killed every other env in the batch with no indication of which one.
+            //
+            // The message also used to print std::to_string(opcode) behind a "0x"
+            // prefix, so 0xFC was reported as "opcode 0x252" - a value that does not
+            // exist, and one that points at an address rather than an instruction.
+            //
+            // cycles stays 0; a caller that wants to retry or report can read
+            // StepResult::pc.
+            return StepResult{start_pc, opcode, 0, true};
     }
 
     cycles = static_cast<std::uint8_t>(cycles + entry.base_cycles);
 
     state.cycles += cycles;
-    return StepResult{start_pc, opcode, cycles};
+    return StepResult{start_pc, opcode, cycles, false};
+}
+
+// Host-only convenience: step(), but an unimplemented opcode becomes an exception
+// naming the opcode in hex. This is the behaviour the single-environment and test
+// paths want, and it is kept out of step() so the device can compile that too.
+template <typename Bus>
+[[nodiscard]] inline StepResult step_or_throw(CpuState& state, Bus& bus) {
+    const auto result = step(state, bus);
+    if (result.illegal) {
+        throw std::runtime_error("unimplemented or illegal 6502 opcode 0x" +
+                                 detail::to_hex(result.opcode));
+    }
+    return result;
 }
 
 }  // namespace nesle::cpu

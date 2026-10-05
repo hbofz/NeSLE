@@ -2,6 +2,7 @@
 #include <cassert>
 #include <cstdint>
 #include <stdexcept>
+#include <string>
 #include <vector>
 
 #include "nesle/bus.hpp"
@@ -120,6 +121,60 @@ int main() {
         assert(bus.read(0x8000) == 0x00);
         assert(bus.read(0xC000) == 0x80);
         assert(bus.read(0xC001) == 0x81);
+    }
+
+    // An unimplemented opcode must be reported, not trapped and not thrown. step() is
+    // __host__ __device__, and on the device neither a throw nor asm("trap;") is
+    // usable - a trap aborts the whole launch, so one bad env in a 16k batch killed
+    // every other env. 0xFC is an unofficial NOP a Ricoh 2A03 really executes; it used
+    // to be reported as "opcode 0x252", a value that does not exist, because the
+    // message printed std::to_string behind a "0x" prefix.
+    {
+        auto image = nesle::parse_ines(make_nrom(2));
+        for (std::uint8_t opcode :
+             {std::uint8_t{0xFC}, std::uint8_t{0x1A}, std::uint8_t{0xEA}}) {
+            // Put the opcode at $8000 and point the PC there. reset() would otherwise
+            // load the PC from the reset vector, which in make_nrom's filler image is
+            // arbitrary.
+            auto patched = image;
+            patched.prg_rom[0] = opcode;
+            nesle::NromBus rom(patched);
+
+            nesle::cpu::CpuState state;
+            nesle::cpu::reset(state, rom);
+            state.pc = 0x8000;
+            const auto step_result = nesle::cpu::step(state, rom);
+
+            if (opcode == 0xEA) {
+                // NOP is implemented, so it steps normally.
+                assert(!step_result.illegal);
+                assert(step_result.opcode == 0xEA);
+                continue;
+            }
+
+            assert(step_result.illegal);
+            assert(step_result.opcode == opcode);
+            assert(step_result.cycles == 0);
+            // step() must not have thrown to get here.
+            assert(step_result.pc == 0x8000);
+
+            // step_or_throw is the host-facing wrapper, and it names the opcode in hex.
+            nesle::cpu::CpuState throwing;
+            nesle::cpu::reset(throwing, rom);
+            throwing.pc = 0x8000;
+            bool threw = false;
+            std::string message;
+            try {
+                (void)nesle::cpu::step_or_throw(throwing, rom);
+            } catch (const std::runtime_error& e) {
+                threw = true;
+                message = e.what();
+            }
+            assert(threw);
+            const std::string expected =
+                std::string("opcode 0x") + nesle::cpu::detail::to_hex(opcode);
+            assert(message.find(expected) != std::string::npos);
+        }
     }
 
     return 0;
