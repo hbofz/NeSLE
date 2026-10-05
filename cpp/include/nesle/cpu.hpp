@@ -336,6 +336,12 @@ constexpr DecodeTable make_decode_table() {
     set(0xE6, AddrMode::ZeroPage, Op::INC, 5, FlagRmw);
     set(0xE8, AddrMode::Implied, Op::INX, 2);
     set(0xE9, AddrMode::Immediate, Op::SBC, 2);
+    // 0xEB is the unofficial duplicate of SBC immediate. It is the one rejected
+    // opcode that commercial software actually uses - a handful of licensed titles
+    // do - and on a 2A03 it is bit-identical to 0xE9 because the Ricoh has no
+    // decimal mode. 0xED, the duplicate of SBC absolute, is already handled, so the
+    // pair had been half done.
+    set(0xEB, AddrMode::Immediate, Op::SBC, 2);
     set(0xEA, AddrMode::Implied, Op::NOP, 2);
     set(0xEC, AddrMode::Absolute, Op::CPX, 4);
     set(0xED, AddrMode::Absolute, Op::SBC, 4);
