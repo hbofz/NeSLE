@@ -25,6 +25,31 @@
 
 namespace nesle::cuda {
 
+// Compile-time cartridge specialization for the bus and PPU-fetch paths.
+//
+// bank_kind is batch-uniform, so the console step kernel can pick the banking
+// shape once per launch and hand it down as a template argument instead of
+// re-testing it on every PRG byte, CHR byte and nametable fetch. Measured on
+// Super Mario Bros. (mapper 0): dispatching on the runtime field instead costs
+// 34% of console-step throughput, because the compiler cannot drop the tests and
+// the accessors then have to thread `env` through the innermost loop.
+//
+//   kBankModeRuntime  dispatch on cart.bank_kind (default, so callers that do
+//                     not know the cartridge keep working unchanged)
+//   kBankModeNrom     compile-time mapper 0: the pre-mapper expressions, no tests
+//   kBankModeBanked   compile-time banked board: no NROM test at all
+enum BankMode : std::uint8_t {
+    kBankModeRuntime = 0,
+    kBankModeNrom = 1,
+    kBankModeBanked = 2,
+};
+
+// True when Mode proves the cartridge has no bank registers, so the NROM
+// expressions can be emitted without a runtime test.
+NESLE_CUDA_MAPPER_HD constexpr bool bank_mode_is_nrom(BankMode mode) noexcept {
+    return mode == kBankModeNrom;
+}
+
 // ---------------------------------------------------------------- PRG reads
 
 // NROM: the whole 16 or 32 KB image sits at $8000. Kept byte-identical to the
@@ -41,60 +66,75 @@ NESLE_CUDA_MAPPER_HD NESLE_CUDA_MAPPER_INLINE std::uint8_t read_nrom_prg(const C
     return cart.prg_rom[index];
 }
 
+template <BankMode Mode = kBankModeRuntime>
 NESLE_CUDA_MAPPER_HD NESLE_CUDA_MAPPER_INLINE std::uint8_t read_prg(const BatchBuffers& buffers,
                                                   std::uint32_t env,
                                                   std::uint16_t address) {
     const CartridgeView& cart = buffers.cart;
-    if (cart.bank_kind == kBankingNone) {
+    if constexpr (bank_mode_is_nrom(Mode)) {
         return read_nrom_prg(cart, address);
-    }
-    std::uint32_t index;
-    // The window sits at the bottom of CPU space. address - $8000 wraps to a
-    // huge value for the fixed half, so one unsigned compare covers both.
-    const std::uint32_t offset = static_cast<std::uint32_t>(address) - cart.prg_window_start;
-    if (offset <= cart.prg_window_mask) {
-        const std::uint32_t bank = buffers.mapper.prg_bank[env] & cart.prg_bank_mask;
-        index = (bank << cart.prg_window_shift) + offset;
     } else {
-        index = cart.prg_fixed_base + (address & cart.prg_fixed_mask);
-    }
+        if constexpr (Mode != kBankModeBanked) {
+            if (cart.bank_kind == kBankingNone) {
+                return read_nrom_prg(cart, address);
+            }
+        }
+        std::uint32_t index;
+        // The window sits at the bottom of CPU space. address - $8000 wraps to
+        // a huge value for the fixed half, so one unsigned compare covers both.
+        const std::uint32_t offset = static_cast<std::uint32_t>(address) - cart.prg_window_start;
+        if (offset <= cart.prg_window_mask) {
+            const std::uint32_t bank = buffers.mapper.prg_bank[env] & cart.prg_bank_mask;
+            index = (bank << cart.prg_window_shift) + offset;
+        } else {
+            index = cart.prg_fixed_base + (address & cart.prg_fixed_mask);
+        }
 
-    // prg_rom_size is the padded (power of two) size, so the mask wraps
-    // into the padding rather than reading out of range.
-    return cart.prg_rom[index & cart.prg_rom_mask];
+        // prg_rom_size is the padded (power of two) size, so the mask wraps
+        // into the padding rather than reading out of range.
+        return cart.prg_rom[index & cart.prg_rom_mask];
+    }
 }
 
 // ------------------------------------------------------------ mapper writes
 
 // A write anywhere in $8000-$FFFF latches the switchable bank. UxROM boards
 // ignore the address.
+template <BankMode Mode = kBankModeRuntime>
 NESLE_CUDA_MAPPER_HD NESLE_CUDA_MAPPER_INLINE void write_mapper_register(BatchBuffers& buffers,
                                                        std::uint32_t env,
                                                        std::uint16_t address,
                                                        std::uint8_t value) {
     const CartridgeView& cart = buffers.cart;
-    if (cart.bank_kind == kBankingNone) {
-        return;
-    }
-    if (address < 0x8000) {
-        // The mapper register is in the CPU space; a write to $6000-$7FFF
-        // reaches only WRAM.
-        return;
-    }
+    if constexpr (bank_mode_is_nrom(Mode)) {
+        return;  // mapper 0 has no registers; the write goes nowhere
+    } else {
+        if constexpr (Mode != kBankModeBanked) {
+            if (cart.bank_kind == kBankingNone) {
+                return;
+            }
+        }
+        if (address < 0x8000) {
+            // The mapper register is in the CPU space; a write to $6000-$7FFF
+            // reaches only WRAM.
+            return;
+        }
 
-    std::uint8_t latched = value;
-    if (cart.bus_conflicts != 0) {
-        // The cartridge's mask ROM drives 0s more strongly than the CPU data
-        // bus, so only bits the ROM byte already has set survive the write.
-        latched = static_cast<std::uint8_t>(value & read_prg(buffers, env, address));
-    }
+        std::uint8_t latched = value;
+        if (cart.bus_conflicts != 0) {
+            // The cartridge's mask ROM drives 0s more strongly than the CPU data
+            // bus, so only bits the ROM byte already has set survive the write.
+            latched = static_cast<std::uint8_t>(value & read_prg<Mode>(buffers, env, address));
+        }
 
-    buffers.mapper.prg_bank[env] =
-        static_cast<std::uint8_t>((latched >> cart.prg_bank_shift) & cart.prg_bank_mask);
+        buffers.mapper.prg_bank[env] =
+            static_cast<std::uint8_t>((latched >> cart.prg_bank_shift) & cart.prg_bank_mask);
+    }
 }
 
 // ------------------------------------------------------------------ CHR I/O
 
+template <BankMode Mode = kBankModeRuntime>
 NESLE_CUDA_MAPPER_HD NESLE_CUDA_MAPPER_INLINE std::uint8_t read_chr(const BatchBuffers& buffers,
                                                   std::uint32_t env,
                                                   std::uint16_t address) {
@@ -132,7 +172,9 @@ NESLE_CUDA_MAPPER_HD NESLE_CUDA_MAPPER_INLINE void write_chr(BatchBuffers& buffe
 
 // Runtime arrangement for this env. No board here changes mirroring at run
 // time, so this is the header's arrangement; kept as a function so the read
-// sites stay uniform.
+// sites stay uniform. The template parameter matches the other accessors so
+// call sites can pass their BankMode through unchanged.
+template <BankMode Mode = kBankModeRuntime>
 NESLE_CUDA_MAPPER_HD NESLE_CUDA_MAPPER_INLINE std::uint8_t env_nametable_arrangement(
     const BatchBuffers& buffers, std::uint32_t) {
     return buffers.cart.nametable_arrangement;

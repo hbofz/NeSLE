@@ -115,8 +115,16 @@ struct Fixture {
         const auto offset =
             static_cast<std::size_t>(bank) * window_bytes + (address - window_start);
         const auto expected = rom.prg_rom[offset];
-        assert(nesle::cuda::read_prg(const_cast<nesle::cuda::BatchBuffers&>(buffers), 0, address) ==
-               expected);
+        auto& bus = const_cast<nesle::cuda::BatchBuffers&>(buffers);
+        assert(nesle::cuda::read_prg(bus, 0, address) == expected);
+        // The compile-time instantiations must agree with the runtime dispatch,
+        // or the specialization is a behaviour change rather than a refactor.
+        assert(nesle::cuda::read_prg<nesle::cuda::kBankModeRuntime>(bus, 0, address) == expected);
+        if (buffers.cart.bank_kind == nesle::cuda::kBankingNone) {
+            assert(nesle::cuda::read_prg<nesle::cuda::kBankModeNrom>(bus, 0, address) == expected);
+        } else {
+            assert(nesle::cuda::read_prg<nesle::cuda::kBankModeBanked>(bus, 0, address) == expected);
+        }
     }
 
     void assert_reads_agree(nesle::Console& console) {
