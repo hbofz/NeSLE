@@ -14,6 +14,7 @@ Reports:
 """
 from __future__ import annotations
 
+import argparse
 import gzip
 import os
 import time
@@ -38,6 +39,11 @@ FRAMESKIP = 4
 WARMUP_STEPS = 30
 TIMED_STEPS = 200
 RIGHT_RAW = 0x80
+# Rendering is off by default: the RL loop steps with render_frame=False, so that
+# is the path a throughput change actually has to be judged on. --render measures
+# the render kernels instead, which is a different set of hot loops.
+RENDER_FRAME = False
+MAX_ENVS = 4096
 
 
 def bench_cpu_single() -> dict:
@@ -78,14 +84,14 @@ def bench_gpu_batched(num_envs: int, use_snapshot: bool = True) -> dict:
     actions = np.full(num_envs, RIGHT_RAW, dtype=np.uint8)
     # Warmup
     for _ in range(WARMUP_STEPS):
-        batch.step(actions, render_frame=False, copy_obs=False)
+        batch.step(actions, render_frame=RENDER_FRAME, copy_obs=False)
     t0 = time.perf_counter()
     for _ in range(TIMED_STEPS):
-        batch.step(actions, render_frame=False, copy_obs=False)
+        batch.step(actions, render_frame=RENDER_FRAME, copy_obs=False)
     elapsed = time.perf_counter() - t0
     env_steps = TIMED_STEPS * num_envs
     return {
-        "label": f"cuda-console (snapshot, {num_envs} env{'s' if num_envs != 1 else ''})",
+        "label": f"cuda-console (snapshot, {num_envs} env{'s' if num_envs != 1 else ''}, render={RENDER_FRAME})",
         "num_envs": num_envs,
         "env_steps": env_steps,
         "elapsed_s": elapsed,
@@ -105,10 +111,22 @@ def fmt_row(r: dict, baseline_eps: float) -> str:
 
 
 def main() -> None:
+    global RENDER_FRAME, MAX_ENVS
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--render", action="store_true",
+                        help="also run the PPU render kernels each step "
+                             "(default: render_frame=False, the RL path)")
+    parser.add_argument("--max-envs", type=int, default=MAX_ENVS,
+                        help="largest batch size to try (default: %(default)s)")
+    args = parser.parse_args()
+    RENDER_FRAME = args.render
+    MAX_ENVS = args.max_envs
+
     print(f"NeSLE benchmark - frameskip={FRAMESKIP}, action=RIGHT, "
           f"warmup={WARMUP_STEPS}, timed={TIMED_STEPS} steps per run")
     print(f"ROM:    {ROM_PATH.name} ({len(ROM_BYTES):,} bytes)")
     print(f"State:  {STATE_PATH.name}")
+    print(f"Render: {RENDER_FRAME}")
     print("Reset:  Stable Retro Level 1-1 snapshot (start of W1-1)")
     print()
     print("Running...")
@@ -118,13 +136,15 @@ def main() -> None:
     rows.append(bench_cpu_single())
     baseline_eps = rows[0]["env_steps_per_s"]
 
-    # cuda-console at a range of batch sizes the 1050 Ti can plausibly handle.
-    for n in [1, 8, 32, 64, 128, 256, 512, 1024, 2048, 4096]:
+    # cuda-console at a range of batch sizes the GPU can plausibly handle.
+    n = 1
+    while n <= MAX_ENVS:
         try:
             rows.append(bench_gpu_batched(n))
         except Exception as exc:
             print(f"  cuda-console {n} envs FAILED: {exc}")
             break
+        n *= 2
 
     print(f"{'Backend':42s}  {'Env-steps/s':>10s}  {'Frame-steps/s':>15s}  {'vs CPU':>8s}")
     print("-" * 90)
