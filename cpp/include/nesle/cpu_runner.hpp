@@ -51,7 +51,7 @@ RunResult run_until_trap(CpuState& state,
     for (std::uint64_t instruction = 0; instruction < max_instructions; ++instruction) {
         const auto previous_pc = state.pc;
         try {
-            const auto step_result = step(state, bus);
+            const auto step_result = step_or_throw(state, bus);
             result.opcode = step_result.opcode;
         } catch (const std::exception& error) {
             result.status = RunStatus::CpuException;

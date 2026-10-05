@@ -106,6 +106,15 @@ NESLE_CUDA_HD inline void apply_batch_reward_env(BatchBuffers& buffers, std::uin
 }
 
 
+// Clear a quarantined-opcode fault. Every reset path calls this: a reset env starts
+// from the reset vector, so a fault recorded before it says nothing about the env
+// now, and leaving it set would keep the env skipped forever.
+NESLE_CUDA_HD inline void clear_env_fault(BatchBuffers& buffers, std::uint32_t env) {
+    if (buffers.cpu.fault != nullptr) {
+        buffers.cpu.fault[env] = 0;
+    }
+}
+
 NESLE_CUDA_HD inline void cold_reset_console_env(BatchBuffers& buffers, std::uint32_t env) {
     // Read reset vector from PRG ROM.
     std::uint16_t reset_pc = 0;
@@ -130,6 +139,7 @@ NESLE_CUDA_HD inline void cold_reset_console_env(BatchBuffers& buffers, std::uin
     buffers.cpu.controller1_shift_count[env] = 8;
     buffers.cpu.controller1_strobe[env] = 0;
     buffers.cpu.pending_dma_cycles[env] = 0;
+    clear_env_fault(buffers, env);
 
     // CPU RAM.
     auto* ram = env_cpu_ram(buffers, env);
@@ -182,7 +192,7 @@ NESLE_CUDA_HD inline void warm_reset_console_env(BatchBuffers& buffers,
     const auto pal_base = static_cast<std::uint64_t>(level) * kPaletteRamBytes;
     const auto oam_base = static_cast<std::uint64_t>(level) * kOamBytes;
 
-    // CPU registers — restored verbatim from the snapshot.
+    // CPU registers вЂ” restored verbatim from the snapshot.
     buffers.cpu.pc[env] = snap.pc[level];
     buffers.cpu.a[env] = snap.a[level];
     buffers.cpu.x[env] = snap.x[level];
@@ -196,6 +206,7 @@ NESLE_CUDA_HD inline void warm_reset_console_env(BatchBuffers& buffers,
     buffers.cpu.controller1_shift_count[env] = 8;
     buffers.cpu.controller1_strobe[env] = 0;
     buffers.cpu.pending_dma_cycles[env] = 0;
+    clear_env_fault(buffers, env);
 
     auto* ram = env_cpu_ram(buffers, env);
     copy_bytes_fast(ram, snap.cpu_ram + cpu_ram_base, static_cast<std::uint32_t>(kCpuRamBytes));
@@ -229,7 +240,7 @@ NESLE_CUDA_HD inline void warm_reset_console_env(BatchBuffers& buffers,
     auto* oam = env_oam(buffers, env);
     copy_bytes_fast(oam, snap.oam + oam_base, static_cast<std::uint32_t>(kOamBytes));
 
-    // Reward baselines — seed previous_x and previous_time from the snapshot's RAM so the
+    // Reward baselines вЂ” seed previous_x and previous_time from the snapshot's RAM so the
     // first step's reward calculation doesn't see a synthetic large delta from zero.
     const auto* level_ram = snap.cpu_ram + cpu_ram_base;
     const int x_pos = static_cast<int>(level_ram[kMarioXPage]) * 0x100 +

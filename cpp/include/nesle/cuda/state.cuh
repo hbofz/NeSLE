@@ -12,7 +12,7 @@
 // Portable restrict qualifier for the SoA member pointers below. Every array
 // behind a live BatchBuffers is its own allocation (distinct cudaMalloc calls
 // in the binding, distinct std::vector/std::array storage in the host tests),
-// so no two members of one struct instance ever alias — telling the compiler
+// so no two members of one struct instance ever alias вЂ” telling the compiler
 // so lets it keep loaded values in registers across stores through sibling
 // pointers.
 //
@@ -23,7 +23,7 @@
 // and hud/play share every repointed array). That is still conforming:
 // restrict (C99 6.7.3.1 semantics, which the __restrict extensions follow)
 // only constrains objects that are MODIFIED during the pointers' lifetime,
-// and rendering writes nothing but frames_rgb — a distinct allocation only
+// and rendering writes nothing but frames_rgb вЂ” a distinct allocation only
 // ever accessed through the single `target` view. Everywhere state is
 // mutated (stepping, resets, snapshot capture/restore) only one BatchBuffers
 // instance is live and its members point at pairwise-distinct allocations.
@@ -42,7 +42,7 @@ namespace nesle::cuda {
 // Copy `n` bytes from `src` to `dst` (non-overlapping). On the CUDA device
 // trajectory, uses 16-byte vector chunks when `n` and both pointers are
 // 16-byte aligned (all per-env blocks are: each array is its own cudaMalloc
-// allocation and the per-env strides — 2048/8192/256/32 — are multiples of
+// allocation and the per-env strides вЂ” 2048/8192/256/32 вЂ” are multiples of
 // 16); otherwise falls back to a byte loop. Host builds (including the C++
 // unit tests, which compile these headers with a plain host compiler) use
 // std::memcpy, which imposes no alignment requirement.
@@ -116,6 +116,12 @@ struct CpuStateSoA {
     std::uint8_t* NESLE_RESTRICT controller1_shift_count;
     std::uint8_t* NESLE_RESTRICT controller1_strobe;
     std::uint32_t* NESLE_RESTRICT pending_dma_cycles;
+    // 0 while the env is healthy. Once its CPU reaches an opcode the core does not
+    // implement, this holds (pc << 8) | opcode and the env is quarantined: the step
+    // kernel stops executing it and marks it done, so one bad environment cannot end
+    // the launch the way asm("trap;") did. Python reads it back through
+    // CudaBatch.faults() to say which env died and on what.
+    std::uint32_t* NESLE_RESTRICT fault;
 };
 
 struct PpuStateSoA {
@@ -142,7 +148,7 @@ struct PpuStateSoA {
     std::uint8_t* NESLE_RESTRICT palette_ram;
     std::uint8_t* NESLE_RESTRICT oam;
 
-    // Presentation snapshot — frozen at each vblank start so render() sees an
+    // Presentation snapshot вЂ” frozen at each vblank start so render() sees an
     // internally consistent picture of the just-finished frame no matter where
     // stepping paused. All nullptr (host tests, older callers) => render falls
     // back to live state, the pre-snapshot behavior. `lat_*` latch scroll/ctrl
@@ -176,7 +182,7 @@ struct CartridgeView {
 
 // The PPU fields read/modified on every emulated instruction. The step kernel
 // loads them into registers once per launch (like CpuState already is) and
-// stores them back at exit — without this they cost ~6-10 dependent global
+// stores them back at exit вЂ” without this they cost ~6-10 dependent global
 // round-trips per instruction. Everything else (scroll, v/t/x/w, memories,
 // presentation snapshot) stays in global memory: those are touched per
 // register-access or per frame, not per instruction. Load/store helpers live
@@ -204,7 +210,7 @@ struct BatchBuffers {
 
 // Read-only "bank" of N snapshot templates used by snapshot-based env resets. Each top-level
 // array is num_levels copies of a single snapshot's array data, laid out contiguously.
-// `env_to_level[env]` selects which slot each env restores from — letting different envs in
+// `env_to_level[env]` selects which slot each env restores from вЂ” letting different envs in
 // the same batch start at different levels (curriculum training). For the single-level case
 // num_levels is 1 and env_to_level is all zeros.
 struct SnapshotTemplate {
