@@ -15,6 +15,7 @@ Reports:
 from __future__ import annotations
 
 import gzip
+import os
 import time
 from pathlib import Path
 
@@ -24,8 +25,13 @@ import nesle
 from nesle._cuda_core import CudaBatch
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-ROM_PATH = REPO_ROOT / "Super Mario Bros. (World).nes"
-STATE_PATH = REPO_ROOT / "docs" / "data" / "smb_level1_1.state"
+# The repo does not ship the ROM, so both inputs are overridable. Without this the
+# script only runs for someone who happens to have placed the cart at the repo root,
+# which makes the numbers in a PR impossible for a reviewer to reproduce.
+ROM_PATH = Path(os.environ.get("NESLE_BENCH_ROM")
+                or REPO_ROOT / "Super Mario Bros. (World).nes")
+STATE_PATH = Path(os.environ.get("NESLE_BENCH_STATE")
+                  or REPO_ROOT / "docs" / "data" / "smb_level1_1.state")
 ROM_BYTES = ROM_PATH.read_bytes()
 STATE_BYTES = gzip.decompress(STATE_PATH.read_bytes())
 FRAMESKIP = 4
@@ -101,7 +107,8 @@ def fmt_row(r: dict, baseline_eps: float) -> str:
 def main() -> None:
     print(f"NeSLE benchmark - frameskip={FRAMESKIP}, action=RIGHT, "
           f"warmup={WARMUP_STEPS}, timed={TIMED_STEPS} steps per run")
-    print(f"ROM:    Super Mario Bros. (World).nes ({len(ROM_BYTES):,} bytes)")
+    print(f"ROM:    {ROM_PATH.name} ({len(ROM_BYTES):,} bytes)")
+    print(f"State:  {STATE_PATH.name}")
     print("Reset:  Stable Retro Level 1-1 snapshot (start of W1-1)")
     print()
     print("Running...")
