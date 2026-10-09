@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <stdexcept>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "nesle/bus.hpp"
@@ -160,6 +161,44 @@ int main() {
                 std::string("opcode 0x") + nesle::cpu::detail::to_hex(opcode);
             assert(message.find(expected) != std::string::npos);
         }
+    }
+
+    // 0xEB is the unofficial duplicate of SBC immediate and was rejected, which was
+    // the one gap that mattered: a few licensed titles use it. On a 2A03 it is
+    // bit-identical to 0xE9 because the Ricoh has no decimal mode, so it must give
+    // the same result, the same flags and the same cycle count.
+    {
+        auto image = nesle::parse_ines(make_nrom(2));
+        // LDA #$50; SEC; SBC #$20 -> $30. SEC first so the result does not depend on
+        // the power-on carry: with C clear, SBC borrows an extra 1 and yields $2F,
+        // which is correct 6502 behaviour and would make the expected value obscure.
+        const auto run = [&image](std::uint8_t opcode) {
+            auto patched = image;
+            patched.prg_rom[0] = 0xA9;  // LDA #$50
+            patched.prg_rom[1] = 0x50;
+            patched.prg_rom[2] = 0x38;  // SEC
+            patched.prg_rom[3] = static_cast<std::uint8_t>(opcode);
+            patched.prg_rom[4] = 0x20;
+            patched.prg_rom[5] = 0x4C;  // JMP $8006
+            patched.prg_rom[6] = 0x06;
+            patched.prg_rom[7] = 0x80;
+            nesle::NromBus rom(patched);
+            nesle::cpu::CpuState state;
+            nesle::cpu::reset(state, rom);
+            state.pc = 0x8000;
+            (void)nesle::cpu::step(state, rom);  // LDA
+            (void)nesle::cpu::step(state, rom);  // SEC
+            const auto sbc = nesle::cpu::step(state, rom);
+            return std::make_pair(sbc, state);
+        };
+
+        const auto canonical = run(0xE9);
+        const auto duplicate = run(0xEB);
+        assert(duplicate.first.cycles == canonical.first.cycles);
+        assert(duplicate.second.a == canonical.second.a);
+        assert(duplicate.second.p == canonical.second.p);
+        // And the arithmetic is right, so this is not passing on two no-ops.
+        assert(canonical.second.a == 0x30);
     }
 
     return 0;
