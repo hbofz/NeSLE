@@ -79,6 +79,24 @@ public:
                              NametableArrangement arrangement) noexcept {
         chr_rom_ = chr_rom;
         nametable_arrangement_ = arrangement;
+        chr_window_low_ = 0;
+        chr_window_high_ = 0;
+        chr_banked_ = false;
+    }
+
+    // Mapper hooks. A board that can change CHR banking (UNROM 512 bits 5-6,
+    // NINA-001 $7FFE/$7FFF) or mirroring at run time calls these from its
+    // register write; boards that cannot leave them alone, so the NROM path is
+    // unchanged. NINA-001 drives the two 4 KB halves independently, so the
+    // windows are separate; every other board passes the same base twice.
+    void set_chr_windows(std::uint32_t low_base, std::uint32_t high_base) noexcept {
+        chr_window_low_ = low_base;
+        chr_window_high_ = high_base;
+        chr_banked_ = true;
+    }
+
+    void set_nametable_arrangement(NametableArrangement arrangement) noexcept {
+        nametable_arrangement_ = arrangement;
     }
 
     [[nodiscard]] std::uint8_t read_register(std::uint16_t index) noexcept {
@@ -291,14 +309,18 @@ private:
 
     [[nodiscard]] std::uint16_t mirror_nametable_address(std::uint16_t address) const noexcept {
         const auto index = static_cast<std::uint16_t>((address - 0x2000) & 0x0FFF);
-        if (nametable_arrangement_ == NametableArrangement::FourScreen) {
-            return index;
+        switch (nametable_arrangement_) {
+            case NametableArrangement::FourScreen:
+                return index;
+            case NametableArrangement::Vertical:
+                return static_cast<std::uint16_t>(index & 0x07FF);
+            case NametableArrangement::SingleScreenLower:
+                return static_cast<std::uint16_t>(index & 0x03FF);
+            case NametableArrangement::SingleScreenUpper:
+                return static_cast<std::uint16_t>((index & 0x03FF) | 0x0400);
+            case NametableArrangement::Horizontal:
+                break;
         }
-
-        if (nametable_arrangement_ == NametableArrangement::Vertical) {
-            return static_cast<std::uint16_t>(index & 0x07FF);
-        }
-
         return static_cast<std::uint16_t>((index & 0x03FF) | ((index & 0x0800) >> 1));
     }
 
@@ -306,7 +328,15 @@ private:
         address = mirror_ppu_address(address);
         if (address < 0x2000) {
             if (!chr_rom_.empty()) {
-                return chr_rom_[address % chr_rom_.size()];
+                if (!chr_banked_) {
+                    return chr_rom_[address % chr_rom_.size()];
+                }
+                // A window base is relative to its own 4 KB half, so the
+                // offset inside that half is what gets added. Window 0 is a
+                // real 4 KB window here, not "no banking": on NINA-001 it
+                // mirrors chr_rom[0..0xFFF] across $1000-$1FFF.
+                const auto base = address < 0x1000 ? chr_window_low_ : chr_window_high_;
+                return chr_rom_[(base + (address & 0x0FFFu)) % chr_rom_.size()];
             }
             return chr_ram_[address & 0x1FFF];
         }
@@ -562,6 +592,9 @@ private:
     std::uint64_t frame_ = 0;
     NametableArrangement nametable_arrangement_ = NametableArrangement::Vertical;
     std::span<const std::uint8_t> chr_rom_{};
+    std::uint32_t chr_window_low_ = 0;
+    std::uint32_t chr_window_high_ = 0;
+    bool chr_banked_ = false;
     std::array<std::uint8_t, 8 * 1024> chr_ram_{};
     std::array<std::uint8_t, 4 * 1024> nametable_ram_{};
     std::array<std::uint8_t, 32> palette_ram_{};

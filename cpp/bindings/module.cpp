@@ -32,6 +32,8 @@ py::dict rom_metadata_to_dict(const nesle::RomMetadata& metadata) {
     out["prg_rom_size"] = metadata.prg_rom_size;
     out["chr_rom_size"] = metadata.chr_rom_size;
     out["is_nrom"] = metadata.is_nrom();
+    out["is_uxrom"] = metadata.is_uxrom();
+    out["is_supported"] = nesle::describe_mapper(metadata).supported;
     out["is_supported_mario_target"] = nesle::is_supported_mario_target(metadata);
     return out;
 }
