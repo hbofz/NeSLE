@@ -183,6 +183,16 @@ struct DecodeEntry {
 
 namespace detail {
 
+// Two-digit uppercase hex, for diagnostics. An opcode is a byte, so callers do not
+// need to worry about width.
+inline std::string to_hex(std::uint8_t value) {
+    constexpr char kHex[] = "0123456789ABCDEF";
+    std::string out(2, '0');
+    out[0] = kHex[(value >> 4) & 0x0F];
+    out[1] = kHex[value & 0x0F];
+    return out;
+}
+
 struct DecodeTable {
     DecodeEntry entries[256];
 };
@@ -719,7 +729,11 @@ NESLE_CPU_HD StepResult step(CpuState& state, Bus& bus) {
             asm("trap;");
             break;
 #else
-            throw std::runtime_error("unimplemented or illegal 6502 opcode 0x" + std::to_string(opcode));
+            // Hex, not decimal. This used to print std::to_string(opcode) behind a
+            // "0x" prefix, so opcode 0xFC was reported as "0x252" - a value that does
+            // not exist, and one that sent the search for a fault in the wrong place.
+            throw std::runtime_error("unimplemented or illegal 6502 opcode 0x" +
+                                     detail::to_hex(opcode));
 #endif
     }
 

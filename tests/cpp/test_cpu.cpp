@@ -2,6 +2,7 @@
 #include <cassert>
 #include <cstdint>
 #include <stdexcept>
+#include <string>
 #include <vector>
 
 #include "nesle/bus.hpp"
@@ -120,6 +121,45 @@ int main() {
         assert(bus.read(0x8000) == 0x00);
         assert(bus.read(0xC000) == 0x80);
         assert(bus.read(0xC001) == 0x81);
+    }
+
+    // An unimplemented opcode must be a catchable error naming the opcode in hex, not
+    // a crash and not a decimal number behind a "0x" prefix. 0xFC is one of the
+    // unofficial NOPs a Ricoh 2A03 actually executes, and it used to be reported as
+    // "0x252" - a value that does not exist, which sent the hunt for a memory-safety
+    // bug into the wrong place entirely.
+    {
+        auto image = nesle::parse_ines(make_nrom(2));
+        for (std::uint8_t opcode :
+             {std::uint8_t{0xFC}, std::uint8_t{0x1A}, std::uint8_t{0xEA}}) {
+            // Put the opcode at $8000 and point the PC there. reset() would otherwise
+            // load the PC from the reset vector, which in make_nrom's filler image is
+            // arbitrary.
+            auto patched = image;
+            patched.prg_rom[0] = opcode;
+            nesle::NromBus rom(patched);
+            nesle::cpu::CpuState state;
+            nesle::cpu::reset(state, rom);
+            state.pc = 0x8000;
+
+            bool threw = false;
+            std::string message;
+            try {
+                (void)nesle::cpu::step(state, rom);
+            } catch (const std::runtime_error& e) {
+                threw = true;
+                message = e.what();
+            }
+            // 0xEA is NOP, a real opcode, so it must not throw.
+            if (opcode == 0xEA) {
+                assert(!threw);
+                continue;
+            }
+            assert(threw);
+            const std::string expected =
+                std::string("opcode 0x") + nesle::cpu::detail::to_hex(opcode);
+            assert(message.find(expected) != std::string::npos);
+        }
     }
 
     return 0;
