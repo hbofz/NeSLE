@@ -183,6 +183,16 @@ struct DecodeEntry {
 
 namespace detail {
 
+// Two-digit uppercase hex, for diagnostics. An opcode is a byte, so callers do not
+// need to worry about width.
+inline std::string to_hex(std::uint8_t value) {
+    constexpr char kHex[] = "0123456789ABCDEF";
+    std::string out(2, '0');
+    out[0] = kHex[(value >> 4) & 0x0F];
+    out[1] = kHex[value & 0x0F];
+    return out;
+}
+
 struct DecodeTable {
     DecodeEntry entries[256];
 };
@@ -336,11 +346,8 @@ constexpr DecodeTable make_decode_table() {
     set(0xE6, AddrMode::ZeroPage, Op::INC, 5, FlagRmw);
     set(0xE8, AddrMode::Implied, Op::INX, 2);
     set(0xE9, AddrMode::Immediate, Op::SBC, 2);
-    // 0xEB is the unofficial duplicate of SBC immediate. It is the one rejected
-    // opcode that commercial software actually uses - a handful of licensed titles
-    // do - and on a 2A03 it is bit-identical to 0xE9 because the Ricoh has no
-    // decimal mode. 0xED, the duplicate of SBC absolute, is already handled, so the
-    // pair had been half done.
+    // 0xEB is the unofficial duplicate of SBC immediate: same operation, flags
+    // and timing as 0xE9.
     set(0xEB, AddrMode::Immediate, Op::SBC, 2);
     set(0xEA, AddrMode::Implied, Op::NOP, 2);
     set(0xEC, AddrMode::Absolute, Op::CPX, 4);
@@ -725,7 +732,11 @@ NESLE_CPU_HD StepResult step(CpuState& state, Bus& bus) {
             asm("trap;");
             break;
 #else
-            throw std::runtime_error("unimplemented or illegal 6502 opcode 0x" + std::to_string(opcode));
+            // Hex, not decimal. This used to print std::to_string(opcode) behind a
+            // "0x" prefix, so opcode 0xFC was reported as "0x252" - a value that does
+            // not exist, and one that sent the search for a fault in the wrong place.
+            throw std::runtime_error("unimplemented or illegal 6502 opcode 0x" +
+                                     detail::to_hex(opcode));
 #endif
     }
 
