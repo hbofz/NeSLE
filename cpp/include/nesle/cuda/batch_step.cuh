@@ -2,6 +2,7 @@
 
 #include <cstdint>
 
+#include "nesle/cuda/mapper.cuh"
 #include "nesle/cuda/state.cuh"
 
 #ifdef __CUDACC__
@@ -89,6 +90,15 @@ NESLE_CUDA_HD inline BatchReward compute_batch_reward(const MarioBatchSnapshot& 
 }
 
 NESLE_CUDA_HD inline void apply_batch_reward_env(BatchBuffers& buffers, std::uint32_t env) {
+    if (buffers.cart.reward_smb == 0) {
+        // Not a Super Mario Bros. image: the RAM scraper below would read
+        // unrelated bytes and flag every environment done within a few steps,
+        // which looks exactly like "the ROM does not boot". Non-SMB ROMs run
+        // reward-free until the env's own step limit truncates the episode.
+        buffers.rewards[env] = 0.0F;
+        buffers.done[env] = 0;
+        return;
+    }
     const auto* ram = env_cpu_ram(buffers, env);
     const auto current = read_mario_snapshot(ram);
     MarioBatchSnapshot previous;
@@ -107,10 +117,15 @@ NESLE_CUDA_HD inline void apply_batch_reward_env(BatchBuffers& buffers, std::uin
 
 
 NESLE_CUDA_HD inline void cold_reset_console_env(BatchBuffers& buffers, std::uint32_t env) {
-    // Read reset vector from PRG ROM.
+    // Read the reset vector from PRG ROM. $FFFC/$FFFD live in the fixed window,
+    // which for every board here is the top of the image, so the vector is the
+    // last four bytes of the *real* image. prg_rom_size is the padded size: the
+    // pad is appended after the image, so reading from the padded tail would
+    // read zeros instead of the vector whenever the real size is not a power of
+    // two.
     std::uint16_t reset_pc = 0;
-    if (buffers.cart.prg_rom != nullptr && buffers.cart.prg_rom_size > 0) {
-        const auto base = buffers.cart.prg_rom_size == 16u * 1024u ? 0x3FFCu : 0x7FFCu;
+    if (buffers.cart.prg_rom != nullptr && buffers.cart.prg_rom_real_size >= 4u * 1024u) {
+        const auto base = static_cast<std::uint32_t>(buffers.cart.prg_rom_real_size - 4u);
         reset_pc = static_cast<std::uint16_t>(
             buffers.cart.prg_rom[base] |
             (static_cast<std::uint16_t>(buffers.cart.prg_rom[base + 1]) << 8));
@@ -138,6 +153,15 @@ NESLE_CUDA_HD inline void cold_reset_console_env(BatchBuffers& buffers, std::uin
     // PRG RAM.
     auto* prg_ram = buffers.cpu.prg_ram + static_cast<std::uint64_t>(env) * kPrgRamBytes;
     zero_bytes_fast(prg_ram, static_cast<std::uint32_t>(kPrgRamBytes));
+
+    // CHR RAM (null on every CHR ROM cartridge).
+    if (buffers.ppu.chr_ram != nullptr) {
+        auto* chr_ram = buffers.ppu.chr_ram + static_cast<std::uint64_t>(env) * kChrRamBytes;
+        zero_bytes_fast(chr_ram, static_cast<std::uint32_t>(kChrRamBytes));
+    }
+
+    // Mapper registers: power-on banks and header mirroring.
+    reset_mapper_state(buffers, env);
 
     // PPU state.
     buffers.ppu.ctrl[env] = 0;
@@ -202,6 +226,12 @@ NESLE_CUDA_HD inline void warm_reset_console_env(BatchBuffers& buffers,
     auto* prg_ram = buffers.cpu.prg_ram + static_cast<std::uint64_t>(env) * kPrgRamBytes;
     copy_bytes_fast(prg_ram, snap.prg_ram + prg_ram_base,
                     static_cast<std::uint32_t>(kPrgRamBytes));
+
+    // FCEUX save states carry no mapper registers, so a restored environment
+    // starts from power-on banks; the game's own init code reloads them. CHR
+    // RAM is part of the visible machine state and is left as the snapshot
+    // found it.
+    reset_mapper_state(buffers, env);
 
     // PPU registers + memory.
     buffers.ppu.ctrl[env] = snap.ppu_ctrl[level];

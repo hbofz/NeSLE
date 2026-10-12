@@ -36,9 +36,10 @@ public:
     };
 
     explicit Console(RomImage rom)
-        : rom_(std::move(rom)) {
-        if (!rom_.metadata.is_nrom()) {
-            throw std::invalid_argument("Console currently supports only mapper 0/NROM ROMs");
+        : rom_(std::move(rom)),
+          layout_(describe_mapper(rom_.metadata)) {
+        if (!layout_.supported) {
+            throw std::invalid_argument(unsupported_mapper_reason(rom_.metadata));
         }
         if (rom_.prg_rom.empty()) {
             throw std::invalid_argument("Console requires PRG ROM bytes");
@@ -63,7 +64,7 @@ public:
             return apu_io_[address - 0x4000];
         }
         if (address >= 0x6000 && address < 0x8000) {
-            return prg_ram_[address - 0x6000];
+            return read_prg_ram(address);
         }
         if (address >= 0x8000) {
             return read_prg(address);
@@ -97,6 +98,10 @@ public:
         }
         if (address >= 0x6000 && address < 0x8000) {
             prg_ram_[address - 0x6000] = value;
+            return;
+        }
+        if (address >= 0x8000) {
+            write_mapper_register(address, value);
         }
     }
 
@@ -178,14 +183,44 @@ public:
     }
 
 private:
-    [[nodiscard]] std::uint8_t read_prg(std::uint16_t address) const noexcept {
-        auto index = static_cast<std::size_t>(address - 0x8000);
-        if (rom_.prg_rom.size() == 16 * 1024) {
-            index &= 0x3FFF;
-        } else {
-            index &= 0x7FFF;
+    [[nodiscard]] std::uint8_t read_prg_ram(std::uint16_t address) const noexcept {
+        return prg_ram_[address - 0x6000];
+    }
+
+    void write_mapper_register(std::uint16_t address, std::uint8_t value) noexcept {
+        if (layout_.window_bytes == 0) {
+            return;  // NROM: no registers, the write goes nowhere
         }
-        return rom_.prg_rom[index];
+        std::uint8_t latched = value;
+        if (layout_.bus_conflicts) {
+            latched = static_cast<std::uint8_t>(value & read_prg(address));
+        }
+
+        prg_bank_ = static_cast<std::uint8_t>((latched >> layout_.bank_shift) & layout_.bank_mask);
+    }
+
+    [[nodiscard]] std::uint8_t read_prg(std::uint16_t address) const noexcept {
+        if (layout_.window_bytes == 0) {
+            auto index = static_cast<std::size_t>(address - 0x8000);
+            if (rom_.prg_rom.size() == 16 * 1024) {
+                index &= 0x3FFF;
+            } else {
+                index &= 0x7FFF;
+            }
+            return rom_.prg_rom[index];
+        }
+        std::size_t index;
+        const std::uint32_t offset = static_cast<std::uint32_t>(address) - 0x8000u;
+        if (offset <= layout_.window_bytes - 1) {
+            index = (static_cast<std::size_t>(prg_bank_ & layout_.bank_mask) * layout_.window_bytes) +
+                    offset;
+        } else {
+            // The fixed window is the last fixed_bytes of the image, which for
+            // every board here is the top 16 KB.
+            const std::size_t fixed_base = rom_.prg_rom.size() - layout_.fixed_bytes;
+            index = fixed_base + (address & (layout_.fixed_bytes - 1));
+        }
+        return rom_.prg_rom[index % rom_.prg_rom.size()];
     }
 
     void run_oam_dma(std::uint8_t page) noexcept {
@@ -197,6 +232,8 @@ private:
     }
 
     RomImage rom_;
+    MapperLayout layout_;
+    std::uint8_t prg_bank_ = 0;
     std::array<std::uint8_t, kCpuRamBytes> cpu_ram_{};
     std::array<std::uint8_t, kPrgRamBytes> prg_ram_{};
     std::array<std::uint8_t, kApuIoBytes> apu_io_{};

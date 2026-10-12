@@ -2,6 +2,7 @@
 
 #include <cstdint>
 
+#include "nesle/cuda/mapper.cuh"
 #include "nesle/cuda/state.cuh"
 
 #ifdef __CUDACC__
@@ -91,14 +92,7 @@ NESLE_CUDA_RENDER_HD NESLE_CUDA_RENDER_INLINE std::uint16_t mirror_batch_palette
 NESLE_CUDA_RENDER_HD NESLE_CUDA_RENDER_INLINE std::uint16_t mirror_batch_nametable_address(
     const CartridgeView& cart,
     std::uint16_t address) {
-    const auto index = static_cast<std::uint16_t>((address - 0x2000) & 0x0FFF);
-    if (cart.nametable_arrangement == kNametableFourScreen) {
-        return index;
-    }
-    if (cart.nametable_arrangement == kNametableHorizontal) {
-        return static_cast<std::uint16_t>((index & 0x03FF) | ((index & 0x0800) >> 1));
-    }
-    return static_cast<std::uint16_t>(index & 0x07FF);
+    return mirror_nametable_address(cart.nametable_arrangement, address);
 }
 
 NESLE_CUDA_RENDER_HD NESLE_CUDA_RENDER_INLINE std::uint8_t batch_ppu_memory_read(const BatchBuffers& buffers,
@@ -106,16 +100,14 @@ NESLE_CUDA_RENDER_HD NESLE_CUDA_RENDER_INLINE std::uint8_t batch_ppu_memory_read
                                                                std::uint16_t address) {
     address = static_cast<std::uint16_t>(address & 0x3FFF);
     if (address < 0x2000) {
-        if (buffers.cart.chr_rom != nullptr && buffers.cart.chr_rom_size != 0) {
-            return buffers.cart.chr_rom[address % buffers.cart.chr_rom_size];
-        }
-        return 0;
+        return read_chr(buffers, env, address);
     }
     if (address < 0x3F00) {
         if (address >= 0x3000) {
             address = static_cast<std::uint16_t>(address - 0x1000);
         }
-        return env_nametable_ram(buffers, env)[mirror_batch_nametable_address(buffers.cart, address)];
+        return env_nametable_ram(buffers, env)[mirror_nametable_address(
+            env_nametable_arrangement(buffers, env), address)];
     }
     return env_palette_ram(buffers, env)[mirror_batch_palette_address(address)];
 }

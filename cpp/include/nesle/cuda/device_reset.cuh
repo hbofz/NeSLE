@@ -41,6 +41,8 @@ struct DeviceResetSnapshots {
     std::uint8_t* ppu_scroll_x = nullptr;
     std::uint8_t* ppu_scroll_y = nullptr;
 
+    std::uint8_t* prg_bank = nullptr;
+
     int* previous_mario_x = nullptr;
     int* previous_mario_time = nullptr;
     float* rewards = nullptr;
@@ -125,6 +127,10 @@ NESLE_CUDA_DEVICE_RESET_HD inline void capture_device_reset_snapshot(
     }
     if (buffers.ppu.scroll_y != nullptr && snapshots.ppu_scroll_y != nullptr) {
         snapshots.ppu_scroll_y[slot] = buffers.ppu.scroll_y[env];
+    }
+
+    if (buffers.mapper.prg_bank != nullptr && snapshots.prg_bank != nullptr) {
+        snapshots.prg_bank[slot] = buffers.mapper.prg_bank[env];
     }
 
     if (buffers.previous_mario_x != nullptr && snapshots.previous_mario_x != nullptr) {
@@ -220,6 +226,10 @@ NESLE_CUDA_DEVICE_RESET_HD inline void restore_device_reset_snapshot(
     }
     if (buffers.ppu.scroll_y != nullptr && snapshots.ppu_scroll_y != nullptr) {
         buffers.ppu.scroll_y[env] = snapshots.ppu_scroll_y[slot];
+    }
+
+    if (buffers.mapper.prg_bank != nullptr && snapshots.prg_bank != nullptr) {
+        buffers.mapper.prg_bank[env] = snapshots.prg_bank[slot];
     }
 
     if (buffers.previous_mario_x != nullptr && snapshots.previous_mario_x != nullptr) {

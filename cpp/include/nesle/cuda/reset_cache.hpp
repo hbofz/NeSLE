@@ -36,6 +36,9 @@ struct EnvResetSnapshot {
     std::uint8_t ppu_scroll_x = 0;
     std::uint8_t ppu_scroll_y = 0;
 
+    // Mapper register (zero for NROM, which has none).
+    std::uint8_t prg_bank = 0;
+
     int previous_mario_x = 0;
     int previous_mario_time = 0;
     float reward = 0.0F;
@@ -95,6 +98,10 @@ struct EnvResetSnapshot {
     }
     if (buffers.ppu.scroll_y != nullptr) {
         snapshot.ppu_scroll_y = buffers.ppu.scroll_y[env];
+    }
+
+    if (buffers.mapper.prg_bank != nullptr) {
+        snapshot.prg_bank = buffers.mapper.prg_bank[env];
     }
 
     if (buffers.previous_mario_x != nullptr) {
@@ -178,6 +185,10 @@ inline void restore_reset_snapshot(BatchBuffers& buffers,
     }
     if (buffers.ppu.scroll_y != nullptr) {
         buffers.ppu.scroll_y[env] = snapshot.ppu_scroll_y;
+    }
+
+    if (buffers.mapper.prg_bank != nullptr) {
+        buffers.mapper.prg_bank[env] = snapshot.prg_bank;
     }
 
     if (buffers.previous_mario_x != nullptr) {
