@@ -6,8 +6,26 @@
 
 #ifdef __CUDACC__
 #define NESLE_CPU_HD __host__ __device__
+#elif defined(_MSC_VER)
+#define NESLE_CPU_HD
 #else
 #define NESLE_CPU_HD
+#endif
+
+// step() is large enough that nvcc's size-based inlining heuristic is the only
+// thing deciding whether it lands inside a kernel or becomes a real call. When
+// it becomes a call, its arguments need addressable memory: the bus object is
+// materialized in local memory and every bus access turns into a local load
+// plus a generic dereference, which measured 28% of console-step throughput on
+// an RTX 4090. Force the inline so the decision is not marginal.
+#if defined(__CUDACC__)
+#define NESLE_CPU_FORCEINLINE __forceinline__
+#elif defined(_MSC_VER)
+#define NESLE_CPU_FORCEINLINE __forceinline
+#elif defined(__GNUC__) || defined(__clang__)
+#define NESLE_CPU_FORCEINLINE inline __attribute__((always_inline))
+#else
+#define NESLE_CPU_FORCEINLINE inline
 #endif
 
 namespace nesle::cpu {
@@ -388,7 +406,7 @@ __device__ constexpr DecodeTable kDecodeTableDevice = make_decode_table();
 }  // namespace detail
 
 template <typename Bus>
-NESLE_CPU_HD StepResult step(CpuState& state, Bus& bus) {
+[[nodiscard]] NESLE_CPU_HD NESLE_CPU_FORCEINLINE StepResult step(CpuState& state, Bus& bus) {
     const std::uint16_t start_pc = state.pc;
     std::uint8_t cycles = 0;
 
