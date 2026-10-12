@@ -16,6 +16,36 @@ class NametableArrangement(str, Enum):
     FOUR_SCREEN = "four_screen"
 
 
+# iNES mapper numbers the batched emulator drives. Mapper 0 has no register at
+# all; the rest reduce to a switchable PRG window plus a fixed one.
+MAPPER_NROM = 0
+MAPPER_UXROM = 2
+MAPPER_BNROM = 34
+MAPPER_UN1ROM = 94
+
+SUPPORTED_MAPPERS = (
+    MAPPER_NROM,
+    MAPPER_UXROM,
+    MAPPER_BNROM,
+    MAPPER_UN1ROM,
+)
+
+# Boards whose mirroring is wired to solder pads: the iNES four-screen bit is
+# not implementable, so it falls back to the horizontal/vertical bit.
+TWO_BIT_MIRRORING_MAPPERS = frozenset((MAPPER_UXROM, MAPPER_UN1ROM))
+
+MAPPER_NAMES = {
+    MAPPER_NROM: "NROM",
+    MAPPER_UXROM: "UxROM",
+    MAPPER_BNROM: "BNROM",
+    MAPPER_UN1ROM: "UN1ROM",
+}
+
+
+def _is_power_of_two(value: int) -> bool:
+    return value != 0 and value & (value - 1) == 0
+
+
 @dataclass(frozen=True)
 class INESRom:
     prg_rom_banks: int
@@ -40,6 +70,53 @@ class INESRom:
     @property
     def is_nrom(self) -> bool:
         return self.mapper == 0 and self.prg_rom_banks in (1, 2)
+
+    @property
+    def is_uxrom(self) -> bool:
+        return self.mapper in (MAPPER_UXROM, MAPPER_UN1ROM, MAPPER_BNROM)
+
+    @property
+    def has_chr_ram(self) -> bool:
+        return self.chr_rom_size == 0
+
+    @property
+    def is_supported(self) -> bool:
+        """Whether the batched emulator can run this image.
+
+        Mirrors nesle.describe_mapper on the C++ side, which is what the
+        bindings actually enforce; keeping both in step means the Python
+        error arrives before the CUDA context is created.
+        """
+        if self.has_trainer:
+            return False
+        prg = self.prg_rom_size
+        if self.mapper == MAPPER_NROM:
+            return self.is_nrom
+        if self.mapper in (MAPPER_UXROM, MAPPER_UN1ROM):
+            return prg >= 0x8000 and prg % 0x4000 == 0
+        if self.mapper == MAPPER_BNROM:
+            # BNROM: one 32 KB window, CHR RAM, no fixed window. NINA-001 is
+            # the other board behind iNES 34 and is not supported.
+            return self.has_chr_ram and prg >= 0x8000 and prg % 0x8000 == 0
+        return False
+
+    @property
+    def mapper_name(self) -> str:
+        return MAPPER_NAMES.get(self.mapper, f"mapper {self.mapper}")
+
+    @property
+    def unsupported_reason(self) -> str | None:
+        if self.is_supported:
+            return None
+        reason = (
+            f"unsupported mapper: {self.mapper_name} (iNES {self.mapper}); "
+            "NeSLE emulates NROM, UxROM, UN1ROM and BNROM (0, 2, 34, 94)"
+        )
+        if self.has_trainer:
+            return "ROM trainers are not supported"
+        if self.is_nrom is False and self.mapper == MAPPER_NROM:
+            return "expected one or two 16 KB PRG ROM banks for NROM"
+        return reason
 
     @property
     def is_supported_mario_target(self) -> bool:
@@ -73,9 +150,17 @@ def parse_ines(data: bytes | bytearray | memoryview) -> INESRom:
         submapper = raw[8] >> 4
     has_trainer = bool(flags6 & 0x04)
 
-    if flags6 & 0x08:
+    vertical = bool(flags6 & 0x01)
+    four_screen = bool(flags6 & 0x08)
+    if mapper in TWO_BIT_MIRRORING_MAPPERS:
+        # UxROM boards only have H/V solder pads, so a four-screen bit cannot
+        # be honored; fall back to the H/V bit instead of folding the screen.
+        arrangement = (
+            NametableArrangement.VERTICAL if vertical else NametableArrangement.HORIZONTAL
+        )
+    elif four_screen:
         arrangement = NametableArrangement.FOUR_SCREEN
-    elif flags6 & 0x01:
+    elif vertical:
         arrangement = NametableArrangement.VERTICAL
     else:
         arrangement = NametableArrangement.HORIZONTAL
