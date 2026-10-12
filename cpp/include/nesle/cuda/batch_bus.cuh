@@ -91,6 +91,14 @@ NESLE_CUDA_HD inline void latch_controller1(BatchBuffers& buffers, std::uint32_t
     buffers.cpu.controller1_shift_count[env] = 0;
 }
 
+NESLE_CUDA_HD inline void latch_controller2(BatchBuffers& buffers, std::uint32_t env) {
+    if (buffers.cpu.controller2_shift == nullptr) {
+        return;
+    }
+    buffers.cpu.controller2_shift[env] = 0;
+    buffers.cpu.controller2_shift_count[env] = 0;
+}
+
 NESLE_CUDA_HD inline std::uint8_t read_controller1(BatchBuffers& buffers, std::uint32_t env) {
     if (buffers.cpu.controller1_strobe[env] != 0) {
         return static_cast<std::uint8_t>(0x40 | (buffers.action_masks[env] & 0x01));
@@ -106,6 +114,27 @@ NESLE_CUDA_HD inline std::uint8_t read_controller1(BatchBuffers& buffers, std::u
     return static_cast<std::uint8_t>(0x40 | bit);
 }
 
+// Second controller. There is no second-player input source in the batch, so
+// the shift register is always empty; the value still has to track the strobe
+// and read count so a lockstep run against the host reference stays bit-exact.
+NESLE_CUDA_HD inline std::uint8_t read_controller2(BatchBuffers& buffers, std::uint32_t env) {
+    if (buffers.cpu.controller2_shift == nullptr) {
+        return 0x41;
+    }
+    if (buffers.cpu.controller2_strobe[env] != 0) {
+        return 0x40;
+    }
+
+    std::uint8_t bit = 1;
+    if (buffers.cpu.controller2_shift_count[env] < 8) {
+        bit = static_cast<std::uint8_t>(buffers.cpu.controller2_shift[env] & 0x01);
+        buffers.cpu.controller2_shift[env] =
+            static_cast<std::uint8_t>(buffers.cpu.controller2_shift[env] >> 1);
+        ++buffers.cpu.controller2_shift_count[env];
+    }
+    return static_cast<std::uint8_t>(0x40 | bit);
+}
+
 NESLE_CUDA_HD inline void write_controller_strobe(BatchBuffers& buffers,
                                                   std::uint32_t env,
                                                   std::uint8_t value) {
@@ -114,6 +143,12 @@ NESLE_CUDA_HD inline void write_controller_strobe(BatchBuffers& buffers,
         latch_controller1(buffers, env);
     }
     buffers.cpu.controller1_strobe[env] = next_strobe;
+    if (buffers.cpu.controller2_strobe != nullptr) {
+        if (next_strobe != 0 || buffers.cpu.controller2_strobe[env] != 0) {
+            latch_controller2(buffers, env);
+        }
+        buffers.cpu.controller2_strobe[env] = next_strobe;
+    }
 }
 
 NESLE_CUDA_HD inline void batch_oam_dma(BatchBuffers& buffers,
@@ -186,7 +221,7 @@ NESLE_CUDA_HD inline std::uint8_t batch_cpu_read(BatchBuffers& buffers,
         return read_controller1(buffers, env);
     }
     if (address == 0x4017) {
-        return 0x41;
+        return read_controller2(buffers, env);
     }
     if (address >= 0x6000 && address < 0x8000) {
         return env_prg_ram(buffers, env)[address - 0x6000];

@@ -144,6 +144,11 @@ NESLE_CUDA_HD inline void cold_reset_console_env(BatchBuffers& buffers, std::uin
     buffers.cpu.controller1_shift[env] = 0;
     buffers.cpu.controller1_shift_count[env] = 8;
     buffers.cpu.controller1_strobe[env] = 0;
+    if (buffers.cpu.controller2_shift != nullptr) {
+        buffers.cpu.controller2_shift[env] = 0;
+        buffers.cpu.controller2_shift_count[env] = 8;
+        buffers.cpu.controller2_strobe[env] = 0;
+    }
     buffers.cpu.pending_dma_cycles[env] = 0;
 
     // CPU RAM.
@@ -219,6 +224,11 @@ NESLE_CUDA_HD inline void warm_reset_console_env(BatchBuffers& buffers,
     buffers.cpu.controller1_shift[env] = 0;
     buffers.cpu.controller1_shift_count[env] = 8;
     buffers.cpu.controller1_strobe[env] = 0;
+    if (buffers.cpu.controller2_shift != nullptr) {
+        buffers.cpu.controller2_shift[env] = 0;
+        buffers.cpu.controller2_shift_count[env] = 8;
+        buffers.cpu.controller2_strobe[env] = 0;
+    }
     buffers.cpu.pending_dma_cycles[env] = 0;
 
     auto* ram = env_cpu_ram(buffers, env);

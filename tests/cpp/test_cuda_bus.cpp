@@ -34,6 +34,9 @@ int main() {
     std::vector<std::uint8_t> controller_shift(kNumEnvs, 0);
     std::vector<std::uint8_t> controller_shift_count(kNumEnvs, 8);
     std::vector<std::uint8_t> controller_strobe(kNumEnvs, 0);
+    std::vector<std::uint8_t> controller2_shift(kNumEnvs, 0);
+    std::vector<std::uint8_t> controller2_shift_count(kNumEnvs, 8);
+    std::vector<std::uint8_t> controller2_strobe(kNumEnvs, 0);
     std::vector<std::uint8_t> ppu_ctrl(kNumEnvs, 0);
     std::vector<std::uint8_t> ppu_mask(kNumEnvs, 0);
     std::vector<std::uint8_t> ppu_status(kNumEnvs, 0);
@@ -60,6 +63,9 @@ int main() {
     buffers.cpu.controller1_shift = controller_shift.data();
     buffers.cpu.controller1_shift_count = controller_shift_count.data();
     buffers.cpu.controller1_strobe = controller_strobe.data();
+    buffers.cpu.controller2_shift = controller2_shift.data();
+    buffers.cpu.controller2_shift_count = controller2_shift_count.data();
+    buffers.cpu.controller2_strobe = controller2_strobe.data();
     buffers.cpu.pending_dma_cycles = pending_dma_cycles.data();
     buffers.ppu.ctrl = ppu_ctrl.data();
     buffers.ppu.nmi_pending = ppu_nmi_pending.data();
@@ -162,6 +168,38 @@ int main() {
         for (int i = 0; i < 10; ++i) {
             assert(nesle::cuda::batch_cpu_read(buffers, 0, 0x4016) == controller.read());
         }
+    }
+
+    // Controller 2 is read through $4017. It has no second-player input source
+    // in the batch, but the strobe and read count still have to track the host
+    // reference exactly: Contra polls $4017 and the two sides disagree by one if
+    // the read count is not modelled.
+    {
+        nesle::StandardController controller2;
+        nesle::cuda::batch_cpu_write(buffers, 0, 0x4016, 1);
+        controller2.write_strobe(1);
+        assert(nesle::cuda::batch_cpu_read(buffers, 0, 0x4017) == controller2.read());
+        nesle::cuda::batch_cpu_write(buffers, 0, 0x4016, 0);
+        controller2.write_strobe(0);
+        for (int i = 0; i < 10; ++i) {
+            assert(nesle::cuda::batch_cpu_read(buffers, 0, 0x4017) == controller2.read());
+        }
+
+        // The two shift counters are independent: draining $4016 must not move
+        // the $4017 count.
+        actions[0] = 0;
+        nesle::StandardController controller1;
+        nesle::StandardController controller2b;
+        nesle::cuda::batch_cpu_write(buffers, 0, 0x4016, 1);
+        controller1.write_strobe(1);
+        controller2b.write_strobe(1);
+        nesle::cuda::batch_cpu_write(buffers, 0, 0x4016, 0);
+        controller1.write_strobe(0);
+        controller2b.write_strobe(0);
+        for (int i = 0; i < 8; ++i) {
+            assert(nesle::cuda::batch_cpu_read(buffers, 0, 0x4016) == controller1.read());
+        }
+        assert(nesle::cuda::batch_cpu_read(buffers, 0, 0x4017) == controller2b.read());
     }
 
     return 0;

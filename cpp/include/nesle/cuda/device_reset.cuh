@@ -24,6 +24,9 @@ struct DeviceResetSnapshots {
     std::uint8_t* controller1_shift = nullptr;
     std::uint8_t* controller1_shift_count = nullptr;
     std::uint8_t* controller1_strobe = nullptr;
+    std::uint8_t* controller2_shift = nullptr;
+    std::uint8_t* controller2_shift_count = nullptr;
+    std::uint8_t* controller2_strobe = nullptr;
 
     std::uint8_t* ppu_ctrl = nullptr;
     std::uint8_t* ppu_mask = nullptr;
@@ -95,6 +98,16 @@ NESLE_CUDA_DEVICE_RESET_HD inline void capture_device_reset_snapshot(
     }
     if (buffers.cpu.controller1_strobe != nullptr && snapshots.controller1_strobe != nullptr) {
         snapshots.controller1_strobe[slot] = buffers.cpu.controller1_strobe[env];
+    }
+    if (buffers.cpu.controller2_shift != nullptr && snapshots.controller2_shift != nullptr) {
+        snapshots.controller2_shift[slot] = buffers.cpu.controller2_shift[env];
+    }
+    if (buffers.cpu.controller2_shift_count != nullptr &&
+        snapshots.controller2_shift_count != nullptr) {
+        snapshots.controller2_shift_count[slot] = buffers.cpu.controller2_shift_count[env];
+    }
+    if (buffers.cpu.controller2_strobe != nullptr && snapshots.controller2_strobe != nullptr) {
+        snapshots.controller2_strobe[slot] = buffers.cpu.controller2_strobe[env];
     }
 
     snapshots.ppu_ctrl[slot] = buffers.ppu.ctrl[env];
@@ -194,6 +207,16 @@ NESLE_CUDA_DEVICE_RESET_HD inline void restore_device_reset_snapshot(
     }
     if (buffers.cpu.controller1_strobe != nullptr && snapshots.controller1_strobe != nullptr) {
         buffers.cpu.controller1_strobe[env] = snapshots.controller1_strobe[slot];
+    }
+    if (buffers.cpu.controller2_shift != nullptr && snapshots.controller2_shift != nullptr) {
+        buffers.cpu.controller2_shift[env] = snapshots.controller2_shift[slot];
+    }
+    if (buffers.cpu.controller2_shift_count != nullptr &&
+        snapshots.controller2_shift_count != nullptr) {
+        buffers.cpu.controller2_shift_count[env] = snapshots.controller2_shift_count[slot];
+    }
+    if (buffers.cpu.controller2_strobe != nullptr && snapshots.controller2_strobe != nullptr) {
+        buffers.cpu.controller2_strobe[env] = snapshots.controller2_strobe[slot];
     }
 
     buffers.ppu.ctrl[env] = snapshots.ppu_ctrl[slot];

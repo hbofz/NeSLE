@@ -141,6 +141,9 @@ struct CpuStateSoA {
     std::uint8_t* NESLE_RESTRICT controller1_shift;
     std::uint8_t* NESLE_RESTRICT controller1_shift_count;
     std::uint8_t* NESLE_RESTRICT controller1_strobe;
+    std::uint8_t* NESLE_RESTRICT controller2_shift;
+    std::uint8_t* NESLE_RESTRICT controller2_shift_count;
+    std::uint8_t* NESLE_RESTRICT controller2_strobe;
     std::uint32_t* NESLE_RESTRICT pending_dma_cycles;
 };
 

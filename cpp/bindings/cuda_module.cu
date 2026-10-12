@@ -1015,6 +1015,12 @@ private:
             num_env_,
             "cudaMalloc controller shift count");
         device_controller_strobe_ = cuda_alloc<std::uint8_t>(num_env_, "cudaMalloc controller strobe");
+        device_controller2_shift_ =
+            cuda_alloc<std::uint8_t>(num_env_, "cudaMalloc controller2 shift");
+        device_controller2_shift_count_ =
+            cuda_alloc<std::uint8_t>(num_env_, "cudaMalloc controller2 shift count");
+        device_controller2_strobe_ =
+            cuda_alloc<std::uint8_t>(num_env_, "cudaMalloc controller2 strobe");
         device_pending_dma_cycles_ = cuda_alloc<std::uint32_t>(num_env_, "cudaMalloc pending dma");
         device_previous_x_ = cuda_alloc<int>(num_env_, "cudaMalloc previous_x");
         device_previous_time_ = cuda_alloc<int>(num_env_, "cudaMalloc previous_time");
@@ -1106,6 +1112,9 @@ private:
         buffers_.cpu.controller1_shift = device_controller_shift_;
         buffers_.cpu.controller1_shift_count = device_controller_shift_count_;
         buffers_.cpu.controller1_strobe = device_controller_strobe_;
+        buffers_.cpu.controller2_shift = device_controller2_shift_;
+        buffers_.cpu.controller2_shift_count = device_controller2_shift_count_;
+        buffers_.cpu.controller2_strobe = device_controller2_strobe_;
         buffers_.cpu.pending_dma_cycles = device_pending_dma_cycles_;
         buffers_.action_masks = device_actions_;
         buffers_.previous_mario_x = device_previous_x_;
@@ -1161,6 +1170,9 @@ private:
         cudaFree(device_controller_shift_);
         cudaFree(device_controller_shift_count_);
         cudaFree(device_controller_strobe_);
+        cudaFree(device_controller2_shift_);
+        cudaFree(device_controller2_shift_count_);
+        cudaFree(device_controller2_strobe_);
         cudaFree(device_pending_dma_cycles_);
         cudaFree(device_previous_x_);
         cudaFree(device_previous_time_);
@@ -1339,6 +1351,9 @@ private:
         copy_to_device(device_controller_shift_, bytes, "reset controller shift");
         copy_to_device(device_controller_shift_count_, shift_count, "reset controller shift count");
         copy_to_device(device_controller_strobe_, bytes, "reset controller strobe");
+        copy_to_device(device_controller2_shift_, bytes, "reset controller2 shift");
+        copy_to_device(device_controller2_shift_count_, shift_count, "reset controller2 shift count");
+        copy_to_device(device_controller2_strobe_, bytes, "reset controller2 strobe");
         copy_to_device(device_pending_dma_cycles_, pending_dma, "reset pending dma");
         copy_to_device(device_previous_x_, previous_x, "reset previous_x");
         copy_to_device(device_previous_time_, previous_time, "reset previous_time");
@@ -1560,6 +1575,9 @@ private:
     std::uint8_t* device_controller_shift_ = nullptr;
     std::uint8_t* device_controller_shift_count_ = nullptr;
     std::uint8_t* device_controller_strobe_ = nullptr;
+    std::uint8_t* device_controller2_shift_ = nullptr;
+    std::uint8_t* device_controller2_shift_count_ = nullptr;
+    std::uint8_t* device_controller2_strobe_ = nullptr;
     std::uint32_t* device_pending_dma_cycles_ = nullptr;
     int* device_previous_x_ = nullptr;
     int* device_previous_time_ = nullptr;
