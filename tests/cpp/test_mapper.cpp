@@ -5,6 +5,7 @@
 
 #include "nesle/console.hpp"
 #include "nesle/cuda/batch_bus.cuh"
+#include "nesle/cuda/batch_step.cuh"
 #include "nesle/rom.hpp"
 
 // Banking for the whole supported family, checked twice per case: the device
@@ -22,6 +23,10 @@ struct Fixture {
         std::vector<std::uint8_t>(nesle::cuda::kNametableRamBytes, 0);
     std::vector<std::uint8_t> palette = std::vector<std::uint8_t>(nesle::cuda::kPaletteRamBytes, 0);
     std::vector<std::uint8_t> prg_bank = std::vector<std::uint8_t>(1, 0);
+    std::vector<std::uint16_t> pc = std::vector<std::uint16_t>(1, 0);
+    std::vector<std::uint64_t> cycles = std::vector<std::uint64_t>(1, 0);
+    std::vector<std::uint8_t> cpu_bytes = std::vector<std::uint8_t>(1, 0);
+    std::vector<std::uint32_t> cpu_dwords = std::vector<std::uint32_t>(1, 0);
     std::vector<std::uint16_t> ppu_v = std::vector<std::uint16_t>(1, 0);
     std::vector<std::uint16_t> ppu_t = std::vector<std::uint16_t>(1, 0);
     std::vector<std::uint8_t> ppu_w = std::vector<std::uint8_t>(1, 0);
@@ -32,6 +37,15 @@ struct Fixture {
     std::vector<std::uint8_t> ppu_mask = std::vector<std::uint8_t>(1, 0);
     std::vector<std::uint8_t> ppu_status = std::vector<std::uint8_t>(1, 0);
     std::vector<std::uint8_t> ppu_oam_addr = std::vector<std::uint8_t>(1, 0);
+    std::vector<std::uint8_t> ppu_scroll_x = std::vector<std::uint8_t>(1, 0);
+    std::vector<std::uint8_t> ppu_scroll_y = std::vector<std::uint8_t>(1, 0);
+    std::vector<std::uint32_t> ppu_frame_dot = std::vector<std::uint32_t>(1, 0);
+    std::vector<std::uint64_t> ppu_frame = std::vector<std::uint64_t>(1, 0);
+    std::vector<std::uint8_t> oam = std::vector<std::uint8_t>(nesle::cuda::kOamBytes, 0);
+    std::vector<int> previous_mario_x = std::vector<int>(1, 0);
+    std::vector<int> previous_mario_time = std::vector<int>(1, 0);
+    std::vector<float> rewards = std::vector<float>(1, 0.0F);
+    std::vector<std::uint8_t> done = std::vector<std::uint8_t>(1, 0);
     nesle::cuda::BatchBuffers buffers{};
 
     void attach(const nesle::RomImage& rom) {
@@ -51,6 +65,21 @@ struct Fixture {
 
         buffers.cpu.ram = ram.data();
         buffers.cpu.prg_ram = prg_ram.data();
+        buffers.cpu.pc = pc.data();
+        buffers.cpu.cycles = cycles.data();
+        // Shared one-element scratch arrays: cold_reset only writes these, never
+        // reads them, so distinct storage per field proves nothing.
+        buffers.cpu.a = cpu_bytes.data();
+        buffers.cpu.x = cpu_bytes.data();
+        buffers.cpu.y = cpu_bytes.data();
+        buffers.cpu.sp = cpu_bytes.data();
+        buffers.cpu.p = cpu_bytes.data();
+        buffers.cpu.nmi_pending = cpu_bytes.data();
+        buffers.cpu.irq_pending = cpu_bytes.data();
+        buffers.cpu.controller1_shift = cpu_bytes.data();
+        buffers.cpu.controller1_shift_count = cpu_bytes.data();
+        buffers.cpu.controller1_strobe = cpu_bytes.data();
+        buffers.cpu.pending_dma_cycles = cpu_dwords.data();
         buffers.ppu.chr_ram = rom.chr_rom.empty() ? chr_ram.data() : nullptr;
         buffers.ppu.nametable_ram = nametable.data();
         buffers.ppu.palette_ram = palette.data();
@@ -64,12 +93,23 @@ struct Fixture {
         buffers.ppu.mask = ppu_mask.data();
         buffers.ppu.status = ppu_status.data();
         buffers.ppu.oam_addr = ppu_oam_addr.data();
+        buffers.ppu.nmi_pending = cpu_bytes.data();
+        buffers.ppu.scroll_x = ppu_scroll_x.data();
+        buffers.ppu.scroll_y = ppu_scroll_y.data();
+        buffers.ppu.frame_dot = ppu_frame_dot.data();
+        buffers.ppu.frame = ppu_frame.data();
+        buffers.ppu.oam = oam.data();
+        buffers.previous_mario_x = previous_mario_x.data();
+        buffers.previous_mario_time = previous_mario_time.data();
+        buffers.rewards = rewards.data();
+        buffers.done = done.data();
         buffers.mapper.prg_bank = prg_bank.data();
 
         auto& cart = buffers.cart;
         cart.prg_rom = padded_prg.data();
         cart.prg_rom_size = static_cast<std::uint32_t>(padded_prg.size());
-        cart.prg_rom_real_size = static_cast<std::uint32_t>(rom.prg_rom.size());
+        cart.prg_reset_vector_base =
+            nesle::reset_vector_base(layout, rom.prg_rom.size());
         cart.prg_rom_mask = static_cast<std::uint32_t>(padded_prg.size() - 1u);
         cart.chr_rom = rom.chr_rom.empty() ? nullptr : rom.chr_rom.data();
         cart.chr_rom_size = static_cast<std::uint32_t>(rom.chr_rom.size());
@@ -326,6 +366,45 @@ void check_reset() {
         nesle::cuda::reset_mapper_state(fixture.buffers, 0);
         assert(fixture.prg_bank[0] == 0);
         assert(nesle::cuda::read_prg(fixture.buffers, 0, 0x8000) == rom.prg_rom[0]);
+    }
+
+    // Cold reset reads $FFFC through the power-on mapping. BNROM maps bank 0's
+    // 32 KB at $8000, so on a multi-bank image the vector must come from the
+    // first 32 KB - not from the last four bytes of the image, which belong to
+    // a different bank and would boot the CPU into unmapped code.
+    {
+        auto rom = make_rom(nesle::kMapperBnrom, 128 * 1024, 0);
+        // Distinct vectors per 32 KB bank: bank 0 -> $8000, bank 3 -> $C000.
+        const auto put_vector = [&rom](std::size_t window_base, std::uint16_t target) {
+            rom.prg_rom[window_base + 0x7FFC] = static_cast<std::uint8_t>(target & 0xFF);
+            rom.prg_rom[window_base + 0x7FFD] = static_cast<std::uint8_t>(target >> 8);
+        };
+        put_vector(0x0000, 0x8000);
+        put_vector(0x6000, 0xC000);
+
+        const auto layout = nesle::describe_mapper(rom.metadata);
+        assert(nesle::reset_vector_base(layout, rom.prg_rom.size()) == 0x7FFC);
+
+        Fixture fixture;
+        fixture.attach(rom);
+        nesle::cuda::cold_reset_console_env(fixture.buffers, 0);
+        assert(fixture.pc[0] == 0x8000);
+        assert(fixture.prg_bank[0] == 0);
+    }
+
+    // UxROM keeps its fixed last 16 KB at $C000, so the vector is the last four
+    // bytes of the image there.
+    {
+        auto rom = make_rom(nesle::kMapperUxrom, 128 * 1024, 8 * 1024);
+        rom.prg_rom[rom.prg_rom.size() - 4] = 0x00;
+        rom.prg_rom[rom.prg_rom.size() - 3] = 0x80;
+        const auto layout = nesle::describe_mapper(rom.metadata);
+        assert(nesle::reset_vector_base(layout, rom.prg_rom.size()) ==
+               rom.prg_rom.size() - 4);
+        Fixture fixture;
+        fixture.attach(rom);
+        nesle::cuda::cold_reset_console_env(fixture.buffers, 0);
+        assert(fixture.pc[0] == 0x8000);
     }
 
     // NROM leaves the register arrays alone (they are null there).

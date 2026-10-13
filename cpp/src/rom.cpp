@@ -150,9 +150,9 @@ std::string unsupported_mapper_reason(const RomMetadata& metadata) {
     if (layout.supported) {
         return "";
     }
-std::string reason = "unsupported mapper: " + to_string(metadata.mapper) + " (iNES " +
-                     std::to_string(metadata.mapper) + "); NeSLE emulates NROM and the " +
-                     "UxROM family (0, 2, 11, 30, 34, 94, 180)";
+    std::string reason = "unsupported mapper: " + to_string(metadata.mapper) + " (iNES " +
+                         std::to_string(metadata.mapper) +
+                         "); NeSLE emulates NROM, UxROM, UN1ROM and BNROM (0, 2, 34, 94)";
 
     if (metadata.prg_rom_size < 0x8000 || metadata.prg_rom_size % 0x2000 != 0) {
         reason += "; this image also has an unsupported PRG size (" +
@@ -167,6 +167,19 @@ bool is_supported_mario_target(const RomMetadata& metadata) noexcept {
            (metadata.prg_rom_banks == 1 || metadata.prg_rom_banks == 2) &&
            metadata.chr_rom_banks == 1 &&
            !metadata.has_trainer;
+}
+
+std::uint32_t reset_vector_base(const MapperLayout& layout,
+                                std::size_t real_prg_size) noexcept {
+    if (layout.bank_kind == kBankKindBnrom32k) {
+        // Bank 0's 32 KB window sits at $8000 at power-on, so the vector is the
+        // last four bytes of that window - the first 32 KB of the image - and
+        // not of the image.
+        return layout.window_bytes - 4u;
+    }
+    // NROM keeps the whole image at $8000 and UxROM keeps its fixed last 16 KB
+    // at $C000, so on both $FFFC is the last four bytes of the image.
+    return static_cast<std::uint32_t>(real_prg_size - 4u);
 }
 
 std::string unsupported_mario_target_reason(const RomMetadata& metadata) {

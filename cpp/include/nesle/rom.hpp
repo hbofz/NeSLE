@@ -76,4 +76,12 @@ struct RomImage {
 [[nodiscard]] std::string unsupported_mario_target_reason(const RomMetadata& metadata);
 void validate_supported_mario_target(const RomMetadata& metadata);
 
+// Offset of $FFFC/$FFFD in the image at power-on. NROM keeps the whole image at
+// $8000 and UxROM keeps its fixed last 16 KB at $C000, so on both the vector is
+// the last four bytes of the image. BNROM maps bank 0's 32 KB at $8000 at
+// power-on, so its vector is the last four bytes of that window - the first
+// 32 KB of the image - and not of the image.
+[[nodiscard]] std::uint32_t reset_vector_base(const MapperLayout& layout,
+                                              std::size_t real_prg_size) noexcept;
+
 }  // namespace nesle
