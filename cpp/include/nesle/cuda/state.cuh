@@ -206,7 +206,12 @@ struct CartridgeView {
     const std::uint8_t* prg_rom;
     const std::uint8_t* chr_rom;
     std::uint32_t prg_rom_size;        // padded size, the power of two the device holds
-    std::uint32_t prg_rom_real_size;   // unpadded image size, for the reset vector
+    // Where $FFFC/$FFFD live in the image at power-on. NROM keeps the whole image
+    // at $8000 and UxROM keeps its fixed last 16 KB at $C000, so on both the
+    // vector is the last four bytes of the image. BNROM maps bank 0's 32 KB at
+    // $8000 at power-on, so its vector is the last four bytes of that window -
+    // the first 32 KB of the image - and not of the image.
+    std::uint32_t prg_reset_vector_base;
     std::uint32_t prg_rom_mask;  // prg_rom_size - 1; PRG is padded to 2^n
     std::uint32_t chr_rom_size;
     std::uint16_t mapper;

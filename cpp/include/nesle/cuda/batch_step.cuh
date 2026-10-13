@@ -117,15 +117,12 @@ NESLE_CUDA_HD inline void apply_batch_reward_env(BatchBuffers& buffers, std::uin
 
 
 NESLE_CUDA_HD inline void cold_reset_console_env(BatchBuffers& buffers, std::uint32_t env) {
-    // Read the reset vector from PRG ROM. $FFFC/$FFFD live in the fixed window,
-    // which for every board here is the top of the image, so the vector is the
-    // last four bytes of the *real* image. prg_rom_size is the padded size: the
-    // pad is appended after the image, so reading from the padded tail would
-    // read zeros instead of the vector whenever the real size is not a power of
-    // two.
+    // Read the reset vector from PRG ROM at the power-on mapping. cart.prg_reset_vector_base
+    // already encodes where $FFFC lands per board: the last four bytes of the image
+    // for NROM and UxROM, or the last four bytes of bank 0's 32 KB window for BNROM.
     std::uint16_t reset_pc = 0;
-    if (buffers.cart.prg_rom != nullptr && buffers.cart.prg_rom_real_size >= 4u * 1024u) {
-        const auto base = static_cast<std::uint32_t>(buffers.cart.prg_rom_real_size - 4u);
+    if (buffers.cart.prg_rom != nullptr && buffers.cart.prg_reset_vector_base >= 4u) {
+        const auto base = buffers.cart.prg_reset_vector_base;
         reset_pc = static_cast<std::uint16_t>(
             buffers.cart.prg_rom[base] |
             (static_cast<std::uint16_t>(buffers.cart.prg_rom[base + 1]) << 8));

@@ -252,15 +252,13 @@ std::uint8_t cuda_nametable_arrangement(nesle::NametableArrangement arrangement)
     return nesle::cuda::kNametableVertical;
 }
 
-std::uint16_t reset_vector_from_prg(const std::vector<std::uint8_t>& prg_rom) {
-      // $FFFC/$FFFD sit in the fixed window. For NROM that is the last four bytes
-      // of the image, and for every UxROM-family board the fixed window is the
-      // top of the image too, so "last four bytes" covers the whole family. The
-      // input here is the real image, not the padded device copy.
+std::uint16_t reset_vector_from_prg(const std::vector<std::uint8_t>& prg_rom,
+                                      const nesle::MapperLayout& layout) {
       if (prg_rom.size() < 4u * 1024u) {
           throw std::invalid_argument("PRG ROM is too small to contain a reset vector");
       }
-      const auto base = static_cast<std::size_t>(prg_rom.size() - 4u);
+      const auto base =
+          static_cast<std::size_t>(nesle::reset_vector_base(layout, prg_rom.size()));
       return static_cast<std::uint16_t>(prg_rom[base] |
                                       (static_cast<std::uint16_t>(prg_rom[base + 1]) << 8));
   }
@@ -1273,7 +1271,8 @@ private:
         copy_to_device(device_prg_rom_, prg_rom, "copy prg rom");
         buffers_.cart.prg_rom = device_prg_rom_;
         buffers_.cart.prg_rom_size = static_cast<std::uint32_t>(padded_prg_size);
-        buffers_.cart.prg_rom_real_size = static_cast<std::uint32_t>(real_prg_size);
+        buffers_.cart.prg_reset_vector_base =
+            nesle::reset_vector_base(layout, static_cast<std::size_t>(real_prg_size));
         buffers_.cart.prg_rom_mask = static_cast<std::uint32_t>(padded_prg_size - 1u);
         if (!rom_.chr_rom.empty()) {
             device_chr_rom_ = cuda_alloc<std::uint8_t>(rom_.chr_rom.size(), "cudaMalloc chr rom");
@@ -1316,7 +1315,8 @@ private:
 
     void reset_console() {
         const auto env_count = static_cast<std::size_t>(num_env_);
-        std::vector<std::uint16_t> pc(env_count, reset_vector_from_prg(rom_.prg_rom));
+        std::vector<std::uint16_t> pc(
+            env_count, reset_vector_from_prg(rom_.prg_rom, nesle::describe_mapper(rom_.metadata)));
         std::vector<std::uint8_t> bytes(env_count, 0);
         std::vector<std::uint8_t> sp(env_count, 0xFD);
         std::vector<std::uint8_t> p(env_count, 0x24);
