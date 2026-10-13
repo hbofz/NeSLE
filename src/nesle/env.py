@@ -464,6 +464,12 @@ class NesleVecEnv(_VecEnvBase):
                 "reset_state_path / reset_state_paths is only supported with backend='cuda' "
                 "(the cuda-console snapshot path)"
             )
+        if backend.lower() != "synthetic" and not rom.is_supported:
+            # The synthetic backend never looks at the ROM, so it stays
+            # available for any image; every path that actually emulates the
+            # cartridge has to fail loudly instead of silently falling back to
+            # synthetic, which would look like a booting-but-idle game.
+            raise ValueError(rom.unsupported_reason or f"unsupported ROM: {rom}")
         self._cuda_batch = None
         if cuda_requested:
             try:

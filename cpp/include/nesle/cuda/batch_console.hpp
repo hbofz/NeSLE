@@ -33,6 +33,7 @@ NESLE_CUDA_BATCH_CONSOLE_HD inline void clear_batch_ppu_nmi_pending(BatchBuffers
 // Hot variant: PPU scalars live in the caller's register-resident PpuHotState
 // for the whole kernel; the bus and PPU catch-up read/write it instead of
 // global memory.
+template <BankMode Mode = kBankModeRuntime>
 [[nodiscard]] NESLE_CUDA_BATCH_CONSOLE_HD inline BatchConsoleStepResult
 step_batch_console_instruction_hot(BatchBuffers& buffers,
                                    std::uint32_t env,
@@ -40,7 +41,7 @@ step_batch_console_instruction_hot(BatchBuffers& buffers,
                                    PpuHotState& hot) {
     const auto cycles_before = state.cycles;
     bool nmi_serviced = false;
-    BatchCpuBus bus(buffers, env, hot);
+    BatchCpuBusT<Mode> bus(buffers, env, hot);
 
     if (hot.nmi_pending != 0) {
         hot.nmi_pending = 0;
@@ -74,6 +75,7 @@ step_batch_console_instruction_hot(BatchBuffers& buffers,
 // (PPU scalar state — status bits, nmi_pending — changes exclusively at the
 // three timing events, so between events the register-resident snapshot the
 // bus reads is exact). See the console step kernel for the settle protocol.
+template <BankMode Mode = kBankModeRuntime>
 [[nodiscard]] NESLE_CUDA_BATCH_CONSOLE_HD inline BatchConsoleStepResult
 step_batch_console_instruction_lazy(BatchBuffers& buffers,
                                     std::uint32_t env,
@@ -81,7 +83,7 @@ step_batch_console_instruction_lazy(BatchBuffers& buffers,
                                     PpuHotState& hot) {
     const auto cycles_before = state.cycles;
     bool nmi_serviced = false;
-    BatchCpuBus bus(buffers, env, hot);
+    BatchCpuBusT<Mode> bus(buffers, env, hot);
 
     if (hot.nmi_pending != 0) {
         hot.nmi_pending = 0;
@@ -108,20 +110,22 @@ step_batch_console_instruction_lazy(BatchBuffers& buffers,
     };
 }
 
+template <BankMode Mode = kBankModeRuntime>
 [[nodiscard]] NESLE_CUDA_BATCH_CONSOLE_HD inline BatchConsoleStepResult
 step_batch_console_instruction(BatchBuffers& buffers,
                                std::uint32_t env,
                                cpu::CpuState& state) {
     auto hot = load_ppu_hot_state(buffers, env);
-    const auto result = step_batch_console_instruction_hot(buffers, env, state, hot);
+    const auto result = step_batch_console_instruction_hot<Mode>(buffers, env, state, hot);
     store_ppu_hot_state(buffers, env, hot);
     return result;
 }
 
+template <BankMode Mode = kBankModeRuntime>
 [[nodiscard]] NESLE_CUDA_BATCH_CONSOLE_HD inline BatchConsoleStepResult
 step_batch_console_instruction(BatchBuffers& buffers, std::uint32_t env) {
     auto state = load_cpu_state(buffers, env);
-    const auto result = step_batch_console_instruction(buffers, env, state);
+    const auto result = step_batch_console_instruction<Mode>(buffers, env, state);
     store_cpu_state(buffers, env, state);
     return result;
 }

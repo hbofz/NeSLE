@@ -19,6 +19,9 @@ struct EnvResetSnapshot {
     std::uint8_t controller1_shift = 0;
     std::uint8_t controller1_shift_count = 8;
     std::uint8_t controller1_strobe = 0;
+    std::uint8_t controller2_shift = 0;
+    std::uint8_t controller2_shift_count = 8;
+    std::uint8_t controller2_strobe = 0;
 
     std::uint8_t ppu_ctrl = 0;
     std::uint8_t ppu_mask = 0;
@@ -35,6 +38,9 @@ struct EnvResetSnapshot {
     std::uint8_t ppu_read_buffer = 0;
     std::uint8_t ppu_scroll_x = 0;
     std::uint8_t ppu_scroll_y = 0;
+
+    // Mapper register (zero for NROM, which has none).
+    std::uint8_t prg_bank = 0;
 
     int previous_mario_x = 0;
     int previous_mario_time = 0;
@@ -64,6 +70,11 @@ struct EnvResetSnapshot {
     snapshot.controller1_shift = buffers.cpu.controller1_shift[env];
     snapshot.controller1_shift_count = buffers.cpu.controller1_shift_count[env];
     snapshot.controller1_strobe = buffers.cpu.controller1_strobe[env];
+    if (buffers.cpu.controller2_shift != nullptr) {
+        snapshot.controller2_shift = buffers.cpu.controller2_shift[env];
+        snapshot.controller2_shift_count = buffers.cpu.controller2_shift_count[env];
+        snapshot.controller2_strobe = buffers.cpu.controller2_strobe[env];
+    }
 
     snapshot.ppu_ctrl = buffers.ppu.ctrl[env];
     snapshot.ppu_mask = buffers.ppu.mask[env];
@@ -95,6 +106,10 @@ struct EnvResetSnapshot {
     }
     if (buffers.ppu.scroll_y != nullptr) {
         snapshot.ppu_scroll_y = buffers.ppu.scroll_y[env];
+    }
+
+    if (buffers.mapper.prg_bank != nullptr) {
+        snapshot.prg_bank = buffers.mapper.prg_bank[env];
     }
 
     if (buffers.previous_mario_x != nullptr) {
@@ -147,6 +162,11 @@ inline void restore_reset_snapshot(BatchBuffers& buffers,
     buffers.cpu.controller1_shift[env] = snapshot.controller1_shift;
     buffers.cpu.controller1_shift_count[env] = snapshot.controller1_shift_count;
     buffers.cpu.controller1_strobe[env] = snapshot.controller1_strobe;
+    if (buffers.cpu.controller2_shift != nullptr) {
+        buffers.cpu.controller2_shift[env] = snapshot.controller2_shift;
+        buffers.cpu.controller2_shift_count[env] = snapshot.controller2_shift_count;
+        buffers.cpu.controller2_strobe[env] = snapshot.controller2_strobe;
+    }
 
     buffers.ppu.ctrl[env] = snapshot.ppu_ctrl;
     buffers.ppu.mask[env] = snapshot.ppu_mask;
@@ -178,6 +198,10 @@ inline void restore_reset_snapshot(BatchBuffers& buffers,
     }
     if (buffers.ppu.scroll_y != nullptr) {
         buffers.ppu.scroll_y[env] = snapshot.ppu_scroll_y;
+    }
+
+    if (buffers.mapper.prg_bank != nullptr) {
+        buffers.mapper.prg_bank[env] = snapshot.prg_bank;
     }
 
     if (buffers.previous_mario_x != nullptr) {

@@ -1,0 +1,425 @@
+#include <cassert>
+#include <cstdint>
+#include <string>
+#include <vector>
+
+#include "nesle/console.hpp"
+#include "nesle/cuda/batch_bus.cuh"
+#include "nesle/cuda/batch_step.cuh"
+#include "nesle/rom.hpp"
+
+// Banking for the whole supported family, checked twice per case: the device
+// path (read_prg / write_mapper_register / read_chr, i.e. what the CUDA batch
+// kernel runs) and the host Console, which implements the same board
+// independently. Agreement between the two is the actual assertion; the
+// expected bank offsets are only there to catch both being wrong together.
+namespace {
+
+struct Fixture {
+    std::vector<std::uint8_t> ram = std::vector<std::uint8_t>(nesle::cuda::kCpuRamBytes, 0);
+    std::vector<std::uint8_t> prg_ram = std::vector<std::uint8_t>(nesle::cuda::kPrgRamBytes, 0);
+    std::vector<std::uint8_t> chr_ram = std::vector<std::uint8_t>(nesle::cuda::kChrRamBytes, 0);
+    std::vector<std::uint8_t> nametable =
+        std::vector<std::uint8_t>(nesle::cuda::kNametableRamBytes, 0);
+    std::vector<std::uint8_t> palette = std::vector<std::uint8_t>(nesle::cuda::kPaletteRamBytes, 0);
+    std::vector<std::uint8_t> prg_bank = std::vector<std::uint8_t>(1, 0);
+    std::vector<std::uint16_t> pc = std::vector<std::uint16_t>(1, 0);
+    std::vector<std::uint64_t> cycles = std::vector<std::uint64_t>(1, 0);
+    std::vector<std::uint8_t> cpu_bytes = std::vector<std::uint8_t>(1, 0);
+    std::vector<std::uint32_t> cpu_dwords = std::vector<std::uint32_t>(1, 0);
+    std::vector<std::uint16_t> ppu_v = std::vector<std::uint16_t>(1, 0);
+    std::vector<std::uint16_t> ppu_t = std::vector<std::uint16_t>(1, 0);
+    std::vector<std::uint8_t> ppu_w = std::vector<std::uint8_t>(1, 0);
+    std::vector<std::uint8_t> ppu_x = std::vector<std::uint8_t>(1, 0);
+    std::vector<std::uint8_t> ppu_read_buffer = std::vector<std::uint8_t>(1, 0);
+    std::vector<std::uint8_t> ppu_open_bus = std::vector<std::uint8_t>(1, 0);
+    std::vector<std::uint8_t> ppu_ctrl = std::vector<std::uint8_t>(1, 0);
+    std::vector<std::uint8_t> ppu_mask = std::vector<std::uint8_t>(1, 0);
+    std::vector<std::uint8_t> ppu_status = std::vector<std::uint8_t>(1, 0);
+    std::vector<std::uint8_t> ppu_oam_addr = std::vector<std::uint8_t>(1, 0);
+    std::vector<std::uint8_t> ppu_scroll_x = std::vector<std::uint8_t>(1, 0);
+    std::vector<std::uint8_t> ppu_scroll_y = std::vector<std::uint8_t>(1, 0);
+    std::vector<std::uint32_t> ppu_frame_dot = std::vector<std::uint32_t>(1, 0);
+    std::vector<std::uint64_t> ppu_frame = std::vector<std::uint64_t>(1, 0);
+    std::vector<std::uint8_t> oam = std::vector<std::uint8_t>(nesle::cuda::kOamBytes, 0);
+    std::vector<int> previous_mario_x = std::vector<int>(1, 0);
+    std::vector<int> previous_mario_time = std::vector<int>(1, 0);
+    std::vector<float> rewards = std::vector<float>(1, 0.0F);
+    std::vector<std::uint8_t> done = std::vector<std::uint8_t>(1, 0);
+    nesle::cuda::BatchBuffers buffers{};
+
+    void attach(const nesle::RomImage& rom) {
+        const auto layout = nesle::describe_mapper(rom.metadata);
+        assert(layout.supported);
+        assert(rom.prg_rom.size() >= 0x2000);
+
+        // PRG padded to a power of two, exactly as the bindings do it.
+        std::size_t padded = 1;
+        while (padded < rom.prg_rom.size()) {
+            padded <<= 1u;
+        }
+        padded_prg.assign(padded, 0);
+        for (std::size_t i = 0; i < rom.prg_rom.size(); ++i) {
+            padded_prg[i] = rom.prg_rom[i];
+        }
+
+        buffers.cpu.ram = ram.data();
+        buffers.cpu.prg_ram = prg_ram.data();
+        buffers.cpu.pc = pc.data();
+        buffers.cpu.cycles = cycles.data();
+        // Shared one-element scratch arrays: cold_reset only writes these, never
+        // reads them, so distinct storage per field proves nothing.
+        buffers.cpu.a = cpu_bytes.data();
+        buffers.cpu.x = cpu_bytes.data();
+        buffers.cpu.y = cpu_bytes.data();
+        buffers.cpu.sp = cpu_bytes.data();
+        buffers.cpu.p = cpu_bytes.data();
+        buffers.cpu.nmi_pending = cpu_bytes.data();
+        buffers.cpu.irq_pending = cpu_bytes.data();
+        buffers.cpu.controller1_shift = cpu_bytes.data();
+        buffers.cpu.controller1_shift_count = cpu_bytes.data();
+        buffers.cpu.controller1_strobe = cpu_bytes.data();
+        buffers.cpu.pending_dma_cycles = cpu_dwords.data();
+        buffers.ppu.chr_ram = rom.chr_rom.empty() ? chr_ram.data() : nullptr;
+        buffers.ppu.nametable_ram = nametable.data();
+        buffers.ppu.palette_ram = palette.data();
+        buffers.ppu.v = ppu_v.data();
+        buffers.ppu.t = ppu_t.data();
+        buffers.ppu.w = ppu_w.data();
+        buffers.ppu.x = ppu_x.data();
+        buffers.ppu.read_buffer = ppu_read_buffer.data();
+        buffers.ppu.open_bus = ppu_open_bus.data();
+        buffers.ppu.ctrl = ppu_ctrl.data();
+        buffers.ppu.mask = ppu_mask.data();
+        buffers.ppu.status = ppu_status.data();
+        buffers.ppu.oam_addr = ppu_oam_addr.data();
+        buffers.ppu.nmi_pending = cpu_bytes.data();
+        buffers.ppu.scroll_x = ppu_scroll_x.data();
+        buffers.ppu.scroll_y = ppu_scroll_y.data();
+        buffers.ppu.frame_dot = ppu_frame_dot.data();
+        buffers.ppu.frame = ppu_frame.data();
+        buffers.ppu.oam = oam.data();
+        buffers.previous_mario_x = previous_mario_x.data();
+        buffers.previous_mario_time = previous_mario_time.data();
+        buffers.rewards = rewards.data();
+        buffers.done = done.data();
+        buffers.mapper.prg_bank = prg_bank.data();
+
+        auto& cart = buffers.cart;
+        cart.prg_rom = padded_prg.data();
+        cart.prg_rom_size = static_cast<std::uint32_t>(padded_prg.size());
+        cart.prg_reset_vector_base =
+            nesle::reset_vector_base(layout, rom.prg_rom.size());
+        cart.prg_rom_mask = static_cast<std::uint32_t>(padded_prg.size() - 1u);
+        cart.chr_rom = rom.chr_rom.empty() ? nullptr : rom.chr_rom.data();
+        cart.chr_rom_size = static_cast<std::uint32_t>(rom.chr_rom.size());
+        cart.mapper = rom.metadata.mapper;
+        cart.bank_kind = layout.bank_kind;
+        cart.bus_conflicts = layout.bus_conflicts ? 1 : 0;
+        cart.nametable_arrangement = nesle::cuda::kNametableVertical;
+        cart.prg_window_start = 0x8000u;
+        cart.prg_window_mask =
+            layout.window_bytes == 0 ? 0u : static_cast<std::uint32_t>(layout.window_bytes - 1u);
+        cart.prg_window_shift = window_shift(layout.window_bytes);
+        cart.prg_bank_mask = layout.bank_mask;
+        cart.prg_bank_shift = layout.bank_shift;
+        cart.prg_fixed_base =
+            layout.fixed_bytes == 0 || layout.fixed_bytes >= rom.prg_rom.size()
+                ? 0u
+                : static_cast<std::uint32_t>(rom.prg_rom.size() - layout.fixed_bytes);
+        cart.prg_fixed_mask =
+            layout.fixed_bytes == 0 ? 0u : static_cast<std::uint32_t>(layout.fixed_bytes - 1u);
+    }
+
+    static std::uint32_t window_shift(std::uint32_t bytes) noexcept {
+        std::uint32_t shift = 0;
+        while ((1u << shift) < bytes) {
+            ++shift;
+        }
+        return shift;
+    }
+
+    // One write through both implementations.
+    void write_both(nesle::Console& console, std::uint16_t address, std::uint8_t value) {
+        nesle::cuda::batch_cpu_write(buffers, 0, address, value);
+        console.write(address, value);
+    }
+
+    // Assert the switchable window holds `bank`, by comparing against the
+    // image at the offset the board's geometry says it should come from.
+    void assert_window(const nesle::RomImage& rom,
+                       std::uint32_t bank,
+                       std::uint32_t window_bytes,
+                       std::uint16_t address,
+                       std::uint32_t window_start = 0x8000u) const {
+        const auto offset =
+            static_cast<std::size_t>(bank) * window_bytes + (address - window_start);
+        const auto expected = rom.prg_rom[offset];
+        auto& bus = const_cast<nesle::cuda::BatchBuffers&>(buffers);
+        assert(nesle::cuda::read_prg(bus, 0, address) == expected);
+        // The compile-time instantiations must agree with the runtime dispatch,
+        // or the specialization is a behaviour change rather than a refactor.
+        assert(nesle::cuda::read_prg<nesle::cuda::kBankModeRuntime>(bus, 0, address) == expected);
+        if (buffers.cart.bank_kind == nesle::cuda::kBankingNone) {
+            assert(nesle::cuda::read_prg<nesle::cuda::kBankModeNrom>(bus, 0, address) == expected);
+        } else {
+            assert(nesle::cuda::read_prg<nesle::cuda::kBankModeBanked>(bus, 0, address) == expected);
+        }
+    }
+
+    void assert_reads_agree(nesle::Console& console) {
+        for (std::uint32_t address = 0x8000; address <= 0xFFFF; address += 7) {
+            const auto from_device =
+                nesle::cuda::batch_cpu_read(const_cast<nesle::cuda::BatchBuffers&>(buffers), 0,
+                                            static_cast<std::uint16_t>(address));
+            const auto from_host = console.read(static_cast<std::uint16_t>(address));
+            assert(from_device == from_host);
+        }
+    }
+
+    std::vector<std::uint8_t> padded_prg;
+};
+
+nesle::RomImage make_rom(std::uint16_t mapper,
+                         std::size_t prg_size,
+                         std::size_t chr_size,
+                         std::uint8_t flags6 = 0,
+                         std::uint8_t submapper = 0) {
+    nesle::RomImage rom;
+    rom.metadata.mapper = mapper;
+    rom.metadata.submapper = submapper;
+    rom.metadata.is_nes2 = submapper != 0;
+    rom.metadata.prg_rom_banks = static_cast<std::uint8_t>(prg_size / (16 * 1024));
+    rom.metadata.chr_rom_banks = static_cast<std::uint8_t>(chr_size / (8 * 1024));
+    rom.metadata.prg_rom_size = prg_size;
+    rom.metadata.chr_rom_size = chr_size;
+    rom.metadata.nametable_arrangement = (flags6 & 0x08) != 0
+                                             ? nesle::NametableArrangement::FourScreen
+                                             : ((flags6 & 0x01) != 0
+                                                    ? nesle::NametableArrangement::Vertical
+                                                    : nesle::NametableArrangement::Horizontal);
+    rom.prg_rom.resize(prg_size);
+    rom.chr_rom.resize(chr_size);
+    // Byte value encodes its own bank, so a read tells you which bank answered.
+    for (std::size_t i = 0; i < prg_size; ++i) {
+        rom.prg_rom[i] = static_cast<std::uint8_t>(((i / 0x4000) << 4) | (i & 0x0F));
+    }
+    for (std::size_t i = 0; i < chr_size; ++i) {
+        rom.chr_rom[i] = static_cast<std::uint8_t>(((i / 0x1000) << 4) | (i & 0x0F));
+    }
+    return rom;
+}
+
+void check_uxrom() {
+    const auto rom = make_rom(nesle::kMapperUxrom, 128 * 1024, 8 * 1024);
+    const auto layout = nesle::describe_mapper(rom.metadata);
+    assert(layout.bank_kind == nesle::kBankKindUxrom16k);
+    assert(layout.window_bytes == 0x4000);
+    assert(layout.fixed_bytes == 0x4000);
+    assert(layout.bank_mask == 7);
+    assert(!layout.bus_conflicts);
+
+    Fixture fixture;
+    fixture.attach(rom);
+    nesle::Console console(rom);
+
+    // Power-on: bank 0 in the window, the image's last 16 KB fixed.
+    assert(nesle::cuda::read_prg(fixture.buffers, 0, 0x8000) == rom.prg_rom[0]);
+    assert(nesle::cuda::read_prg(fixture.buffers, 0, 0xC000) == rom.prg_rom[0x1C000]);
+    assert(nesle::cuda::read_prg(fixture.buffers, 0, 0xFFFF) == rom.prg_rom[0x1FFFF]);
+    fixture.assert_reads_agree(console);
+
+    for (std::uint8_t bank = 0; bank < 8; ++bank) {
+        // Any address in $8000-$FFFF latches the register on a UxROM board.
+        fixture.write_both(console, 0x8000, bank);
+        fixture.assert_window(rom, bank, 0x4000, 0x8000);
+        fixture.assert_window(rom, bank, 0x4000, 0xBFFF);
+        // The fixed window does not move.
+        assert(nesle::cuda::read_prg(fixture.buffers, 0, 0xC000) == rom.prg_rom[0x1C000]);
+        fixture.assert_reads_agree(console);
+    }
+
+    // The register is masked, so an out-of-range value wraps like hardware.
+    fixture.write_both(console, 0xFFFF, 0xFE);
+    fixture.assert_window(rom, 6, 0x4000, 0x8000);
+    fixture.assert_reads_agree(console);
+
+    // A write to PRG RAM is not a bank write.
+    fixture.write_both(console, 0x8000, 0x00);
+    fixture.write_both(console, 0x6000, 0x03);
+    assert(nesle::cuda::read_prg(fixture.buffers, 0, 0x8000) == 0x00);
+    assert(nesle::cuda::batch_cpu_read(fixture.buffers, 0, 0x6000) == 0x03);
+    fixture.assert_reads_agree(console);
+}
+
+void check_un1rom_shift() {
+    // UN1ROM pages are non-consecutive: the register holds page >> 2.
+    const auto rom = make_rom(nesle::kMapperUn1rom, 128 * 1024, 8 * 1024);
+    const auto layout = nesle::describe_mapper(rom.metadata);
+    assert(layout.bank_shift == 2);
+    assert(layout.bank_mask == 7);
+
+    Fixture fixture;
+    fixture.attach(rom);
+    nesle::Console console(rom);
+
+    for (std::uint8_t bank = 0; bank < 8; ++bank) {
+        fixture.write_both(console, 0x8000, static_cast<std::uint8_t>(bank << 2));
+        fixture.assert_window(rom, bank, 0x4000, 0x8000);
+        fixture.assert_reads_agree(console);
+    }
+}
+
+void check_bnrom() {
+    // No CHR ROM means BNROM: one 32 KB window over the whole CPU space.
+    const auto rom = make_rom(nesle::kMapperBnrom, 128 * 1024, 0);
+    const auto layout = nesle::describe_mapper(rom.metadata);
+    assert(layout.bank_kind == nesle::kBankKindBnrom32k);
+    assert(layout.window_bytes == 0x8000);
+    assert(layout.fixed_bytes == 0);
+    assert(layout.bank_mask == 3);
+
+    Fixture fixture;
+    fixture.attach(rom);
+    nesle::Console console(rom);
+
+    for (std::uint8_t bank = 0; bank < 4; ++bank) {
+        fixture.write_both(console, 0x8000, bank);
+        fixture.assert_window(rom, bank, 0x8000, 0x8000);
+        fixture.assert_window(rom, bank, 0x8000, 0xFFFF);
+        fixture.assert_reads_agree(console);
+    }
+
+    // CHR RAM: 8 KB fills $0000-$1FFF exactly, so the game writes tiles and
+    // reads them back through the PPU.
+    fixture.write_both(console, 0x2006, 0x00);
+    fixture.write_both(console, 0x2006, 0x00);
+    fixture.write_both(console, 0x2007, 0xAB);
+    assert(nesle::cuda::read_chr(fixture.buffers, 0, 0x0000) == 0xAB);
+    assert(nesle::cuda::read_chr(fixture.buffers, 0, 0x1FFF) == 0x00);
+    assert(console.ppu().ppu_read(0x0000) == 0xAB);
+    fixture.write_both(console, 0x2006, 0x00);
+    fixture.write_both(console, 0x2006, 0x10);
+    fixture.write_both(console, 0x2007, 0xCD);
+    assert(nesle::cuda::read_chr(fixture.buffers, 0, 0x0010) == 0xCD);
+    assert(console.ppu().ppu_read(0x0010) == 0xCD);
+    assert(console.ppu().ppu_read(0x0000) == 0xAB);
+}
+
+void check_bus_conflicts() {
+    // Conflicts only when the ROM declares them (NES 2.0 submapper 2).
+    const auto plain = make_rom(nesle::kMapperUxrom, 64 * 1024, 8 * 1024);
+    assert(!nesle::describe_mapper(plain.metadata).bus_conflicts);
+
+    auto conflicting = make_rom(nesle::kMapperUxrom, 64 * 1024, 8 * 1024, 0, 2);
+    assert(nesle::describe_mapper(conflicting.metadata).bus_conflicts);
+
+    Fixture fixture;
+    fixture.attach(conflicting);
+    nesle::Console console(conflicting);
+    // Only bits the mask ROM already has set survive, so a full write to a
+    // byte holding 0x13 latches 0x13, which the 4-bank mask turns into bank 3.
+    const auto mask_byte = conflicting.prg_rom[0x4123];
+    assert(mask_byte != 0);
+    fixture.write_both(console, 0xC123, 0xFF);
+    assert(nesle::cuda::read_prg(fixture.buffers, 0, 0x8000) ==
+           conflicting.prg_rom[3 * 0x4000]);
+    fixture.assert_reads_agree(console);
+    // Writing zero latches zero whatever the mask ROM says.
+    fixture.write_both(console, 0xC123, 0x00);
+    assert(nesle::cuda::read_prg(fixture.buffers, 0, 0x8000) == conflicting.prg_rom[0]);
+    fixture.assert_reads_agree(console);
+}
+
+void check_unsupported() {
+    for (std::uint16_t mapper : {1, 3, 4, 7, 9, 66, 71, 255}) {
+        const auto rom = make_rom(mapper, 64 * 1024, 8 * 1024);
+        const auto layout = nesle::describe_mapper(rom.metadata);
+        assert(!layout.supported);
+        assert(!nesle::unsupported_mapper_reason(rom.metadata).empty());
+        bool threw = false;
+        try {
+            nesle::Console console(rom);
+        } catch (const std::invalid_argument&) {
+            threw = true;
+        }
+        assert(threw);
+    }
+
+    // Mapper 2 needs at least 32 KB of PRG, on a 16 KB page boundary.
+    assert(!nesle::describe_mapper(make_rom(nesle::kMapperUxrom, 16 * 1024, 8 * 1024).metadata)
+                .supported);
+    assert(!nesle::describe_mapper(make_rom(nesle::kMapperUxrom, 40 * 1024, 8 * 1024).metadata)
+                .supported);
+    // BNROM needs CHR RAM: CHR ROM on mapper 34 is NINA-001, which is not
+    // supported here.
+    assert(!nesle::describe_mapper(make_rom(nesle::kMapperBnrom, 64 * 1024, 8 * 1024).metadata)
+                .supported);
+}
+
+void check_reset() {
+    {
+        const auto rom = make_rom(nesle::kMapperUxrom, 128 * 1024, 8 * 1024);
+        Fixture fixture;
+        fixture.attach(rom);
+        fixture.prg_bank[0] = 5;
+        nesle::cuda::reset_mapper_state(fixture.buffers, 0);
+        assert(fixture.prg_bank[0] == 0);
+        assert(nesle::cuda::read_prg(fixture.buffers, 0, 0x8000) == rom.prg_rom[0]);
+    }
+
+    // Cold reset reads $FFFC through the power-on mapping. BNROM maps bank 0's
+    // 32 KB at $8000, so on a multi-bank image the vector must come from the
+    // first 32 KB - not from the last four bytes of the image, which belong to
+    // a different bank and would boot the CPU into unmapped code.
+    {
+        auto rom = make_rom(nesle::kMapperBnrom, 128 * 1024, 0);
+        // Distinct vectors per 32 KB bank: bank 0 -> $8000, bank 3 -> $C000.
+        const auto put_vector = [&rom](std::size_t window_base, std::uint16_t target) {
+            rom.prg_rom[window_base + 0x7FFC] = static_cast<std::uint8_t>(target & 0xFF);
+            rom.prg_rom[window_base + 0x7FFD] = static_cast<std::uint8_t>(target >> 8);
+        };
+        put_vector(0x0000, 0x8000);
+        put_vector(0x6000, 0xC000);
+
+        const auto layout = nesle::describe_mapper(rom.metadata);
+        assert(nesle::reset_vector_base(layout, rom.prg_rom.size()) == 0x7FFC);
+
+        Fixture fixture;
+        fixture.attach(rom);
+        nesle::cuda::cold_reset_console_env(fixture.buffers, 0);
+        assert(fixture.pc[0] == 0x8000);
+        assert(fixture.prg_bank[0] == 0);
+    }
+
+    // UxROM keeps its fixed last 16 KB at $C000, so the vector is the last four
+    // bytes of the image there.
+    {
+        auto rom = make_rom(nesle::kMapperUxrom, 128 * 1024, 8 * 1024);
+        rom.prg_rom[rom.prg_rom.size() - 4] = 0x00;
+        rom.prg_rom[rom.prg_rom.size() - 3] = 0x80;
+        const auto layout = nesle::describe_mapper(rom.metadata);
+        assert(nesle::reset_vector_base(layout, rom.prg_rom.size()) ==
+               rom.prg_rom.size() - 4);
+        Fixture fixture;
+        fixture.attach(rom);
+        nesle::cuda::cold_reset_console_env(fixture.buffers, 0);
+        assert(fixture.pc[0] == 0x8000);
+    }
+
+    // NROM leaves the register arrays alone (they are null there).
+    auto nrom_buffers = nesle::cuda::BatchBuffers{};
+    nesle::cuda::reset_mapper_state(nrom_buffers, 0);
+}
+
+}  // namespace
+
+int main() {
+    check_uxrom();
+    check_un1rom_shift();
+    check_bnrom();
+    check_bus_conflicts();
+    check_unsupported();
+    check_reset();
+    return 0;
+}

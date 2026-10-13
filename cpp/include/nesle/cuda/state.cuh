@@ -90,6 +90,7 @@ NESLE_CUDA_STATE_HD inline void zero_bytes_fast(std::uint8_t* dst, std::uint32_t
 
 constexpr int kCpuRamBytes = 2048;
 constexpr int kPrgRamBytes = 8 * 1024;
+constexpr int kChrRamBytes = 8 * 1024;
 constexpr int kPaletteRamBytes = 32;
 constexpr int kOamBytes = 256;
 constexpr int kNametableRamBytes = 2048;
@@ -99,6 +100,31 @@ constexpr int kRgbChannels = 3;
 constexpr std::uint8_t kNametableVertical = 0;
 constexpr std::uint8_t kNametableHorizontal = 1;
 constexpr std::uint8_t kNametableFourScreen = 2;
+// UNROM 512 (iNES mapper 30) can also force CIRAM A10, giving one-screen modes.
+// Only 2 KB of CIRAM is allocated per env, so a four-screen cart degrades to
+// vertical; the two one-screen modes are exact and are what mapper 30 games use.
+constexpr std::uint8_t kNametableSingleScreenLower = 3;
+constexpr std::uint8_t kNametableSingleScreenUpper = 4;
+
+// How the $8000-$FFFF window is split. Resolved once on the host from the iNES
+// header (mapper number + submapper + CHR presence) so the device code never
+// has to interpret iNES fields, and every banked board reduces to the same
+// "switchable window at the bottom, fixed window on top" shape.
+enum BankKind : std::uint8_t {
+    // NROM: no register, no indirection, 16/32 KB image fixed at $8000.
+    kBankingNone = 0,
+    // UxROM family: 16 KB window at $8000-$BFFF, last 16 KB page fixed at $C000.
+    kBankingUxrom16k,
+    // BNROM: single 32 KB window at $8000-$FFFF.
+    kBankingBnrom32k,
+};
+
+// iNES mapper numbers with a banking path. Mapper 0 is listed only so the
+// "is this NROM" test reads as a mapper comparison.
+constexpr std::uint16_t kMapperNrom = 0;
+constexpr std::uint16_t kMapperUxrom = 2;
+constexpr std::uint16_t kMapperBnrom = 34;
+constexpr std::uint16_t kMapperUn1rom = 94;
 
 struct CpuStateSoA {
     std::uint16_t* NESLE_RESTRICT pc;
@@ -115,6 +141,9 @@ struct CpuStateSoA {
     std::uint8_t* NESLE_RESTRICT controller1_shift;
     std::uint8_t* NESLE_RESTRICT controller1_shift_count;
     std::uint8_t* NESLE_RESTRICT controller1_strobe;
+    std::uint8_t* NESLE_RESTRICT controller2_shift;
+    std::uint8_t* NESLE_RESTRICT controller2_shift_count;
+    std::uint8_t* NESLE_RESTRICT controller2_strobe;
     std::uint32_t* NESLE_RESTRICT pending_dma_cycles;
 };
 
@@ -141,6 +170,10 @@ struct PpuStateSoA {
     std::uint8_t* NESLE_RESTRICT nametable_ram;
     std::uint8_t* NESLE_RESTRICT palette_ram;
     std::uint8_t* NESLE_RESTRICT oam;
+    // Cartridge CHR RAM (8 KB per env). nullptr for carts that carry CHR ROM,
+    // which is every ROM that worked before UxROM support existed; the PPU
+    // pattern fetch then never touches this array.
+    std::uint8_t* NESLE_RESTRICT chr_ram;
 
     // Presentation snapshot — frozen at each vblank start so render() sees an
     // internally consistent picture of the just-finished frame no matter where
@@ -165,13 +198,49 @@ struct PpuStateSoA {
     std::uint8_t* NESLE_RESTRICT snap_palette;    // kPaletteRamBytes per env
 };
 
+// Read-only description of the cartridge, shared by every environment in the
+// batch. Everything a mapper can change at runtime lives in MapperStateSoA
+// instead: bank registers are per-env mutable state, while the window geometry
+// below is a property of the ROM image and never changes.
 struct CartridgeView {
     const std::uint8_t* prg_rom;
     const std::uint8_t* chr_rom;
-    std::uint32_t prg_rom_size;
+    std::uint32_t prg_rom_size;        // padded size, the power of two the device holds
+    // Where $FFFC/$FFFD live in the image at power-on. NROM keeps the whole image
+    // at $8000 and UxROM keeps its fixed last 16 KB at $C000, so on both the
+    // vector is the last four bytes of the image. BNROM maps bank 0's 32 KB at
+    // $8000 at power-on, so its vector is the last four bytes of that window -
+    // the first 32 KB of the image - and not of the image.
+    std::uint32_t prg_reset_vector_base;
+    std::uint32_t prg_rom_mask;  // prg_rom_size - 1; PRG is padded to 2^n
     std::uint32_t chr_rom_size;
-    std::uint8_t mapper;
-    std::uint8_t nametable_arrangement;
+    std::uint16_t mapper;
+    std::uint8_t bank_kind;      // BankKind
+    std::uint8_t bus_conflicts;  // AND the written byte with the mask ROM
+    // Switchable window. It occupies [prg_window_start, prg_window_start +
+    // window_bytes); a read inside it maps to
+    // ((prg_bank & prg_bank_mask) << prg_window_shift) + (address - prg_window_start).
+    // The window sits at the bottom of CPU space ($8000) for every board here,
+    // so the unsigned distance makes one compare cover both halves.
+    std::uint32_t prg_window_start;
+    std::uint32_t prg_window_shift;
+    std::uint32_t prg_window_mask;  // window_bytes - 1
+    std::uint8_t prg_bank_mask;
+    std::uint8_t prg_bank_shift;  // register right-shift before masking
+    // Fixed window, the complement of the switchable one: maps to
+    // prg_fixed_base + (address & prg_fixed_mask). Unused for BNROM, whose
+    // single window covers the whole CPU space.
+    std::uint32_t prg_fixed_base;
+    std::uint32_t prg_fixed_mask;
+    std::uint8_t nametable_arrangement;  // power-on mirroring, from the header
+    std::uint8_t reward_smb;             // SMB RAM scraper applies to this ROM
+};
+
+// Per-environment mapper registers. One byte per env keeps the batch layout
+// flat and lets the step kernel's per-instruction read be a single 8-bit load.
+// Absent (nullptr) for NROM, which keeps its zero-indirection read path.
+struct MapperStateSoA {
+    std::uint8_t* NESLE_RESTRICT prg_bank;  // switchable PRG window
 };
 
 // The PPU fields read/modified on every emulated instruction. The step kernel
@@ -193,6 +262,7 @@ struct PpuHotState {
 struct BatchBuffers {
     CpuStateSoA cpu;
     PpuStateSoA ppu;
+    MapperStateSoA mapper;
     CartridgeView cart;
     std::uint8_t* NESLE_RESTRICT action_masks;
     std::uint8_t* NESLE_RESTRICT done;

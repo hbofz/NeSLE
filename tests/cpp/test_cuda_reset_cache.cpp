@@ -48,6 +48,9 @@ int main() {
     std::vector<std::uint8_t> controller_shift(kNumEnvs, 0);
     std::vector<std::uint8_t> controller_shift_count(kNumEnvs, 8);
     std::vector<std::uint8_t> controller_strobe(kNumEnvs, 0);
+    std::vector<std::uint8_t> controller2_shift(kNumEnvs, 0);
+    std::vector<std::uint8_t> controller2_shift_count(kNumEnvs, 8);
+    std::vector<std::uint8_t> controller2_strobe(kNumEnvs, 0);
     std::vector<std::uint8_t> ppu_ctrl(kNumEnvs, 0);
     std::vector<std::uint8_t> ppu_mask(kNumEnvs, 0);
     std::vector<std::uint8_t> ppu_status(kNumEnvs, 0);
@@ -86,6 +89,9 @@ int main() {
     buffers.cpu.controller1_shift = controller_shift.data();
     buffers.cpu.controller1_shift_count = controller_shift_count.data();
     buffers.cpu.controller1_strobe = controller_strobe.data();
+    buffers.cpu.controller2_shift = controller2_shift.data();
+    buffers.cpu.controller2_shift_count = controller2_shift_count.data();
+    buffers.cpu.controller2_strobe = controller2_strobe.data();
     buffers.ppu.ctrl = ppu_ctrl.data();
     buffers.ppu.mask = ppu_mask.data();
     buffers.ppu.status = ppu_status.data();

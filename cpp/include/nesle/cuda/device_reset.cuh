@@ -24,6 +24,9 @@ struct DeviceResetSnapshots {
     std::uint8_t* controller1_shift = nullptr;
     std::uint8_t* controller1_shift_count = nullptr;
     std::uint8_t* controller1_strobe = nullptr;
+    std::uint8_t* controller2_shift = nullptr;
+    std::uint8_t* controller2_shift_count = nullptr;
+    std::uint8_t* controller2_strobe = nullptr;
 
     std::uint8_t* ppu_ctrl = nullptr;
     std::uint8_t* ppu_mask = nullptr;
@@ -40,6 +43,8 @@ struct DeviceResetSnapshots {
     std::uint8_t* ppu_read_buffer = nullptr;
     std::uint8_t* ppu_scroll_x = nullptr;
     std::uint8_t* ppu_scroll_y = nullptr;
+
+    std::uint8_t* prg_bank = nullptr;
 
     int* previous_mario_x = nullptr;
     int* previous_mario_time = nullptr;
@@ -94,6 +99,16 @@ NESLE_CUDA_DEVICE_RESET_HD inline void capture_device_reset_snapshot(
     if (buffers.cpu.controller1_strobe != nullptr && snapshots.controller1_strobe != nullptr) {
         snapshots.controller1_strobe[slot] = buffers.cpu.controller1_strobe[env];
     }
+    if (buffers.cpu.controller2_shift != nullptr && snapshots.controller2_shift != nullptr) {
+        snapshots.controller2_shift[slot] = buffers.cpu.controller2_shift[env];
+    }
+    if (buffers.cpu.controller2_shift_count != nullptr &&
+        snapshots.controller2_shift_count != nullptr) {
+        snapshots.controller2_shift_count[slot] = buffers.cpu.controller2_shift_count[env];
+    }
+    if (buffers.cpu.controller2_strobe != nullptr && snapshots.controller2_strobe != nullptr) {
+        snapshots.controller2_strobe[slot] = buffers.cpu.controller2_strobe[env];
+    }
 
     snapshots.ppu_ctrl[slot] = buffers.ppu.ctrl[env];
     snapshots.ppu_mask[slot] = buffers.ppu.mask[env];
@@ -125,6 +140,10 @@ NESLE_CUDA_DEVICE_RESET_HD inline void capture_device_reset_snapshot(
     }
     if (buffers.ppu.scroll_y != nullptr && snapshots.ppu_scroll_y != nullptr) {
         snapshots.ppu_scroll_y[slot] = buffers.ppu.scroll_y[env];
+    }
+
+    if (buffers.mapper.prg_bank != nullptr && snapshots.prg_bank != nullptr) {
+        snapshots.prg_bank[slot] = buffers.mapper.prg_bank[env];
     }
 
     if (buffers.previous_mario_x != nullptr && snapshots.previous_mario_x != nullptr) {
@@ -189,6 +208,16 @@ NESLE_CUDA_DEVICE_RESET_HD inline void restore_device_reset_snapshot(
     if (buffers.cpu.controller1_strobe != nullptr && snapshots.controller1_strobe != nullptr) {
         buffers.cpu.controller1_strobe[env] = snapshots.controller1_strobe[slot];
     }
+    if (buffers.cpu.controller2_shift != nullptr && snapshots.controller2_shift != nullptr) {
+        buffers.cpu.controller2_shift[env] = snapshots.controller2_shift[slot];
+    }
+    if (buffers.cpu.controller2_shift_count != nullptr &&
+        snapshots.controller2_shift_count != nullptr) {
+        buffers.cpu.controller2_shift_count[env] = snapshots.controller2_shift_count[slot];
+    }
+    if (buffers.cpu.controller2_strobe != nullptr && snapshots.controller2_strobe != nullptr) {
+        buffers.cpu.controller2_strobe[env] = snapshots.controller2_strobe[slot];
+    }
 
     buffers.ppu.ctrl[env] = snapshots.ppu_ctrl[slot];
     buffers.ppu.mask[env] = snapshots.ppu_mask[slot];
@@ -220,6 +249,10 @@ NESLE_CUDA_DEVICE_RESET_HD inline void restore_device_reset_snapshot(
     }
     if (buffers.ppu.scroll_y != nullptr && snapshots.ppu_scroll_y != nullptr) {
         buffers.ppu.scroll_y[env] = snapshots.ppu_scroll_y[slot];
+    }
+
+    if (buffers.mapper.prg_bank != nullptr && snapshots.prg_bank != nullptr) {
+        buffers.mapper.prg_bank[env] = snapshots.prg_bank[slot];
     }
 
     if (buffers.previous_mario_x != nullptr && snapshots.previous_mario_x != nullptr) {
