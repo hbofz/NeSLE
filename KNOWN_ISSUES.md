@@ -66,6 +66,20 @@ Honest list of what's broken, deferred, or unverified. Kept current as of
 - The C++ tests in `tests/cpp/` run in CI on Ubuntu (the `cpp-tests` job runs
   `scripts/run_cpp_tests.sh`). They are not run on Windows and are not visible
   to pytest, so a local `pytest` run does not cover them.
+- `tests/cpp/test_console.cpp` overflows the stack on Windows and passes on
+  Ubuntu, so it cannot be run locally with MSVC (observed 2026-10-12 while working on
+  the fault-quarantine branch). It fails with `STATUS_STACK_OVERFLOW` (exit
+  `0xC00000FD`), and the same failure reproduces on unmodified `upstream/main`, so it is
+  not a regression of any branch. Two measurements explain the platform difference:
+  `sizeof(nesle::Console)` is 22992 bytes, of which `sizeof(nesle::Ppu)` is 12632, and
+  `Ppu::render_rgb_frame()` returns a 184320-byte `RgbFrame` by value while also holding
+  a 61440-byte `background_opaque` array. `test_console.cpp` puts thirteen `Console`
+  objects and three `render_rgb_frame()` call sites in one translation unit. Ubuntu's
+  default stack is 8 MiB against Windows' 1 MiB, which is what tips it over. Not fixed
+  here: it predates this branch and the fix belongs in its own change.
+  Note also that `scripts/run_cpp_tests.sh` assumes a POSIX shell and a `$CXX` that
+  compiles every source in one invocation, so it cannot drive `cl.exe` on Windows as
+  written.
 
 ## Windows/WDDM training-throughput ceiling (measured 2026-07-29)
 

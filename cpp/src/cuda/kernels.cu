@@ -26,6 +26,16 @@ __global__ void console_step_kernel(BatchBuffers buffers,
         return;
     }
 
+    // Already quarantined by an earlier step and not reset since. The fault stays set
+    // until a reset, so without this check the next step_device would resume from the
+    // byte after the offending opcode and carry on as though nothing had happened.
+    // Report it as done every time, with no reward, rather than executing.
+    if (buffers.cpu.fault != nullptr && buffers.cpu.fault[env] != 0) {
+        buffers.rewards[env] = 0.0F;
+        buffers.done[env] = 1;
+        return;
+    }
+
     auto state = load_cpu_state(buffers, env);
     // PPU scalars stay in registers for the whole launch, like CpuState —
     // they are otherwise ~6-10 dependent global round-trips per instruction.
@@ -40,6 +50,9 @@ __global__ void console_step_kernel(BatchBuffers buffers,
     std::uint64_t total_instructions = 0;
     std::uint32_t total_frames_completed = 0;
     std::uint32_t budget_hits = 0;
+    // Set when this env's CPU reaches an opcode the decoder does not implement. The
+    // env is then quarantined instead of taking the whole launch down with it.
+    bool faulted = false;
     for (std::uint32_t frame = 0; frame < frameskip; ++frame) {
         std::uint64_t instructions = 0;
         std::uint32_t frames_completed = 0;
@@ -55,6 +68,33 @@ __global__ void console_step_kernel(BatchBuffers buffers,
                 }
             }
             const auto step = step_batch_console_instruction_lazy(buffers, env, state, hot);
+            if (step.cpu.illegal) {
+                // An opcode the core does not implement. This used to compile to
+                // asm("trap;") inside cpu::step, which aborts the entire launch: one
+                // env out of 16k reaching a byte the decoder does not know took every
+                // other env down with an opaque CUDA error and no hint which one.
+                // Quarantine this env instead - record where and what, mark it done so
+                // the episode ends cleanly, and let every other env finish the frame.
+                if (buffers.cpu.fault != nullptr) {
+                    buffers.cpu.fault[env] =
+                        (static_cast<std::uint32_t>(step.cpu.pc) << 8) | step.cpu.opcode;
+                }
+                if (buffers.cpu.fault_pending != nullptr) {
+                    // Latched separately: the env is about to be marked done, and
+                    // step_device resets done envs in the same call, so a fault kept
+                    // only in `fault` would be cleared before anyone could read it.
+                    buffers.cpu.fault_pending[env] =
+                        (static_cast<std::uint32_t>(step.cpu.pc) << 8) | step.cpu.opcode;
+                }
+                if (pending_ppu_cycles != 0) {
+                    const auto settled =
+                        batch_ppu_step_env_hot(buffers, env, pending_ppu_cycles, hot);
+                    frames_completed += settled.frames_completed;
+                    pending_ppu_cycles = 0;
+                }
+                faulted = true;
+                break;
+            }
             pending_ppu_cycles += step.ppu_cycles;
             if (stats.opcode_counts != nullptr) {
                 atomicAdd(&stats.opcode_counts[step.cpu.opcode], 1ULL);
@@ -87,11 +127,25 @@ __global__ void console_step_kernel(BatchBuffers buffers,
         if (frames_completed == 0 && instructions >= max_instructions_per_frame) {
             ++budget_hits;
         }
+        if (faulted) {
+            // Stop early: the env is quarantined, so the remaining frames of this
+            // frameskip would only re-enter the same unimplemented opcode.
+            break;
+        }
     }
     store_cpu_state(buffers, env, state);
     store_ppu_hot_state(buffers, env, hot);
 
-    apply_batch_reward_env(buffers, env);
+    if (faulted) {
+        // End the episode with no reward rather than running the reward kernel: this
+        // env's frame is truncated mid-instruction, so any progress-based term would
+        // be measuring the cutoff, not the game. Python sees the reason through
+        // CudaBatch.faults().
+        buffers.rewards[env] = 0.0F;
+        buffers.done[env] = 1;
+    } else {
+        apply_batch_reward_env(buffers, env);
+    }
     if (stats.instructions != nullptr) {
         stats.instructions[env] = total_instructions;
     }
