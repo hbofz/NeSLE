@@ -42,7 +42,7 @@ ILLEGAL_OPCODES = frozenset(
         "02 03 04 07 0B 0C 0F 12 13 14 17 1A 1B 1C 1F 22 23 27 2B 2F 32 33 34 37 3A 3B 3C 3F "
         "42 43 44 47 4B 4F 52 53 54 57 5A 5B 5C 5F 62 63 64 67 6B 6F 72 73 74 77 7A 7B 7C 7F "
         "80 82 83 87 89 8B 8F 92 93 97 9B 9C 9E 9F A3 A7 AB AF B2 B3 B7 BB BF C2 C3 C7 CB CF "
-        "D2 D3 D4 D7 DA DB DC DF E2 E3 E7 EB EF F2 F3 F4 F7 FA FB FC FF"
+        "D2 D3 D4 D7 DA DB DC DF E2 E3 E7 EF F2 F3 F4 F7 FA FB FC FF"
     ).split()
 )
 
@@ -145,12 +145,14 @@ def _find_quiescent_pc(rom: bytes) -> int | None:
     wrong reason. A JMP-to-self needs no RAM at all. The step kernel even has an idle
     loop fast-forward for 0x4C, so such an env costs almost nothing.
     """
-    window = _prg_rom_window(rom)
+    # All of PRG, not just $C000-$FFFF: SMB's only JMP-to-self is at $8057.
+    window = rom[16 : 16 + rom[4] * 16384]
+    base = 0x10000 - len(window)
     for offset in range(len(window) - 2):
         if window[offset] != 0x4C:
             continue
         target = window[offset + 1] | (window[offset + 2] << 8)
-        if target == 0xC000 + offset:
+        if target == base + offset:
             return target
     return None
 
@@ -203,7 +205,7 @@ class EnvFaultTests(unittest.TestCase):
         # frames on its own; a JMP-to-self does both without needing valid RAM.
         cls.quiescent_pc = _find_quiescent_pc(cls.rom)
         if cls.quiescent_pc is None:
-            raise unittest.SkipTest("no JMP-to-self in the ROM's fixed window")
+            raise unittest.SkipTest("no JMP-to-self anywhere in PRG ROM")
         cls.healthy = build_minimal_state(cls.quiescent_pc)
         try:
             probe = _cuda_core.CudaBatch(2, 1, cls.rom)

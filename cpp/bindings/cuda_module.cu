@@ -1195,7 +1195,7 @@ private:
         cudaFree(device_controller_shift_count_);
         cudaFree(device_controller_strobe_);
         cudaFree(device_pending_dma_cycles_);
-    cudaFree(device_fault_);
+        cudaFree(device_fault_);
         cudaFree(device_fault_pending_);
         cudaFree(device_previous_x_);
         cudaFree(device_previous_time_);
