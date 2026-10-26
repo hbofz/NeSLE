@@ -34,6 +34,15 @@ near the naive 32× serialization floor, because real game-state divergence
 across a warp is partial. Anti-divergence work has a hard ceiling on its
 payoff.
 
+**Measured on NeSLE (2026-10-25), divergence costs far more than 30%.** On the
+1050 Ti at 4,096 envs from the W1-1 snapshot, every env holding RIGHT runs at
+177k env-steps/s, but each env drawing its own random action from
+`simple_with_start` runs at **27.7k**, 6.4x slower. Giving every env the *same*
+random action restores 214k, so the gap is per-env action divergence, not the
+actions themselves. The headline numbers (README, `benchmark-gpu-vs-cpu.md`) are
+the all-envs-identical best case; an untrained stochastic policy sees roughly a
+sixth of that on this card. See the state-correlation section below.
+
 **Memory traffic.** This may be the larger cost and gets less attention:
 
 - PPU bookkeeping scalars (`scanline`, `dot`, `status`, `ctrl`, `nmi_pending`,
@@ -156,8 +165,9 @@ real PPU/bus work) — from a 3.2× hole. The original proposal (Laine & Karras
 wavefront, Octax's CHIP-8 result) is kept in the sources; the pattern does
 not transfer to a 6502 with a table-driven core.
 
-Useful byproduct: the measured 1.9× correlated-vs-decorrelated gap is direct
-empirical support for the cheap state-correlation scheduling lever below.
+Useful byproduct: the measured 1.9× correlated-vs-decorrelated gap motivated
+the state-correlation scheduling A/B below, which came back negative for
+training.
 
 ### Rejected: warp-per-env for the CPU loop
 
@@ -165,13 +175,33 @@ A serial 6502 instruction stream offers no work for 31 of 32 lanes —
 throughput would drop roughly an order of magnitude. Lane-level parallelism
 belongs to rendering and bulk copies (Tier 0, #2–3).
 
-### Cheap orthogonal lever: state-correlation scheduling
+### State-correlation scheduling: **NO-GO for training (measured 2026-10-25)**
 
 CuLE measured throughput highest right after reset (envs share PC regions)
-and decaying as states drift. NeSLE's snapshot resets already correlate the
-population far more than ROM-boot Atari; grouping envs by reset state at the
-rollout level (so warps tend to share game phase) is nearly free to prototype
-and worth measuring, though its payoff is inferred, not published.
+and decaying as states drift. The concrete instance in NeSLE
+([#8](https://github.com/hbofz/NeSLE/issues/8)): with several reset states,
+`env.py` assigns levels round-robin, so every 32-lane warp holds all 8 worlds.
+Block assignment (a contiguous run of envs per level) makes each warp
+single-level.
+
+A/B on the GTX 1050 Ti, 8 world snapshots, 200 timed steps after 30 warmup,
+done envs reset every step as training does, median of 3 interleaved runs:
+
+| Policy | 256 | 1,024 | 2,048 | 4,096 | 8,192 |
+|---|---:|---:|---:|---:|---:|
+| RIGHT held (identical actions) | 2.18x | 2.17x | 2.13x | 2.23x | 3.14x |
+| random `simple` per env | 0.94x | 0.94x | 0.95x | 0.96x | 1.00x |
+| random `simple_with_start` per env (training default) | 0.93x | 0.94x | 0.94x | 0.95x | - |
+
+(block throughput / round-robin throughput; the last cell was not run.)
+
+Level homogeneity only pays when the actions are correlated too. Per-env
+stochastic actions decorrelate a warp within a few frames whatever level it
+started on, and block assignment then loses 4-7%. The likely cause, not
+verified, is that it puts all of a costly level's warps together and leaves a
+slow tail. Round-robin stays the default. A late-training policy that has
+become near-deterministic could sit between the two rows; anyone wanting to
+try that can already pass `env_to_level` with contiguous blocks.
 
 ## Sources
 

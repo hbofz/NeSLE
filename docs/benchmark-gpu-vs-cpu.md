@@ -21,7 +21,10 @@ Earlier runs on this card were on native Windows. The 4,096-env figure here
 - ROM: Super Mario Bros. (World).nes - NROM mapper 0, 32 KB PRG + 8 KB CHR
 - Reset: Stable Retro Level 1-1 FCS snapshot (start of W1-1, fully-initialized gameplay)
 - frameskip=4 (one env.step = 4 emulated NES frames)
-- Constant action: RIGHT held every step
+- Constant action: RIGHT held every step. Every env runs the same instruction
+  stream, so this is the best case for warp coherence: with an independent
+  random `simple_with_start` action per env, 4,096 envs run at 27.7k
+  env-steps/s (see [gpu-scaling.md](gpu-scaling.md))
 - Per run: 30 step warmup, 200 timed steps, mean throughput reported
 - `cuda-console` runs with `render_frame=False, copy_obs=False` (RAM-observation path)
 - Table is the median of three back-to-back sweeps
