@@ -44,6 +44,30 @@ actions themselves. The headline numbers (README, `benchmark-gpu-vs-cpu.md`) are
 the all-envs-identical best case; an untrained stochastic policy sees roughly a
 sixth of that on this card. See the state-correlation section below.
 
+Where the 6.3x goes, from a throwaway build that counted, at the top of the
+instruction loop, each converged lane group, its active lanes, and the distinct
+opcodes it was about to run (4,096 envs, 100 steps):
+
+| Policy | instr/env/step | loop passes/warp/step | active lanes/pass | distinct opcodes/pass |
+|---|---:|---:|---:|---:|
+| RIGHT held | 14,456 | 12,726 | 32.0 | 1.00 |
+| one shared random action | 11,901 | 11,084 | 32.0 | 1.00 |
+| per-env random | 12,422 | 20,827 | 19.0 | 8.86 |
+
+Per-env random envs execute *fewer* instructions, so none of the gap is extra
+game work. About 1.6x is lanes finishing their frame at different times (the
+slowest lane in a warp averages 1.67x the mean). The other ~3.8x is the ~9
+distinct opcodes per pass serializing through the decode switch, partly shared
+by SIMT, so well under 9x.
+
+Tried and rejected (2026-10-25): flattening the per-frame loop into one loop
+over all frameskip windows, so a lane that finishes a frame starts the next
+instead of waiting for its warp. It is bit-exact against main (same RAM,
+rewards, dones and instruction counts over 800 steps x 1,024 envs, 8 levels,
+frameskip 1 and 4), but **slower**: 28.0k to 25.0k env-steps/s with per-env
+random actions and 176k to 166k with RIGHT held at 4,096 envs. The extra
+branch in the hot loop costs more than the frame barrier it removes.
+
 **Memory traffic.** This may be the larger cost and gets less attention:
 
 - PPU bookkeeping scalars (`scanline`, `dot`, `status`, `ctrl`, `nmi_pending`,
