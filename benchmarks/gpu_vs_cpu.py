@@ -103,7 +103,7 @@ def bench_gpu_batched(num_envs: int, use_snapshot: bool = True) -> dict:
 def fmt_row(r: dict, baseline_eps: float) -> str:
     speedup = r["env_steps_per_s"] / baseline_eps if baseline_eps > 0 else 0.0
     return (
-        f"  {r['label']:40s}  "
+        f"  {r['label']:50s}  "
         f"{r['env_steps_per_s']:>10,.0f} env-steps/s  "
         f"{r['frame_steps_per_s']:>12,.0f} frame-steps/s  "
         f"{speedup:>6.2f}x"
@@ -146,7 +146,7 @@ def main() -> None:
             break
         n *= 2
 
-    print(f"{'Backend':42s}  {'Env-steps/s':>10s}  {'Frame-steps/s':>15s}  {'vs CPU':>8s}")
+    print(f"{'Backend':52s}  {'Env-steps/s':>10s}  {'Frame-steps/s':>15s}  {'vs CPU':>8s}")
     print("-" * 90)
     for r in rows:
         print(fmt_row(r, baseline_eps))
