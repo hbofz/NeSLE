@@ -41,7 +41,8 @@ Super Mario Bros. reward and RAM parsing.
 
 ## Performance
 
-Environment steps per second, frameskip 4 (one env-step is four NES frames):
+Environment steps per second, frameskip 4 (one env-step is four NES frames),
+with every environment holding RIGHT:
 
 | Device | Envs | Env-steps/s | NES frames/s |
 |---|---:|---:|---:|
@@ -60,13 +61,23 @@ per-step launch overhead dominates; it overtakes the CPU baseline by 8
 environments and then scales almost exactly linearly through 4,096, holding to
 around 8,192 before the curve softens.
 
+**These are best-case numbers.** Holding RIGHT keeps every environment on the
+same instruction stream, so the 32 lanes of a warp never diverge. With an
+independent random action per environment, as an untrained stochastic policy
+gives, the 1050 Ti runs **28,084 env-steps/s** at 4,096 environments, about 6x
+lower, and the crossover against the CPU moves to 32 environments. The A100 has
+not been measured this way yet. Reproduce with
+`python benchmarks/gpu_vs_cpu.py --policy random`; the full sweep is in
+[docs/benchmark-gpu-vs-cpu.md](docs/benchmark-gpu-vs-cpu.md).
+
 Device memory runs about **195 KB per environment**: the 65,536-env peak
 occupies 12.2 GiB, measured with the batch resident. Capacity is not the
 constraint; throughput saturates first, just past 65,536.
 
 For reference, `nes-py` / `gym-super-mario-bros`, the standard CPU stack for
 this benchmark, measures 132 env-steps/s on the 1050 Ti host. The 4,096-env GPU
-configuration on that same machine is roughly **1,370x** that baseline.
+configuration on that same machine is roughly **1,370x** that baseline with
+RIGHT held, and about **210x** with per-env random actions.
 
 These figures were re-measured on 2026-09-01 from a clean clone with all 69
 tests passing and all three falsifiability checks green. Two independent runs,

@@ -34,10 +34,11 @@ happen inside the kernel, so one launch advances all N consoles by
   ever touching the GPU.
 - **The cost:** warp divergence. 32 consoles share a warp; when their
   instruction streams diverge (they always do), threads serialize. This is the
-  known headroom in the design, and yet measured throughput still reaches
-  180,437 env-steps/s at 4,096 envs on a GTX 1050 Ti and 3.27M env-steps/s at
-  65,536 envs on an A100, because the sheer batch width buries the
-  inefficiency.
+  known headroom in the design. With every env holding RIGHT, measured
+  throughput reaches 180,437 env-steps/s at 4,096 envs on a GTX 1050 Ti and
+  3.27M env-steps/s at 65,536 envs on an A100. With independent random actions
+  per env the 1050 Ti figure drops about 6x, to 28,084: batch width hides the
+  launch overhead, but not the divergence.
 
 State is laid out as structure-of-arrays indexed by env id, so the frequent
 fields (registers, cycle counters, RAM) coalesce across threads.

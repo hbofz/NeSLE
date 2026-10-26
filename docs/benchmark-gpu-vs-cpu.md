@@ -22,9 +22,9 @@ Earlier runs on this card were on native Windows. The 4,096-env figure here
 - Reset: Stable Retro Level 1-1 FCS snapshot (start of W1-1, fully-initialized gameplay)
 - frameskip=4 (one env.step = 4 emulated NES frames)
 - Constant action: RIGHT held every step. Every env runs the same instruction
-  stream, so this is the best case for warp coherence: with an independent
-  random `simple_with_start` action per env, 4,096 envs run at 27.7k
-  env-steps/s (see [gpu-scaling.md](gpu-scaling.md))
+  stream, so this is the best case for warp coherence. See
+  [Realistic policy](#realistic-policy-per-env-random-actions) below for
+  per-env random actions
 - Per run: 30 step warmup, 200 timed steps, mean throughput reported
 - `cuda-console` runs with `render_frame=False, copy_obs=False` (RAM-observation path)
 - Table is the median of three back-to-back sweeps
@@ -73,6 +73,36 @@ CPU baseline included (343-345).
 - **Peak: 710k effective NES frames per second** across 4,096 parallel SMB
   instances, roughly **11,800x real time** across the batch.
 
+## Realistic policy: per-env random actions
+
+Same protocol, but each env draws its own seeded random action every step from
+`simple_with_start` (the `native_ppo` default action space), as an untrained
+stochastic policy does. Median of three sweeps, spread under 1%:
+
+```
+python benchmarks/gpu_vs_cpu.py --max-envs 16384 --policy random
+```
+
+| Backend | Env-steps/s | vs CPU baseline | RIGHT-held / random |
+|---|---:|---:|---:|
+| native CPU (1 env) | 363 | 1.00x | 0.95x |
+| cuda-console, 1 env | 73 | 0.20x | 0.84x |
+| cuda-console, 8 envs | 181 | 0.50x | 2.68x |
+| cuda-console, 32 envs | 379 | 1.04x | 5.03x |
+| cuda-console, 256 envs | 2,726 | 7.51x | 5.33x |
+| cuda-console, 1,024 envs | 10,124 | 27.89x | 5.48x |
+| cuda-console, 2,048 envs | 17,711 | 48.79x | 5.87x |
+| cuda-console, 4,096 envs | **28,084** | **77.37x** | 6.32x |
+| cuda-console, 8,192 envs | 29,798 | 82.09x | 5.80x |
+| cuda-console, 16,384 envs | 31,388 | 86.47x | 5.55x |
+
+- **The gap is warp divergence.** It grows with batch size up to 32 envs, one
+  warp, and then stays at 5-6x: once every warp holds 32 independent envs, it
+  cannot get more divergent. Giving all envs one shared random action instead
+  runs at 214k at 4,096 envs, so it is not the actions themselves.
+- **Crossover moves to 32 envs** (from 4-8 with RIGHT held).
+- The CPU baseline barely changes, since a single core has no lanes to diverge.
+
 ## What this means for RL training
 
 A typical PPO run on SMB takes ~10M timesteps. On a single-env CPU emulator:
@@ -82,6 +112,7 @@ A typical PPO run on SMB takes ~10M timesteps. On a single-env CPU emulator:
 On the 1050 Ti at 4,096 envs:
 
 - 10M timesteps / 177,401 env-steps/s ~= **56 seconds** of environment stepping
+  with RIGHT held, or 10M / 28,084 ~= **6 minutes** with per-env random actions
 
 (Total wall-clock includes the gradient update step, which is
 policy-network-dependent. With a small MLP policy and RAM observations, network

@@ -3,7 +3,9 @@
 Both backends:
 - Run the same SMB ROM
 - Use frameskip=4 (4 emulator frames per step call) - same as RL default
-- Use RIGHT for every action (eliminates random-policy noise)
+- Use RIGHT for every action by default (eliminates random-policy noise). That is
+  the best case for the GPU: every env runs the same instruction stream. --policy
+  random gives each env its own seeded random action, as a stochastic RL policy does
 - Are warmed up before timing (no first-step JIT / cuMemcpyAsync penalty)
 - Are timed over a fixed step budget
 
@@ -23,6 +25,7 @@ from pathlib import Path
 import numpy as np
 
 import nesle
+from nesle.actions import SIMPLE_MOVEMENT_WITH_START_MASKS
 from nesle._cuda_core import CudaBatch
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -44,6 +47,16 @@ RIGHT_RAW = 0x80
 # the render kernels instead, which is a different set of hot loops.
 RENDER_FRAME = False
 MAX_ENVS = 4096
+POLICY = "right"
+# The native_ppo default action space.
+RANDOM_MASKS = np.array(SIMPLE_MOVEMENT_WITH_START_MASKS, dtype=np.uint8)
+
+
+def make_actions(num_envs: int, steps: int) -> list[np.ndarray]:
+    if POLICY == "right":
+        return [np.full(num_envs, RIGHT_RAW, dtype=np.uint8)] * steps
+    rng = np.random.default_rng(0)
+    return [RANDOM_MASKS[rng.integers(0, len(RANDOM_MASKS), num_envs)] for _ in range(steps)]
 
 
 def bench_cpu_single() -> dict:
@@ -55,12 +68,13 @@ def bench_cpu_single() -> dict:
         frameskip=FRAMESKIP,
     )
     env.reset()
+    actions = [int(a[0]) for a in make_actions(1, WARMUP_STEPS + TIMED_STEPS)]
     # Warmup
-    for _ in range(WARMUP_STEPS):
-        env.step(RIGHT_RAW)
+    for action in actions[:WARMUP_STEPS]:
+        env.step(action)
     t0 = time.perf_counter()
-    for _ in range(TIMED_STEPS):
-        env.step(RIGHT_RAW)
+    for action in actions[WARMUP_STEPS:]:
+        env.step(action)
     elapsed = time.perf_counter() - t0
     env.close()
     env_steps = TIMED_STEPS  # 1 env x N step calls
@@ -81,13 +95,13 @@ def bench_gpu_batched(num_envs: int, use_snapshot: bool = True) -> dict:
     else:
         batch = CudaBatch(num_envs, FRAMESKIP, ROM_BYTES)
     batch.reset()
-    actions = np.full(num_envs, RIGHT_RAW, dtype=np.uint8)
+    actions = make_actions(num_envs, WARMUP_STEPS + TIMED_STEPS)
     # Warmup
-    for _ in range(WARMUP_STEPS):
-        batch.step(actions, render_frame=RENDER_FRAME, copy_obs=False)
+    for step_actions in actions[:WARMUP_STEPS]:
+        batch.step(step_actions, render_frame=RENDER_FRAME, copy_obs=False)
     t0 = time.perf_counter()
-    for _ in range(TIMED_STEPS):
-        batch.step(actions, render_frame=RENDER_FRAME, copy_obs=False)
+    for step_actions in actions[WARMUP_STEPS:]:
+        batch.step(step_actions, render_frame=RENDER_FRAME, copy_obs=False)
     elapsed = time.perf_counter() - t0
     env_steps = TIMED_STEPS * num_envs
     return {
@@ -111,18 +125,22 @@ def fmt_row(r: dict, baseline_eps: float) -> str:
 
 
 def main() -> None:
-    global RENDER_FRAME, MAX_ENVS
+    global RENDER_FRAME, MAX_ENVS, POLICY
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--render", action="store_true",
                         help="also run the PPU render kernels each step "
                              "(default: render_frame=False, the RL path)")
     parser.add_argument("--max-envs", type=int, default=MAX_ENVS,
                         help="largest batch size to try (default: %(default)s)")
+    parser.add_argument("--policy", choices=["right", "random"], default=POLICY,
+                        help="right: every env holds RIGHT (best case); random: each env "
+                             "draws its own simple_with_start action (default: %(default)s)")
     args = parser.parse_args()
     RENDER_FRAME = args.render
     MAX_ENVS = args.max_envs
+    POLICY = args.policy
 
-    print(f"NeSLE benchmark - frameskip={FRAMESKIP}, action=RIGHT, "
+    print(f"NeSLE benchmark - frameskip={FRAMESKIP}, policy={POLICY}, "
           f"warmup={WARMUP_STEPS}, timed={TIMED_STEPS} steps per run")
     print(f"ROM:    {ROM_PATH.name} ({len(ROM_BYTES):,} bytes)")
     print(f"State:  {STATE_PATH.name}")

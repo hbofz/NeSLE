@@ -37,7 +37,8 @@ payoff.
 **Measured on NeSLE (2026-10-25), divergence costs far more than 30%.** On the
 1050 Ti at 4,096 envs from the W1-1 snapshot, every env holding RIGHT runs at
 177k env-steps/s, but each env drawing its own random action from
-`simple_with_start` runs at **27.7k**, 6.4x slower. Giving every env the *same*
+`simple_with_start` runs at **28.1k**, 6.3x slower (`gpu_vs_cpu.py --policy
+random`; full sweep in `benchmark-gpu-vs-cpu.md`). Giving every env the *same*
 random action restores 214k, so the gap is per-env action divergence, not the
 actions themselves. The headline numbers (README, `benchmark-gpu-vs-cpu.md`) are
 the all-envs-identical best case; an untrained stochastic policy sees roughly a
