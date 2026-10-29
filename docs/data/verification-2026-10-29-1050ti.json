@@ -1,0 +1,188 @@
+{
+  "environment": {
+    "gpu": "NVIDIA GeForce GTX 1050 Ti",
+    "memory_total_mib": 4096,
+    "device_class": "1050Ti",
+    "python": "3.14.4",
+    "platform": "Linux-6.6.87.2-microsoft-standard-WSL2-x86_64-with-glibc2.43",
+    "utc": "2026-10-29T07:12:12Z"
+  },
+  "commit": "99984c9700db240cbfd21e70d29a1abf4724a9af",
+  "protocol": {
+    "frameskip": 4,
+    "action": "RIGHT",
+    "warmup_steps": 30,
+    "timed_steps": 200,
+    "render_frame": false,
+    "copy_obs": false
+  },
+  "tests": {
+    "returncode": 0,
+    "summary": "71 passed, 6 skipped in 39.31s",
+    "passed": true
+  },
+  "correctness": {
+    "returncode": 0,
+    "passed": true
+  },
+  "cpu_single_env": {
+    "label": "native CPU (1 env)",
+    "num_envs": 1,
+    "env_steps": 200,
+    "elapsed_s": 0.5202982680057175,
+    "env_steps_per_s": 384.3948986541739,
+    "frame_steps_per_s": 1537.5795946166957
+  },
+  "sweep": [
+    {
+      "label": "cuda-console (snapshot, 1 env, render=False)",
+      "num_envs": 1,
+      "env_steps": 200,
+      "elapsed_s": 3.276701025024522,
+      "env_steps_per_s": 61.036999858265446,
+      "frame_steps_per_s": 244.14799943306178,
+      "vs_cpu": 0.1587872265526037
+    },
+    {
+      "label": "cuda-console (snapshot, 8 envs, render=False)",
+      "num_envs": 8,
+      "env_steps": 1600,
+      "elapsed_s": 3.3002660640049726,
+      "env_steps_per_s": 484.80939686976376,
+      "frame_steps_per_s": 1939.237587479055,
+      "vs_cpu": 1.261227447521173
+    },
+    {
+      "label": "cuda-console (snapshot, 16 envs, render=False)",
+      "num_envs": 16,
+      "env_steps": 3200,
+      "elapsed_s": 3.3299067029729486,
+      "env_steps_per_s": 960.987885078892,
+      "frame_steps_per_s": 3843.951540315568,
+      "vs_cpu": 2.500001660905125
+    },
+    {
+      "label": "cuda-console (snapshot, 32 envs, render=False)",
+      "num_envs": 32,
+      "env_steps": 6400,
+      "elapsed_s": 3.3565253490232863,
+      "env_steps_per_s": 1906.7337006295313,
+      "frame_steps_per_s": 7626.934802518125,
+      "vs_cpu": 4.960351209928387
+    },
+    {
+      "label": "cuda-console (snapshot, 64 envs, render=False)",
+      "num_envs": 64,
+      "env_steps": 12800,
+      "elapsed_s": 3.3897501500323415,
+      "env_steps_per_s": 3776.0895149979933,
+      "frame_steps_per_s": 15104.358059991973,
+      "vs_cpu": 9.823464172440028
+    },
+    {
+      "label": "cuda-console (snapshot, 128 envs, render=False)",
+      "num_envs": 128,
+      "env_steps": 25600,
+      "elapsed_s": 3.45651883300161,
+      "env_steps_per_s": 7406.295535143719,
+      "frame_steps_per_s": 29625.182140574874,
+      "vs_cpu": 19.267413696368777
+    },
+    {
+      "label": "cuda-console (snapshot, 256 envs, render=False)",
+      "num_envs": 256,
+      "env_steps": 51200,
+      "elapsed_s": 3.5309453590307385,
+      "env_steps_per_s": 14500.365990952248,
+      "frame_steps_per_s": 58001.463963808994,
+      "vs_cpu": 37.722576552707324
+    },
+    {
+      "label": "cuda-console (snapshot, 512 envs, render=False)",
+      "num_envs": 512,
+      "env_steps": 102400,
+      "elapsed_s": 3.519183999975212,
+      "env_steps_per_s": 29097.65445646527,
+      "frame_steps_per_s": 116390.61782586107,
+      "vs_cpu": 75.69729608363863
+    },
+    {
+      "label": "cuda-console (snapshot, 1024 envs, render=False)",
+      "num_envs": 1024,
+      "env_steps": 204800,
+      "elapsed_s": 3.689476169005502,
+      "env_steps_per_s": 55509.23508341939,
+      "frame_steps_per_s": 222036.94033367757,
+      "vs_cpu": 144.4067943611266
+    },
+    {
+      "label": "cuda-console (snapshot, 2048 envs, render=False)",
+      "num_envs": 2048,
+      "env_steps": 409600,
+      "elapsed_s": 3.942429912975058,
+      "env_steps_per_s": 103895.31559000003,
+      "frame_steps_per_s": 415581.2623600001,
+      "vs_cpu": 270.2827637769222
+    },
+    {
+      "label": "cuda-console (snapshot, 4096 envs, render=False)",
+      "num_envs": 4096,
+      "env_steps": 819200,
+      "elapsed_s": 4.612014013982844,
+      "env_steps_per_s": 177623.05090928273,
+      "frame_steps_per_s": 710492.2036371309,
+      "vs_cpu": 462.084828729956
+    }
+  ],
+  "crossover_envs": 8,
+  "peak": {
+    "label": "cuda-console (snapshot, 4096 envs, render=False)",
+    "num_envs": 4096,
+    "env_steps": 819200,
+    "elapsed_s": 4.612014013982844,
+    "env_steps_per_s": 177623.05090928273,
+    "frame_steps_per_s": 710492.2036371309,
+    "vs_cpu": 462.084828729956
+  },
+  "memory": {
+    "envs": 4096,
+    "before_mib": 49,
+    "live_mib": 829,
+    "after_free_mib": 49,
+    "attributable_mib": 780,
+    "total_mib": 4096
+  },
+  "nespy_single": {
+    "status": "ok",
+    "env_steps_per_s": 169.0,
+    "windows": [
+      169.0,
+      169.0,
+      169.0,
+      169.0,
+      169.0
+    ],
+    "python": "Python 3.14.4"
+  },
+  "nespy_multicore": {
+    "workers": 12,
+    "status": "ok",
+    "env_steps_per_s": 769.0,
+    "windows": [
+      765.0,
+      764.0,
+      771.0,
+      769.0,
+      776.0
+    ],
+    "python": "Python 3.14.4"
+  },
+  "verdicts": [
+    {
+      "envs": 4096,
+      "claimed": 180437,
+      "measured": 177623.05090928273,
+      "verdict": "PASS"
+    }
+  ]
+}
