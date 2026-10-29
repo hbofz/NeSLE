@@ -351,10 +351,25 @@ void check_unsupported() {
                 .supported);
     assert(!nesle::describe_mapper(make_rom(nesle::kMapperUxrom, 40 * 1024, 8 * 1024).metadata)
                 .supported);
+    // Three 16 KB pages are a whole number of pages but not a power of two: the
+    // device's `bank & mask` would wrap into padding while the host wraps with
+    // `%`, so the image is refused instead of run two different ways.
+    assert(!nesle::describe_mapper(make_rom(nesle::kMapperUxrom, 48 * 1024, 8 * 1024).metadata)
+                .supported);
+    assert(!nesle::describe_mapper(make_rom(nesle::kMapperUn1rom, 48 * 1024, 8 * 1024).metadata)
+                .supported);
+    assert(!nesle::describe_mapper(make_rom(nesle::kMapperBnrom, 96 * 1024, 0).metadata).supported);
+    assert(nesle::describe_mapper(make_rom(nesle::kMapperBnrom, 128 * 1024, 0).metadata).supported);
     // BNROM needs CHR RAM: CHR ROM on mapper 34 is NINA-001, which is not
     // supported here.
     assert(!nesle::describe_mapper(make_rom(nesle::kMapperBnrom, 64 * 1024, 8 * 1024).metadata)
                 .supported);
+    // NROM with a trainer is supported: the 512-byte prefix is skipped at load,
+    // so it does not make the image unrunnable.
+    auto trainer_rom = make_rom(nesle::kMapperNrom, 32 * 1024, 8 * 1024);
+    trainer_rom.metadata.has_trainer = true;
+    assert(nesle::describe_mapper(trainer_rom.metadata).supported);
+    assert(nesle::unsupported_mapper_reason(trainer_rom.metadata).empty());
 }
 
 void check_reset() {

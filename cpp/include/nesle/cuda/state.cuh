@@ -100,11 +100,6 @@ constexpr int kRgbChannels = 3;
 constexpr std::uint8_t kNametableVertical = 0;
 constexpr std::uint8_t kNametableHorizontal = 1;
 constexpr std::uint8_t kNametableFourScreen = 2;
-// UNROM 512 (iNES mapper 30) can also force CIRAM A10, giving one-screen modes.
-// Only 2 KB of CIRAM is allocated per env, so a four-screen cart degrades to
-// vertical; the two one-screen modes are exact and are what mapper 30 games use.
-constexpr std::uint8_t kNametableSingleScreenLower = 3;
-constexpr std::uint8_t kNametableSingleScreenUpper = 4;
 
 // How the $8000-$FFFF window is split. Resolved once on the host from the iNES
 // header (mapper number + submapper + CHR presence) so the device code never
@@ -118,13 +113,6 @@ enum BankKind : std::uint8_t {
     // BNROM: single 32 KB window at $8000-$FFFF.
     kBankingBnrom32k,
 };
-
-// iNES mapper numbers with a banking path. Mapper 0 is listed only so the
-// "is this NROM" test reads as a mapper comparison.
-constexpr std::uint16_t kMapperNrom = 0;
-constexpr std::uint16_t kMapperUxrom = 2;
-constexpr std::uint16_t kMapperBnrom = 34;
-constexpr std::uint16_t kMapperUn1rom = 94;
 
 struct CpuStateSoA {
     std::uint16_t* NESLE_RESTRICT pc;
@@ -242,7 +230,6 @@ struct CartridgeView {
     std::uint32_t prg_fixed_base;
     std::uint32_t prg_fixed_mask;
     std::uint8_t nametable_arrangement;  // power-on mirroring, from the header
-    std::uint8_t reward_smb;             // SMB RAM scraper applies to this ROM
 };
 
 // Per-environment mapper registers. One byte per env keeps the batch layout

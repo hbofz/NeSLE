@@ -46,6 +46,18 @@ def _is_power_of_two(value: int) -> bool:
     return value != 0 and value & (value - 1) == 0
 
 
+def _power_of_two_pages(prg_size: int, page_bytes: int) -> bool:
+    """Whether the image divides into a power-of-two number of mapper pages.
+
+    The device selects a page with `bank & mask`, which only lands on the right
+    page for a power-of-two count; on any other size it would wrap into padding
+    while the host wraps with `%`, so such images are rejected instead.
+    """
+    if page_bytes <= 0 or prg_size % page_bytes != 0:
+        return False
+    return _is_power_of_two(prg_size // page_bytes)
+
+
 @dataclass(frozen=True)
 class INESRom:
     prg_rom_banks: int
@@ -73,7 +85,7 @@ class INESRom:
 
     @property
     def is_uxrom(self) -> bool:
-        return self.mapper in (MAPPER_UXROM, MAPPER_UN1ROM, MAPPER_BNROM)
+        return self.mapper in (MAPPER_UXROM, MAPPER_UN1ROM)
 
     @property
     def has_chr_ram(self) -> bool:
@@ -87,17 +99,17 @@ class INESRom:
         bindings actually enforce; keeping both in step means the Python
         error arrives before the CUDA context is created.
         """
-        if self.has_trainer:
-            return False
         prg = self.prg_rom_size
         if self.mapper == MAPPER_NROM:
+            # A trainer is 512 bytes in front of the PRG data and is skipped at
+            # load time, so it does not make the image unsupported.
             return self.is_nrom
         if self.mapper in (MAPPER_UXROM, MAPPER_UN1ROM):
-            return prg >= 0x8000 and prg % 0x4000 == 0
+            return prg >= 0x8000 and _power_of_two_pages(prg, 0x4000)
         if self.mapper == MAPPER_BNROM:
             # BNROM: one 32 KB window, CHR RAM, no fixed window. NINA-001 is
             # the other board behind iNES 34 and is not supported.
-            return self.has_chr_ram and prg >= 0x8000 and prg % 0x8000 == 0
+            return self.has_chr_ram and prg >= 0x8000 and _power_of_two_pages(prg, 0x8000)
         return False
 
     @property
@@ -112,8 +124,6 @@ class INESRom:
             f"unsupported mapper: {self.mapper_name} (iNES {self.mapper}); "
             "NeSLE emulates NROM, UxROM, UN1ROM and BNROM (0, 2, 34, 94)"
         )
-        if self.has_trainer:
-            return "ROM trainers are not supported"
         if self.is_nrom is False and self.mapper == MAPPER_NROM:
             return "expected one or two 16 KB PRG ROM banks for NROM"
         return reason

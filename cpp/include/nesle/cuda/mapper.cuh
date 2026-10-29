@@ -190,10 +190,6 @@ NESLE_CUDA_MAPPER_HD NESLE_CUDA_MAPPER_INLINE std::uint16_t mirror_nametable_add
             return static_cast<std::uint16_t>(index & 0x07FF);
         case kNametableHorizontal:
             return static_cast<std::uint16_t>((index & 0x03FF) | ((index & 0x0800) >> 1));
-        case kNametableSingleScreenLower:
-            return static_cast<std::uint16_t>(index & 0x03FF);
-        case kNametableSingleScreenUpper:
-            return static_cast<std::uint16_t>((index & 0x03FF) | 0x0400);
         default:
             return static_cast<std::uint16_t>(index & 0x07FF);
     }

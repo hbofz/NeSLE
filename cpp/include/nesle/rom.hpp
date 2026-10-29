@@ -13,11 +13,6 @@ enum class NametableArrangement {
     Vertical,
     Horizontal,
     FourScreen,
-    // UNROM 512 (iNES mapper 30) one-screen mode: header bit 3 with bit 0
-    // clear asks for a single screen whose CIRAM page is picked by bit 7 of
-    // the bank register. Power-on is always the lower page.
-    SingleScreenLower,
-    SingleScreenUpper,
 };
 
 struct RomMetadata {

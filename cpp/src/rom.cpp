@@ -35,6 +35,18 @@ std::uint8_t page_mask(std::size_t prg_size, std::uint32_t page_bytes) noexcept 
     return static_cast<std::uint8_t>(pages - 1);
 }
 
+// The device reaches a page with `bank & mask`, which only selects the right
+// page when the page count is a power of two; on any other size the mask wraps
+// into the zero padding. The host instead wraps with `%` over the real image, so
+// the two disagree on such images. Rejecting them keeps one behaviour; there is
+// no commercial UxROM/BNROM board with a non-power-of-two page count.
+bool page_count_is_power_of_two(std::size_t prg_size, std::uint32_t page_bytes) noexcept {
+    if (page_bytes == 0 || prg_size % page_bytes != 0) {
+        return false;
+    }
+    return is_power_of_two(prg_size / page_bytes);
+}
+
 // Boards with mirroring wired to solder pads. The iNES four-screen bit is a
 // lie on these carts: there is no third and fourth CIRAM page to select, so the
 // bit falls back to the horizontal/vertical choice.
@@ -48,9 +60,9 @@ bool RomMetadata::is_nrom() const noexcept {
     return mapper == 0 && (prg_rom_banks == 1 || prg_rom_banks == 2);
 }
 
-    bool RomMetadata::is_uxrom() const noexcept {
-        return mapper == 2 || mapper == 94 || mapper == 34;
-    }
+bool RomMetadata::is_uxrom() const noexcept {
+    return mapper == 2 || mapper == 94;
+}
 
 
 std::string to_string(std::uint16_t mapper) {
@@ -76,10 +88,6 @@ std::string to_string(NametableArrangement arrangement) {
             return "horizontal";
         case NametableArrangement::FourScreen:
             return "four_screen";
-        case NametableArrangement::SingleScreenLower:
-            return "single_screen_lower";
-        case NametableArrangement::SingleScreenUpper:
-            return "single_screen_upper";
     }
     return "unknown";
 }
@@ -91,8 +99,10 @@ MapperLayout describe_mapper(const RomMetadata& metadata) noexcept {
     MapperLayout layout;
 
     if (metadata.mapper == 0) {
-        // NROM: 16 or 32 KB fixed at $8000, no registers.
-        layout.supported = metadata.is_nrom() && !metadata.has_trainer;
+        // NROM: 16 or 32 KB fixed at $8000, no registers. A trainer is 512 bytes
+        // in front of the PRG data and parse_ines skips it, so it does not make
+        // the image unsupported - main has always accepted those.
+        layout.supported = metadata.is_nrom();
         return layout;
     }
 
@@ -113,7 +123,7 @@ MapperLayout describe_mapper(const RomMetadata& metadata) noexcept {
             layout.bus_conflicts = declared_conflicts;
             layout.bank_mask = page_mask(metadata.prg_rom_size, layout.window_bytes);
             layout.supported = metadata.prg_rom_size >= 0x8000 &&
-                               metadata.prg_rom_size % 0x4000 == 0;
+                               page_count_is_power_of_two(metadata.prg_rom_size, 0x4000);
             break;
 
         case 34:
@@ -127,7 +137,7 @@ MapperLayout describe_mapper(const RomMetadata& metadata) noexcept {
             layout.bank_mask = page_mask(metadata.prg_rom_size, layout.window_bytes);
             layout.supported = metadata.chr_rom_size == 0 &&
                                metadata.prg_rom_size >= 0x8000 &&
-                               metadata.prg_rom_size % 0x8000 == 0;
+                               page_count_is_power_of_two(metadata.prg_rom_size, 0x8000);
             break;
 
         default:
@@ -138,9 +148,6 @@ MapperLayout describe_mapper(const RomMetadata& metadata) noexcept {
 
 std::string unsupported_mapper_reason(const RomMetadata& metadata) {
     if (metadata.mapper == 0) {
-        if (metadata.has_trainer) {
-            return "ROM trainers are not supported";
-        }
         if (!metadata.is_nrom()) {
             return "expected one or two 16 KB PRG ROM banks for NROM";
         }

@@ -255,10 +255,6 @@ std::uint8_t cuda_nametable_arrangement(nesle::NametableArrangement arrangement)
             return nesle::cuda::kNametableHorizontal;
         case nesle::NametableArrangement::FourScreen:
             return nesle::cuda::kNametableFourScreen;
-        case nesle::NametableArrangement::SingleScreenLower:
-            return nesle::cuda::kNametableSingleScreenLower;
-        case nesle::NametableArrangement::SingleScreenUpper:
-            return nesle::cuda::kNametableSingleScreenUpper;
     }
     return nesle::cuda::kNametableVertical;
 }
@@ -1339,7 +1335,6 @@ private:
             cuda_nametable_arrangement(rom_.metadata.nametable_arrangement);
         buffers_.cart.bank_kind = layout.bank_kind;
         buffers_.cart.bus_conflicts = layout.bus_conflicts ? 1 : 0;
-        buffers_.cart.reward_smb = nesle::is_supported_mario_target(rom_.metadata) ? 1 : 0;
         buffers_.cart.prg_window_start = 0x8000u;
         buffers_.cart.prg_window_shift = window_shift(layout.window_bytes);
         buffers_.cart.prg_window_mask =

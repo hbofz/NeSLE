@@ -6,8 +6,6 @@
 
 #ifdef __CUDACC__
 #define NESLE_CPU_HD __host__ __device__
-#elif defined(_MSC_VER)
-#define NESLE_CPU_HD
 #else
 #define NESLE_CPU_HD
 #endif

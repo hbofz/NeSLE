@@ -90,15 +90,6 @@ NESLE_CUDA_HD inline BatchReward compute_batch_reward(const MarioBatchSnapshot& 
 }
 
 NESLE_CUDA_HD inline void apply_batch_reward_env(BatchBuffers& buffers, std::uint32_t env) {
-    if (buffers.cart.reward_smb == 0) {
-        // Not a Super Mario Bros. image: the RAM scraper below would read
-        // unrelated bytes and flag every environment done within a few steps,
-        // which looks exactly like "the ROM does not boot". Non-SMB ROMs run
-        // reward-free until the env's own step limit truncates the episode.
-        buffers.rewards[env] = 0.0F;
-        buffers.done[env] = 0;
-        return;
-    }
     const auto* ram = env_cpu_ram(buffers, env);
     const auto current = read_mario_snapshot(ram);
     MarioBatchSnapshot previous;
