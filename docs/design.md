@@ -66,14 +66,13 @@ orders of magnitude. That single measurement drove the whole API surface:
 
 ## Design decision 3: snapshot reset instead of boot
 
-SMB's title-screen state machine stalls on NeSLE's PPU timing (a real,
-documented bug — see KNOWN_ISSUES.md). Rather than chase cycle-accurate PPU
-timing, reset restores a gzip FCEUX-format save state captured at the start
-of a level, entirely on-device: the parsed snapshot lives in GPU memory and a
-reset kernel copies it into any env that finished an episode, in the same
+Booting from power-on means every env sits through the title menu and level
+intro before its first useful step. Instead, reset restores a gzip
+FCEUX-format save state captured at the start of a level, entirely on-device:
+the parsed snapshot lives in GPU memory and a reset kernel copies it into any env that finished an episode, in the same
 launch that steps the others. Auto-reset therefore costs nothing measurable.
 
-This turned a bug workaround into a feature: `reset_state_paths` with eight
+This also makes curricula cheap: `reset_state_paths` with eight
 level snapshots gives round-robin multi-level curricula for free, and any
 moment of gameplay can become a training start state.
 
@@ -93,7 +92,7 @@ Measured end-to-end on a 4 GB GTX 1050 Ti (2048 envs): ~25M timesteps in
 ## What the design deliberately does not do
 
 - **Cycle-perfect emulation.** The PPU is sufficient for SMB gameplay, not
-  for timing-sensitive edge cases (hence the title-screen bug). Fidelity is
+  for timing-sensitive edge cases. Fidelity is
   bounded by "does the game play correctly," verified by falsifiability
   checks (`benchmarks/verify_correctness.py`) and by agents actually learning.
 - **Mappers beyond NROM.** Each mapper multiplies supported games but adds

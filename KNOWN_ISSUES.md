@@ -1,7 +1,7 @@
 # Known issues
 
 Honest list of what's broken, deferred, or unverified. Kept current as of
-2026-09-01.
+2026-10-29.
 
 ## Deferred bugs
 
@@ -28,13 +28,6 @@ Honest list of what's broken, deferred, or unverified. Kept current as of
   one frame. These are SMB *lag frames* where the game skips its scroll
   reset (real hardware glitches these frames too, our timing makes them more
   frequent); the recorder's HUD filter drops them from GIFs.
-
-- **Title-screen → gameplay transition stalls** (PPU timing bug). SMB's menu
-  handler runs and controller polling works, but the edge-detect branch that
-  advances `OperMode` never fires under our PPU timing. Worked around
-  completely by snapshot reset (`docs/data/smb_level*.state`); fixing the PPU
-  timing is real emulator-archaeology work with no training payoff, so it is
-  deliberately deferred.
 
 ## Limitations by design
 

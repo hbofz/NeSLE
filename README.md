@@ -195,7 +195,7 @@ Full flag reference and troubleshooting: [docs/training.md](docs/training.md).
 ## Testing and validation
 
 ```sh
-python -m pytest tests/                   # 69 tests; GPU and ROM tests auto-skip when absent
+python -m pytest tests/                   # 71 tests; GPU and ROM tests auto-skip when absent
 python benchmarks/verify_correctness.py   # asserts the batch is N independent emulators
 ```
 
@@ -237,8 +237,6 @@ zero divergence in results, bus traffic, or cycle counts. C++ unit tests in
   vblank with a sprite-0 scroll split, which removed 84% of observed artifacts,
   but roughly 14% of frames during heavy action still drop the status bar for a
   single frame. Game state and RAM-based training are unaffected.
-- **Title screen transition.** The menu-to-gameplay state machine stalls on a
-  PPU timing bug. Snapshot reset bypasses it completely.
 - **Windows training ceiling.** Under the WDDM driver model, interleaving torch
   CUDA kernels with emulator launches caps native PPO near 3,000 env-steps/s at
   2,048 environments. Linux is unaffected.

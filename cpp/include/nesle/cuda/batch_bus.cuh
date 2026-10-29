@@ -201,7 +201,8 @@ NESLE_CUDA_HD inline std::uint8_t batch_cpu_read(BatchBuffers& buffers,
         return read_controller1(buffers, env);
     }
     if (address == 0x4017) {
-        return 0x41;
+        // Port 2 is empty: its data bit reads 0, only open bus is left.
+        return 0x40;
     }
     if (address >= 0x6000 && address < 0x8000) {
         return env_prg_ram(buffers, env)[address - 0x6000];

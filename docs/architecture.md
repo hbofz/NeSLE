@@ -124,7 +124,7 @@ snapshot. For curriculum training, `reset_state_paths` uploads a snapshot bank
 and `env_to_level[env]` selects the template used by each env. If no explicit
 assignment is provided, Python assigns envs round-robin across the snapshots.
 
-This avoids replaying fragile title-screen/start sequences and makes done-env
+This avoids replaying the title-screen/start sequence and makes done-env
 auto-reset cheap: the reset kernel copies the selected snapshot directly into
 the env's device-resident emulator state.
 

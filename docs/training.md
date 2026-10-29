@@ -1,8 +1,7 @@
 # Training
 
 This document is the practical "make Mario learn" path for the current code.
-The emulator is now past the title-screen/reset blocker: use snapshot reset,
-RAM observations, and SB3 `VecMonitor` logging.
+Use snapshot reset, RAM observations, and SB3 `VecMonitor` logging.
 
 ## Mental Model
 

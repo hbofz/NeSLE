@@ -35,7 +35,7 @@ def main() -> None:
         "--reset-state-path",
         default=None,
         help="Path to an FCEUX FCS reset state (e.g. docs/data/smb_level1_1.state). Each "
-        "env reset restores this snapshot, bypassing the broken title-screen transition. "
+        "env reset restores this snapshot, skipping the title menu. "
         "Requires --backend cuda.",
     )
     parser.add_argument(

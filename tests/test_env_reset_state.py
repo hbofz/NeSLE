@@ -73,7 +73,7 @@ class ResetStateTests(unittest.TestCase):
 
     def test_auto_reset_returns_to_snapshot_state(self) -> None:
         """When an env's episode terminates, the auto-reset path should land back in
-        W1-1 with the same OperMode=1, not the broken cold-boot title screen."""
+        W1-1 with the same OperMode=1, not the cold-boot title screen."""
         env = nesle.make_vec(
             rom_path=str(ROM_PATH),
             num_envs=2,
