@@ -257,7 +257,10 @@ NESLE_CUDA_HD inline BatchPpuStepResult batch_ppu_step_env_hot(BatchBuffers& buf
                 // scroll 0 for the status bar).
                 buffers.ppu.lat_scroll_x[env] = buffers.ppu.scroll_x[env];
                 buffers.ppu.lat_scroll_y[env] = buffers.ppu.scroll_y[env];
-                buffers.ppu.lat_ctrl[env] = hot.ctrl;
+                // The nametable comes from t, as on hardware: SMB's VRAM update
+                // writes $2000 with the playfield nametable, then $2006 = $0000.
+                buffers.ppu.lat_ctrl[env] = static_cast<std::uint8_t>(
+                    (hot.ctrl & 0xFC) | ((buffers.ppu.t[env] >> 10) & 0x03));
             }
         }
     }

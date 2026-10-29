@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <vector>
 
+#include "nesle/cuda/batch_bus.cuh"
 #include "nesle/cuda/batch_ppu.cuh"
 #include "nesle/ppu.hpp"
 
@@ -104,6 +105,57 @@ int main() {
     assert(frame[0] == 0);
     assert(frame[1] == 1);
     assert(frame[2] == 0);
+
+    {
+        // SMB's NMI, through the bus: its VRAM update writes $2000 with the
+        // playfield nametable, then $2006 = $3F00, $0000. On hardware that
+        // leaves t, and so the status bar, on nametable 0; the frame-start
+        // latch must follow t, not PPUCTRL.
+        std::vector<std::uint8_t> c(1, 0), m(1, 0x1E), st(1, 0), nmi(1, 0), w(1, 0), x(1, 0), open_bus(1, 0);
+        std::vector<std::uint8_t> sx(1, 0), sy(1, 0), lat_sx(1, 0xFF), lat_sy(1, 0xFF), lat_ctrl(1, 0xFF);
+        std::vector<std::uint16_t> t(1, 0), v(1, 0);
+        std::vector<std::uint32_t> dot(1, 0);
+        std::vector<std::uint64_t> fr(1, 0);
+        auto smb = make_buffers(c, m, st, nmi, dot, fr);
+        smb.ppu.w = w.data();
+        smb.ppu.open_bus = open_bus.data();
+        smb.ppu.x = x.data();
+        smb.ppu.t = t.data();
+        smb.ppu.v = v.data();
+        smb.ppu.scroll_x = sx.data();
+        smb.ppu.scroll_y = sy.data();
+        smb.ppu.lat_scroll_x = lat_sx.data();
+        smb.ppu.lat_scroll_y = lat_sy.data();
+        smb.ppu.lat_ctrl = lat_ctrl.data();
+        auto write = [&](std::uint16_t address, std::uint8_t value) {
+            nesle::cuda::batch_cpu_write(smb, 0, address, value);
+        };
+        constexpr std::uint8_t kMirror = 0x11;  // SMB's $2000 mirror in its NMI: playfield on nametable 1
+
+        write(0x2000, kMirror & 0x7E);  // NMI entry: status bar on nametable 0
+        write(0x2005, 0);
+        write(0x2005, 0);
+        write(0x2006, 0x20);  // a VRAM buffer entry
+        write(0x2006, 0x65);
+        write(0x2000, kMirror | 0x04);
+        write(0x2006, 0x3F);
+        write(0x2006, 0x00);
+        write(0x2006, 0x00);
+        write(0x2006, 0x00);
+        write(0x2005, 0);  // InitScroll
+        write(0x2005, 0);
+        const auto pre_render =
+            nesle::Ppu::kPreRenderScanline * nesle::Ppu::kDotsPerScanline + nesle::Ppu::kVblankFlagDot;
+        (void)nesle::cuda::batch_ppu_step_env(smb, 0, pre_render);
+        assert(c[0] == 0x15);         // PPUCTRL still selects the playfield nametable
+        assert(lat_ctrl[0] == 0x14);  // the status bar is latched from nametable 0
+        assert(lat_sx[0] == 0 && lat_sy[0] == 0);
+
+        write(0x2000, kMirror | 0x80);  // NMI exit, no $2006 afterwards: t keeps nametable 1
+        (void)nesle::cuda::batch_ppu_step_env(
+            smb, 0, nesle::Ppu::kScanlinesPerFrame * nesle::Ppu::kDotsPerScanline);
+        assert(lat_ctrl[0] == 0x91);
+    }
 
     return 0;
 }
