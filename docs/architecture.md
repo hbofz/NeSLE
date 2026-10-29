@@ -117,7 +117,9 @@ Follow CuLE's reset-cache idea, but the practical training path now uses
 Stable Retro/FCEUX `.state` files as reset templates. Python loads raw or
 gzip-wrapped FCS files, `cpp/include/nesle/fcs.hpp` parses CPU RAM, PRG RAM,
 CPU registers, PPU registers, nametable RAM, palette RAM, and OAM, and the CUDA
-binding uploads one or more snapshot templates to device memory.
+binding uploads one or more snapshot templates to device memory. The same parser
+reads both save containers: the original `FCS\xff` file and the `FCSX` file
+FCEUX 2.6 and later write, which wraps the identical chunk stream in zlib.
 
 For a single level, `reset_state_path` restores every env from the same
 snapshot. For curriculum training, `reset_state_paths` uploads a snapshot bank

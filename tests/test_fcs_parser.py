@@ -1,4 +1,9 @@
-"""Parse the bundled Stable Retro Level 1-1 FCS state and verify known field values.
+"""Parse bundled FCS save states and verify known field values.
+
+Two containers are covered: the original FCE Ultra file ("FCS\\xff", gzip
+wrapped, stable-retro's format) and the "FCSX" file FCEUX 2.6 and later write
+(zlib inside a 16-byte header). Both describe the same game state here, so the
+parser has to produce identical snapshots from them.
 
 The reference values come from inspecting the file with a hex dump. If the FCS
 layout for FCEUX state.cpp changes upstream, update both this test and the
@@ -12,6 +17,7 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 STATE_PATH = REPO_ROOT / "docs" / "data" / "smb_level1_1.state"
+FCSX_STATE_PATH = REPO_ROOT / "docs" / "data" / "smb_level1_1_fcsx.fc0"
 
 
 def _load_decompressed_state() -> bytes:
@@ -90,6 +96,46 @@ class FcsParserTests(unittest.TestCase):
         bad = b"XXXX" + self.bytes_in[4:]
         with self.assertRaises(Exception):
             self.parse(bad)
+
+
+class FcsxContainerTests(unittest.TestCase):
+    """FCEUX 2.6+ saves are an "FCSX" header around a zlib stream."""
+
+    def setUp(self) -> None:
+        try:
+            from nesle._cuda_core import parse_fcs_state  # type: ignore[import-not-found]
+        except ImportError as exc:  # pragma: no cover
+            self.skipTest(f"_cuda_core not built with parse_fcs_state: {exc}")
+        self.parse = parse_fcs_state
+        self.raw = FCSX_STATE_PATH.read_bytes()
+
+    def test_file_is_the_expected_container(self) -> None:
+        self.assertEqual(self.raw[:4], b"FCSX")
+        # Compressed files are smaller than the size field; uncompressed ones
+        # store 0xFFFFFFFF there instead.
+        self.assertNotEqual(self.raw[12:16], b"\xff\xff\xff\xff")
+
+    def test_matches_the_legacy_container(self) -> None:
+        """Same game state, both containers: every field must agree."""
+        from_fcsx = self.parse(self.raw)
+        from_legacy = self.parse(_load_decompressed_state())
+        for key in ("pc", "a", "x", "y", "sp", "p", "ppu_ctrl", "ppu_mask",
+                    "ppu_status", "ppu_v", "ppu_t", "ppu_x", "ppu_w",
+                    "ppu_read_buffer", "ppu_open_bus"):
+            self.assertEqual(from_fcsx[key], from_legacy[key], key)
+        for key in ("cpu_ram", "prg_ram", "nametable_ram", "palette_ram", "oam"):
+            self.assertEqual(bytes(from_fcsx[key]), bytes(from_legacy[key]), key)
+
+    def test_rejects_truncated_payload(self) -> None:
+        with self.assertRaises(Exception):
+            self.parse(self.raw[:64])
+
+    def test_rejects_corrupt_stream(self) -> None:
+        corrupt = bytearray(self.raw)
+        for index in range(40, min(60, len(corrupt))):
+            corrupt[index] ^= 0xA5
+        with self.assertRaises(Exception):
+            self.parse(bytes(corrupt))
 
 
 if __name__ == "__main__":
