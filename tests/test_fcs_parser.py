@@ -68,7 +68,7 @@ class FcsParserTests(unittest.TestCase):
         the gameplay-ready scene (OperMode=1, World=1, Level/Area=1, full time)."""
         snap = self.parse(self.bytes_in)
         ram = snap["cpu_ram"]
-        # OperMode at 0x0770 should be 1 (main game) — sidesteps the title-screen bug.
+        # OperMode at 0x0770 should be 1 (main game), past the title menu.
         self.assertEqual(ram[0x0770], 1, "OperMode should be 1 (main game) at this snapshot")
         # World index ($075F) = 0 means World 1; Level ($075C) = 0 means stage 1; Area = 0.
         self.assertEqual(ram[0x075F], 0, "World index should be 0 (World 1)")

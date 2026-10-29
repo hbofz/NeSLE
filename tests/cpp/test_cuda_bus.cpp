@@ -164,5 +164,31 @@ int main() {
         }
     }
 
+    // Port 2 is empty on both sides. The old constant 0x41 read as every P2
+    // button held, which SMB's title menu ORs into P1, so Start never matched.
+    // Random strobes and reads of both ports must match the host exactly.
+    {
+        actions[0] = nesle::ButtonA | nesle::ButtonStart | nesle::ButtonRight;
+        nesle::Console console(make_nrom(32 * 1024));
+        console.controller1().set_buttons(actions[0]);
+        nesle::cuda::batch_cpu_write(buffers, 0, 0x4016, 1);
+        console.write(0x4016, 1);
+        std::uint32_t lcg = 12345;
+        for (int i = 0; i < 2000; ++i) {
+            lcg = lcg * 1664525u + 1013904223u;
+            const auto op = (lcg >> 24) % 4;
+            if (op == 0) {
+                const auto value = static_cast<std::uint8_t>((lcg >> 16) & 0x01);
+                nesle::cuda::batch_cpu_write(buffers, 0, 0x4016, value);
+                console.write(0x4016, value);
+                continue;
+            }
+            const auto address = static_cast<std::uint16_t>(op == 1 ? 0x4016 : 0x4017);
+            const auto value = nesle::cuda::batch_cpu_read(buffers, 0, address);
+            assert(value == console.read(address));
+            assert(address == 0x4016 || value == 0x40);
+        }
+    }
+
     return 0;
 }

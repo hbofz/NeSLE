@@ -1,6 +1,6 @@
 # Legacy scripts
 
-These shell scripts target an older workflow built around cold-booting SMB through the title screen. That path no longer works because of a known PPU-timing bug in the title-screen state machine; the current flow uses save-state reset (see `docs/training.md`). Kept here for reference; not part of the current training pipeline.
+These shell scripts target an older workflow built around cold-booting SMB through the title screen. The current flow uses save-state reset instead (see `docs/training.md`). Kept here for reference; not part of the current training pipeline.
 
 | File | What it did |
 |---|---|

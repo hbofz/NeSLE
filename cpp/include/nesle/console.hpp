@@ -57,7 +57,8 @@ public:
             return controller1_.read();
         }
         if (address == 0x4017) {
-            return controller2_.read();
+            // Port 2 is empty: its data bit reads 0, only open bus is left.
+            return 0x40;
         }
         if (address < 0x4018) {
             return apu_io_[address - 0x4000];
@@ -88,7 +89,6 @@ public:
         if (address == 0x4016) {
             apu_io_[address - 0x4000] = value;
             controller1_.write_strobe(value);
-            controller2_.write_strobe(value);
             return;
         }
         if (address < 0x4018) {
@@ -165,10 +165,6 @@ public:
         return controller1_;
     }
 
-    [[nodiscard]] StandardController& controller2() noexcept {
-        return controller2_;
-    }
-
     [[nodiscard]] const std::array<std::uint8_t, kCpuRamBytes>& cpu_ram() const noexcept {
         return cpu_ram_;
     }
@@ -202,7 +198,6 @@ private:
     std::array<std::uint8_t, kApuIoBytes> apu_io_{};
     Ppu ppu_;
     StandardController controller1_;
-    StandardController controller2_;
     std::uint32_t pending_dma_cycles_ = 0;
 };
 
