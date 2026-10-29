@@ -5,9 +5,9 @@ Honest list of what's broken, deferred, or unverified. Kept current as of
 
 ## Deferred bugs
 
-- **Renderer samples live PPU state mid-frame, causing transient visual
-  artifacts in recordings** (found 2026-07-29 via a user report of GIF
-  flicker; game state and RAM-based training are unaffected (render-only).
+- **Renderer artifacts in CUDA recordings** (found 2026-07-29 via a user
+  report of GIF flicker; render-only, so game state and RAM-based training are
+  unaffected).
   One root cause, three observed symptom classes, all confirmed frame-by-frame:
   1. *HUD-less wrong-scroll frames* (~⅓ of frames in a scrolling recording):
      the whole frame renders at the playfield scroll, scrolling the status bar
@@ -23,11 +23,16 @@ Honest list of what's broken, deferred, or unverified. Kept current as of
   scroll/ctrl), and the renderer draws from the snapshot with a two-region
   scroll split at sprite-0's bottom edge. Measured on a 500-frame scripted
   scrolling run: object-pop events fell 130 → 21 (−84%), and part of the
-  residue is legitimate game animation (score popups, spawns). Remaining
-  honest caveat: ~14% of frames during heavy action lose the status bar for
-  one frame. These are SMB *lag frames* where the game skips its scroll
-  reset (real hardware glitches these frames too, our timing makes them more
-  frequent); the recorder's HUD filter drops them from GIFs.
+  residue is legitimate game animation (score popups, spawns).
+  **Status-bar dropouts resolved 2026-10-29 (#6).** The frames that still lost
+  the status bar were not lag frames: the frame-start latch took the nametable
+  from PPUCTRL, but SMB's VRAM update writes `$2000` with the playfield
+  nametable and then `$2006 = $0000`, which on hardware leaves `t` (and so the
+  status bar) on nametable 0. The latch now reads the nametable from `t`. In
+  the scripted 1-1 run that `tests/test_render_freshness.py` checks, 81 of 444
+  frames lost the status bar before the fix and none after. Random-input sweeps
+  from the eight X-1 level starts flagged only frames where Lakitu's Spiny is
+  drawn over the status-bar text.
 
 ## Limitations by design
 

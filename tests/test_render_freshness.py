@@ -1,6 +1,6 @@
-"""Regression test for the render-freeze bug.
+"""Regression tests for the render path.
 
-Prior to the fix, CudaBatch.render() was a const memcpy of device_frames_ — it didn't
+Render freeze: prior to the fix, CudaBatch.render() was a const memcpy of device_frames_; it didn't
 launch the render kernel, so calling it after step(render_frame=False) returned a stale
 frame from whenever the kernel last ran. NesleVecEnv.render() inherited the bug.
 
@@ -82,6 +82,31 @@ class RenderFreshnessTests(unittest.TestCase):
             np.array_equal(frame_a, frame_b),
             "render() and step(render_frame=True) produced different frames",
         )
+
+    def test_status_bar_survives_scrolling_into_second_nametable(self) -> None:
+        """Issue #6: once W1-1 scrolls into the second nametable, frames that carry a
+        VRAM update drew the status bar from the playfield's nametable (blank sky)."""
+        if not STATE_PATH.is_file():
+            self.skipTest(f"reset state not found at {STATE_PATH}")
+        from nesle._cuda_core import CudaBatch
+        import gzip
+
+        batch = CudaBatch(1, 1, ROM_PATH.read_bytes(), gzip.decompress(STATE_PATH.read_bytes()))
+        batch.reset()
+        glyphs = None
+        missing = []
+        for frame in range(444):  # Mario is alive for 444 frames under this input script
+            # RIGHT+B held, A (jump) for 20 of every 60 frames
+            action = np.array([0x82 | (0x01 if frame % 60 < 20 else 0)], dtype=np.uint8)
+            batch.step(action, render_frame=False, copy_obs=False)
+            # Rows 8-24 hold only the fixed white MARIO / WORLD / TIME labels.
+            text = (batch.render()[0, 8:24] > 200).all(axis=2)
+            if glyphs is None:
+                glyphs = text
+                self.assertGreater(int(glyphs.sum()), 300, "no status bar on the first frame")
+            elif text[glyphs].mean() <= 0.9:
+                missing.append(frame)
+        self.assertEqual(missing, [], f"status bar missing on {len(missing)} of 444 frames")
 
 
 if __name__ == "__main__":

@@ -241,10 +241,12 @@ zero divergence in results, bus traffic, or cycle counts. C++ unit tests in
 
 - **Mapper 0 (NROM) only.** Super Mario Bros. works. Other mappers are not
   implemented.
-- **Renderer artifacts in recordings.** The PPU samples presentation state at
-  vblank with a sprite-0 scroll split, which removed 84% of observed artifacts,
-  but roughly 14% of frames during heavy action still drop the status bar for a
-  single frame. Game state and RAM-based training are unaffected.
+- **Recording artifacts.** The CUDA renderer draws each frame from a vblank
+  snapshot with a sprite-0 scroll split; a scripted scrolling run measured on
+  2026-07-29 still showed about 21 object-pop events in 500 frames, part of them
+  legitimate game animation. The native backend's renderer has neither, so its
+  frames do not scroll the playfield and can lose the status bar. Game state
+  and RAM-based training are unaffected.
 - **Windows training ceiling.** Under the WDDM driver model, interleaving torch
   CUDA kernels with emulator launches caps native PPO near 3,000 env-steps/s at
   2,048 environments. Linux is unaffected.
