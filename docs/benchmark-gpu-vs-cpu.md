@@ -122,16 +122,87 @@ forward/backward isn't the bottleneck; on Windows the WDDM submission ceiling in
 For larger GPUs, use the measured A100 numbers in the README rather than
 extrapolating from this card.
 
-## Baseline: nes-py / gym-super-mario-bros (2026-07-29)
+## Baseline: nes-py on every core
 
-The widely-used CPU Mario stack was measured on the same machine with the same
-protocol (hold RIGHT+B, warmup then timed steps): **530 frames/s ≈ 132
-env-steps/s** at frameskip-4 accounting (`benchmarks/nespy_baseline.py`; needs
-its own old-gym venv, see the script header). nes-py was not re-run for this
-sweep, so its row is from the earlier date. For scale:
+Measured 2026-10-29. `nes-py` / `gym-super-mario-bros` is the widely-used CPU
+Mario stack. It ran on the same machine, OS and Python 3.14 interpreter as the
+NeSLE runs above, holding RIGHT like them. `benchmarks/nespy_baseline.py
+--workers N` starts N independent processes with one env each. Every worker
+warms up for 30 s, then all of them time the same five 10 s windows behind a
+barrier, so a window's summed rate is real concurrent throughput, and each run
+reports its median window. Each row below is the median of three independent
+runs, interleaved:
 
-| Stack | Env-steps/s (fs4) | Relative |
+```
+python benchmarks/nespy_baseline.py --workers 12   # in its own venv, see the script header
+```
+
+| nes-py processes | Env-steps/s (fs4) | Range, 3 runs | Per process | CPU clock |
+|---|---:|---:|---:|---:|
+| 1 | 168 | 168-169 | 168 | 4.1 GHz |
+| 6 (= core count) | 654 | 630-655 | 109 | 3.4 GHz |
+| 12 (every thread) | **767** | 764-768 | 64 | 3.05 GHz |
+
+Twelve processes is the most this CPU gets out of nes-py, so that row is the
+fair comparison:
+
+| Against nes-py | RIGHT held (177,401 at 4,096 envs) | Per-env random (28,084) |
 |---|---:|---:|
-| nes-py (`SuperMarioBros-v0`), 1 env | 132 | 0.4x |
-| NeSLE native CPU, 1 env | 344 | 1.0x |
-| NeSLE cuda-console, 4,096 envs | 177,401 | 516x (≈1,344x nes-py) |
+| 1 process (168) | 1,056x | 167x |
+| 12 processes (767) | **231x** | **37x** |
+
+At 767 env-steps/s, the 10M-timestep PPO run above takes about 3.6 hours of
+environment stepping on all 12 threads.
+
+`benchmarks/verify_claims.py` reproduced this end to end the same day, building
+its own nes-py venv: 169 and 769 env-steps/s for 1 and 12 processes, and
+177,623 at 4,096 GPU envs. Raw output:
+`docs/data/verification-2026-10-29-1050ti.json`. Its native CPU figure (384)
+is above the 344 in the table at the top, which was not re-run here.
+
+**How it was measured, and what it leaves out**
+
+- **Process count.** A sweep from 1 to 12 processes (on the slower build
+  described below) rose at every step. On the final build, 24 processes on 12
+  threads gave the same as 12 (766 vs 767). Filling the second hardware thread
+  of each core adds about 17% over one process per core, so `verify_claims.py`
+  runs one process per CPU it may use.
+- **Pinning.** In the same sweep, pinning each process to its own CPU (physical
+  cores first) never beat the default scheduler, and at 6 processes it was 4%
+  slower (490 vs 509). Under WSL2 a pin only picks a virtual CPU; Hyper-V still
+  decides where that runs. The script does not pin.
+- **Thermal and power limits.** This is a laptop i7-8750H. With all 12 threads
+  loaded, the clock decays from about 3.5 GHz to a sustained 3.05 GHz over the
+  first 15-20 s (read on the Windows side from `% Processor Performance`, since
+  WSL2 exposes no cpufreq). Timed from a cold start, 12 processes read 9%
+  higher in the first 10 s window than afterwards. The 30 s warmup skips that,
+  so the 12-process row is the sustained rate a long training run gets. One
+  process keeps its 4.1 GHz single-core turbo, which flatters the 1-process
+  row.
+- **Spread.** Three runs agreed within 1% at 1 and 12 processes, and within 4%
+  at 6, where single 10 s windows ranged from 618 to 676. One window in the
+  earlier sweep dipped 30% at 2 processes, from host activity, which is why
+  each run reports its median window.
+- **Skipped frames are counted.** gym-super-mario-bros fast-forwards deaths
+  and area changes inside a single `step()`, which is 11% of emulated frames
+  with RIGHT held. The script counts them, as NeSLE's figures do, since they
+  are emulation work. An agent never sees them, so per agent-visible step,
+  nes-py is about 11% slower than these tables.
+- **The nes-py build matters.** nes-py compiles its C++ core when it is
+  installed. Built against Ubuntu's Python 3.14, its raw emulator step takes
+  1.41 ms per frame; built against uv's standalone Python 3.11 with the same
+  g++ 15.2, it takes 1.59 ms, and whole runs are about 11% slower. The cause was
+  not isolated (the two interpreters hand extensions different compile flags).
+  The tables use the faster build. Where stdlib venv is missing (Colab),
+  `verify_claims.py` falls back to uv's Python 3.11, so its nes-py figures there
+  may read about 11% low. The earlier 132 env-steps/s (2026-07-29) came from a
+  different install and a 2,000-step protocol holding RIGHT+B without counting
+  skipped frames, so it is not comparable.
+- **Not like-for-like.** nes-py draws the full 256x240 frame every step and
+  cannot skip it. The NeSLE GPU figures are the RAM-observation path with
+  `render_frame=False`, which does not draw. nes-py's Python wrapper costs under
+  0.1 ms of each ~1.7 ms step. So this compares the standard stack as people use
+  it, not the two emulator cores.
+- **An upper bound for SB3.** Independent processes skip the per-step
+  observation transfer of a `SubprocVecEnv`, so an SB3 pipeline over nes-py
+  would likely get somewhat less than the 12-process row (not measured).

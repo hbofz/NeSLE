@@ -98,8 +98,6 @@ labelled by difficulty. Good entry points:
 
 - Wire the C++ tests in `tests/cpp/` into CI.
 - Unify the POSIX and Windows build recipes into `setup.py`.
-- Measure a multi-core CPU baseline, so the speedup claim is against a loaded
-  CPU rather than one core.
 
 The largest open item is **mapper support beyond NROM** (MMC1, MMC3), which
 would take NeSLE from a Mario trainer to a general NES RL platform. Start at
