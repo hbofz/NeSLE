@@ -165,7 +165,7 @@ def nespy_baseline(venv: Path) -> dict:
             # test for the interpreter and clear any partial tree first.
             if venv.exists():
                 shutil.rmtree(venv, ignore_errors=True)
-            # nes-py needs an old gym/numpy pair on Python <= 3.11. Colab's
+            # nes-py needs an old gym/numpy pair, built for Python <= 3.12. Colab's
             # python3-venv ships without ensurepip, so stdlib venv exits 1
             # there; uv brings its own interpreter and sidesteps both problems.
             if sh(sys.executable, "-m", "venv", str(venv)).returncode != 0:
@@ -181,44 +181,35 @@ def nespy_baseline(venv: Path) -> dict:
             else:
                 subprocess.run([str(venv / "bin" / "pip"), "install", "-q", *pkgs],
                                check=True)
-        r = sh(str(py), "benchmarks/nespy_baseline.py", timeout=900)
-        m = re.search(r"([\d,.]+)\s*env-steps/s", r.stdout)
-        if m:
-            return {"status": "ok", "env_steps_per_s": float(m.group(1).replace(",", ""))}
-        return {"status": "ran", "raw": r.stdout[-400:], "err": r.stderr[-400:]}
+        return run_nespy(py)
     except Exception as exc:
         return {"status": "failed", "error": f"{type(exc).__name__}: {exc}"}
 
 
 def nespy_multicore(venv: Path, workers: int) -> dict:
-    """nes-py throughput with every core loaded.
+    """nes-py throughput with every core loaded, one process per worker.
 
-    gym 0.25's AsyncVectorEnv deepcopies its RNG, which raises
-    ``RandomNumberGenerator._generator_ctor() takes from 0 to 1 positional
-    arguments`` on numpy >= 1.25. Independent processes measure the same thing
-    (aggregate throughput under full CPU load) without touching that path, and
-    reuse the single-process benchmark verbatim.
+    nespy_baseline.py starts the workers itself and times them in lockstep, so
+    the result is concurrent throughput, not a sum of unaligned solo runs.
     """
     py = venv / "bin" / "python"
     if not py.exists():
         return {"status": "skipped", "reason": "nes-py venv unavailable"}
     try:
-        procs = [subprocess.Popen([str(py), "benchmarks/nespy_baseline.py"],
-                                  stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
-                                  text=True)
-                 for _ in range(workers)]
-        rates = []
-        for proc in procs:
-            out, _ = proc.communicate(timeout=1800)
-            m = re.search(r"([\d,.]+)\s*env-steps/s", out or "")
-            if m:
-                rates.append(float(m.group(1).replace(",", "")))
-        if not rates:
-            return {"status": "failed", "error": "no worker reported a rate"}
-        return {"status": "ok", "workers": workers, "workers_reporting": len(rates),
-                "env_steps_per_s": sum(rates), "per_worker": rates}
+        return {"workers": workers, **run_nespy(py, "--workers", str(workers))}
     except Exception as exc:
         return {"status": "failed", "error": f"{type(exc).__name__}: {exc}"}
+
+
+def run_nespy(py: Path, *args: str) -> dict:
+    r = sh(str(py), "benchmarks/nespy_baseline.py", *args, timeout=900)
+    m = re.search(r"([\d,.]+)\s*env-steps/s", r.stdout)
+    w = re.search(r"per-window env-steps/s: (.+)", r.stdout)
+    if m and w:
+        return {"status": "ok", "env_steps_per_s": float(m.group(1).replace(",", "")),
+                "windows": [float(x.replace(",", "")) for x in w.group(1).split(", ")],
+                "python": sh(str(py), "--version").stdout.strip()}
+    return {"status": "ran", "raw": r.stdout[-400:], "err": r.stderr[-400:]}
 
 
 def report(dev: str, gpu: str, rows: list[dict], tests: dict, correct: dict,
@@ -365,7 +356,7 @@ def main() -> int:
     print("\n[6/6] nes-py baselines ...")
     venv = Path("/content/nespy-venv") if Path("/content").exists() else Path("/tmp/nespy-venv")
     single = {"status": "skipped"} if args.skip_nespy else nespy_baseline(venv)
-    multi = {"status": "skipped"} if args.skip_nespy else nespy_multicore(venv, os.cpu_count() or 2)
+    multi = {"status": "skipped"} if args.skip_nespy else nespy_multicore(venv, len(os.sched_getaffinity(0)))
     print("   single:", single.get("status"), "| multicore:", multi.get("status"))
 
     verdicts = report(dev, gpu, rows, tests, correct, memory, single, multi,
