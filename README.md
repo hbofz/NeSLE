@@ -117,9 +117,10 @@ python -m pip install -e '.[dev,rl]'
 # The rl extra installs CPU-only torch. --force-reinstall is required: the CUDA
 # wheel carries the same version number, so pip otherwise keeps the CPU build.
 python -m pip install --force-reinstall torch --index-url https://download.pytorch.org/whl/cu126
-
-python scripts/build_cuda_extension.py
 ```
+
+`pip install` builds the CUDA extension too when it finds `nvcc`, and installs the
+CPU core alone when it does not.
 
 Windows, CUDA architecture overrides, Docker, and toolchain troubleshooting:
 [docs/install.md](docs/install.md).
@@ -203,7 +204,7 @@ Full flag reference and troubleshooting: [docs/training.md](docs/training.md).
 ## Testing and validation
 
 ```sh
-python -m pytest tests/                   # 71 tests; GPU and ROM tests auto-skip when absent
+python -m pytest tests/                   # 115 tests; GPU and ROM tests auto-skip when absent
 python benchmarks/verify_correctness.py   # asserts the batch is N independent emulators
 ```
 
