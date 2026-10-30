@@ -82,11 +82,9 @@ def bootstrap(repo: Path, build: bool) -> None:
     os.chdir(repo)
     if not build:
         return
-    print("installing package ...")
+    print("installing package and building CUDA extension ...")
     subprocess.run([sys.executable, "-m", "pip", "install", "-q", "-e", ".[dev,rl]"],
                    check=True)
-    print("building CUDA extension ...")
-    subprocess.run([sys.executable, "scripts/build_cuda_extension.py"], check=True)
 
 
 def run_tests() -> dict:

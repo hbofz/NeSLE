@@ -1,19 +1,22 @@
-"""Build nesle._cuda_core for the current interpreter and GPU, on any OS.
+"""Build nesle._cuda_core for the current interpreter and GPU, on any OS, and smoke-test it.
 
-Cross-platform replacement for scripts/build_cuda_extension.sh (which is
-POSIX-only) and the manual Windows recipe in docs/build-windows.md.
+`pip install -e .` already builds the extension through setup.py, which shares
+the toolchain logic below. Run this directly to rebuild quickly and exercise the
+result on the GPU.
 
     python scripts/build_cuda_extension.py            # auto-detect everything
     NESLE_CUDA_ARCH=sm_80 python scripts/build_cuda_extension.py
 
 Environment overrides:
-    NVCC                       path to nvcc (else: $PATH, then common install dirs)
-    NESLE_CUDA_ARCH            e.g. sm_61 / sm_80 / sm_90 (else: detected via torch,
-                               falling back to sm_80)
+    NVCC                       nvcc path or command name (else: $PATH, then common
+                               install dirs). One that cannot be found, such as
+                               NVCC=none, skips the build
+    NESLE_CUDA_ARCH            e.g. sm_61 / sm_80 / sm_90 (else: detected via
+                               nvidia-smi, then torch, falling back to sm_80)
     NESLE_CUDA_EXTENSION_PATH  output path (else: src/nesle/_cuda_core<EXT_SUFFIX>)
     NESLE_REQUIRE_CUDA=1       exit non-zero when nvcc/pybind11 are missing instead
-                               of skipping quietly (CI-friendly default matches the
-                               shell script: skip with exit 0)
+                               of skipping quietly (CI-friendly default: skip with
+                               exit 0)
 """
 
 from __future__ import annotations
@@ -93,7 +96,7 @@ def find_nvcc() -> str | None:
     """
     explicit = os.environ.get("NVCC")
     if explicit:
-        return explicit if Path(explicit).exists() else None
+        return shutil.which(explicit)
 
     on_path = shutil.which("nvcc")
     if on_path and _nvcc_release(on_path) >= _MIN_NVCC_RELEASE:
@@ -114,10 +117,39 @@ def find_nvcc() -> str | None:
     return on_path or (discovered[0][1] if discovered else None)
 
 
+def _nvidia_smi_arch() -> str | None:
+    # WSL ships nvidia-smi outside the default PATH.
+    search = os.pathsep.join([os.environ.get("PATH", ""), "/usr/lib/wsl/lib"])
+    smi = shutil.which("nvidia-smi", path=search)
+    if smi is None:
+        return None
+    try:
+        out = subprocess.run(
+            [smi, "--query-gpu=compute_cap", "--format=csv,noheader"],
+            capture_output=True,
+            text=True,
+            check=True,
+            timeout=10,
+        ).stdout
+    except (subprocess.CalledProcessError, OSError, subprocess.TimeoutExpired):
+        return None
+    match = re.match(r"\s*(\d+)\.(\d+)", out)
+    return f"sm_{match.group(1)}{match.group(2)}" if match else None
+
+
+def nvcc_too_old(nvcc: str) -> bool:
+    """True when nvcc reports a release below 12.x; an unprobeable nvcc gets to try and fail."""
+    return (0, 0) < _nvcc_release(nvcc) < _MIN_NVCC_RELEASE
+
+
 def detect_arch() -> str:
     override = os.environ.get("NESLE_CUDA_ARCH")
     if override:
         return override
+    # nvidia-smi first: pip builds in an isolated env where torch is not importable.
+    from_smi = _nvidia_smi_arch()
+    if from_smi:
+        return from_smi
     try:
         import torch
 
@@ -156,18 +188,9 @@ def find_vcvarsall() -> str | None:
     return None
 
 
-def main() -> int:
-    nvcc = find_nvcc()
-    if nvcc is None:
-        return _skip("nvcc is not available; cannot build nesle._cuda_core.")
-    try:
-        import pybind11
-    except ImportError:
-        return _skip("pybind11 is not available; cannot build nesle._cuda_core.")
-
-    arch = detect_arch()
-    ext_suffix = sysconfig.get_config_var("EXT_SUFFIX") or (".pyd" if os.name == "nt" else ".so")
-    output = os.environ.get("NESLE_CUDA_EXTENSION_PATH") or str(REPO / "src" / "nesle" / f"_cuda_core{ext_suffix}")
+def compile_extension(nvcc: str, arch: str, output: str) -> int:
+    """Run nvcc for nesle._cuda_core and return its exit code."""
+    import pybind11
 
     cmd = [
         nvcc, "-std=c++20", f"-arch={arch}",
@@ -207,12 +230,26 @@ def main() -> int:
         # cmd /s /c with the whole command as one verbatim string survives the
         # nested quotes around both vcvarsall.bat and nvcc paths.
         full = f'cmd /s /c "call "{vcvars}" x64 && {quoted}"'
-        result = subprocess.run(full, cwd=REPO)
-    else:
-        result = subprocess.run(cmd, cwd=REPO)
-    if result.returncode != 0:
-        print(f"nvcc failed with exit code {result.returncode}")
-        return result.returncode
+        return subprocess.run(full, cwd=REPO).returncode
+    return subprocess.run(cmd, cwd=REPO).returncode
+
+
+def main() -> int:
+    nvcc = find_nvcc()
+    if nvcc is None:
+        return _skip("nvcc is not available; cannot build nesle._cuda_core.")
+    try:
+        import pybind11  # noqa: F401
+    except ImportError:
+        return _skip("pybind11 is not available; cannot build nesle._cuda_core.")
+
+    ext_suffix = sysconfig.get_config_var("EXT_SUFFIX") or (".pyd" if os.name == "nt" else ".so")
+    output = os.environ.get("NESLE_CUDA_EXTENSION_PATH") or str(REPO / "src" / "nesle" / f"_cuda_core{ext_suffix}")
+
+    returncode = compile_extension(nvcc, detect_arch(), output)
+    if returncode != 0:
+        print(f"nvcc failed with exit code {returncode}")
+        return returncode
 
     # Smoke-test in a subprocess so this process never locks the built library
     # (a loaded .pyd on Windows blocks the next rebuild's link step). Load the

@@ -16,9 +16,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /workspace/nesle
 COPY . /workspace/nesle
 
+ENV NESLE_CUDA_ARCH=sm_80
 RUN python3 -m pip install --break-system-packages -e '.[dev,rl]'
 
-ENV NESLE_CUDA_ARCH=sm_80
 ENV NESLE_PIP_INSTALL_FLAGS=--break-system-packages
 ENV PYTHONPATH=src
 

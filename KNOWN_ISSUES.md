@@ -40,9 +40,6 @@ Honest list of what's broken, deferred, or unverified. Kept current as of
 - **One CUDA thread per env.** Warp divergence leaves throughput on the table
   at very large batches; a warp-per-env or SoA-wavefront redesign is the known
   next optimization (see `docs/phase6-report.md`).
-- **`scripts/build_cuda_extension.sh` is POSIX-only.** Windows uses the manual
-  recipe in `docs/build-windows.md`. Porting both into `setup.py` so one build
-  path serves all platforms is the cleanest known improvement.
 
 ## Unverified claims (recorded, not reproduced on current hardware)
 
@@ -100,5 +97,5 @@ TCC-mode GPU.
 - The CPU-baseline number in `benchmarks/gpu_vs_cpu.py` is sensitive to host
   background load (observed 290–335 env-steps/s across runs on the same
   machine); the GPU numbers are stable within ~1%.
-- A stale `_cuda_core.pyd` fails silently (old behavior, no error). Rebuild
-  after any `cpp/` change.
+- A stale `_cuda_core.pyd` keeps the old behavior, and creating a CUDA env warns
+  when the sources are newer than the binary. Rebuild after any `cpp/` change.
