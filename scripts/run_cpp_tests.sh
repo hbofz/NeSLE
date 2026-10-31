@@ -19,6 +19,7 @@ run test_core cpp/src/rom.cpp cpp/src/smb.cpp
 run test_cpu cpp/src/rom.cpp
 run test_cpu_runner
 run test_console cpp/src/rom.cpp
+run test_fcs
 run test_headless cpp/src/rom.cpp cpp/src/smb.cpp
 run test_cuda_batch cpp/src/smb.cpp
 run test_cuda_bus cpp/src/rom.cpp

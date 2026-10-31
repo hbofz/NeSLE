@@ -7,6 +7,9 @@
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <vector>
+
+#include "nesle/inflate.hpp"
 
 namespace nesle::fcs {
 
@@ -188,13 +191,47 @@ inline void walk_subchunks(std::span<const std::uint8_t> payload,
     if (data.size() < 16) {
         throw std::runtime_error("FCS: header too short");
     }
-    if (data[0] != 'F' || data[1] != 'C' || data[2] != 'S' || data[3] != 0xFF) {
-        throw std::runtime_error("FCS: bad magic (expected 'FCS\\xff')");
+
+    // Two containers carry the same chunk stream.
+    //
+    // "FCS\xff" is the original FCE Ultra file: a 16-byte header followed by the
+    // chunks. That is what Stable Retro wrote, and what the fixtures in
+    // docs/data use.
+    //
+    // "FCSX" is what FCEUX 2.6 and later write (src/state.cpp, FCEUSS_SaveMS):
+    // magic, uncompressed size, emulator version, compressed size, then a zlib
+    // stream - or the raw chunk stream when the compressed size is ~0. The
+    // chunks begin at offset 0 of that payload, with no FCS header inside.
+    std::vector<std::uint8_t> decompressed;
+    std::size_t off = 0;
+    if (data[0] == 'F' && data[1] == 'C' && data[2] == 'S' && data[3] == 'X') {
+        const auto totalsize = detail::read_le_u32(data.subspan(4, 4));
+        const auto comprlen = detail::read_le_u32(data.subspan(12, 4));
+        if (comprlen == 0xFFFFFFFFu) {
+            // Stored, not compressed: the payload is `totalsize` bytes.
+            if (data.size() - 16 < totalsize) {
+                throw std::runtime_error("FCS: FCSX payload is shorter than its size field");
+            }
+            decompressed.assign(data.begin() + 16, data.begin() + 16 + totalsize);
+        } else {
+            if (data.size() - 16 < comprlen) {
+                throw std::runtime_error("FCS: FCSX payload is shorter than its size field");
+            }
+            decompressed = nesle::detail::inflate_zlib(data.subspan(16, comprlen), totalsize);
+            if (decompressed.size() != totalsize) {
+                throw std::runtime_error("FCS: FCSX uncompressed size does not match its header");
+            }
+        }
+        data = std::span<const std::uint8_t>(decompressed);
+        off = 0;
+    } else if (data[0] == 'F' && data[1] == 'C' && data[2] == 'S' && data[3] == 0xFF) {
+        // Bytes 4..16 are legacy size, version, reserved; we don't enforce them.
+        off = 16;
+    } else {
+        throw std::runtime_error("FCS: bad magic (expected 'FCS\\xff' or 'FCSX')");
     }
-    // Bytes 4..16 are legacy size, version, reserved; we don't enforce them.
 
     StateSnapshot out;
-    std::size_t off = 16;
     while (off + 5 <= data.size()) {
         const auto tag = data[off];
         const auto size = detail::read_le_u32(data.subspan(off + 1, 4));
