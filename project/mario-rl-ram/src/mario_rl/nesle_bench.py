@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import argparse
 import csv
-import gzip
 import importlib
 import json
 import math
@@ -137,10 +136,10 @@ def default_snapshot_path(nesle_root: Path | None) -> Path:
 
 
 def load_reset_state(path: Path) -> bytes:
-    raw = path.read_bytes()
-    if len(raw) >= 2 and raw[0] == 0x1F and raw[1] == 0x8B:
-        return gzip.decompress(raw)
-    return raw
+    # NeSLE's loader, so a snapshot given on the command line gets its format support and limits.
+    from nesle.env import _load_reset_state
+
+    return _load_reset_state(path)
 
 
 def ensure_correctness_rom(nesle_root: Path, rom_path: Path) -> Path:

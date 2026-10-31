@@ -3,6 +3,7 @@
 #include <array>
 #include <cstdint>
 #include <cstring>
+#include <initializer_list>
 #include <span>
 #include <stdexcept>
 #include <string>
@@ -182,6 +183,25 @@ inline void walk_subchunks(std::span<const std::uint8_t> payload,
     }
 }
 
+// Call after walk_subchunks has checked the sub-chunk sizes. Without these, the env
+// would start from zeroed memory with no error and hang or end every episode at once.
+inline void require_subchunks(std::span<const std::uint8_t> payload, std::string_view section,
+                              std::initializer_list<std::string_view> names) {
+    for (const auto wanted : names) {
+        bool found = false;
+        for (std::size_t off = 0; !found && off + 8 <= payload.size();) {
+            const auto raw_name = std::string_view(
+                reinterpret_cast<const char*>(payload.data() + off), 4);
+            found = strip_trailing_nuls(raw_name) == wanted;
+            off += 8 + read_le_u32(payload.subspan(off + 4, 4));
+        }
+        if (!found) {
+            throw std::runtime_error("FCS: " + std::string(section) + " section has no " +
+                                     std::string(wanted));
+        }
+    }
+}
+
 }  // namespace detail
 
 [[nodiscard]] inline StateSnapshot parse(std::span<const std::uint8_t> data) {
@@ -194,6 +214,8 @@ inline void walk_subchunks(std::span<const std::uint8_t> payload,
     // Bytes 4..16 are legacy size, version, reserved; we don't enforce them.
 
     StateSnapshot out;
+    bool has_cpu = false;
+    bool has_ppu = false;
     std::size_t off = 16;
     while (off + 5 <= data.size()) {
         const auto tag = data[off];
@@ -206,9 +228,13 @@ inline void walk_subchunks(std::span<const std::uint8_t> payload,
         switch (tag) {
             case 1:  // CPU + RAM
                 detail::walk_subchunks(payload, detail::apply_cpu_subchunk, out);
+                detail::require_subchunks(payload, "CPU", {"PC", "RAM"});
+                has_cpu = true;
                 break;
             case 3:  // PPU + VRAM
                 detail::walk_subchunks(payload, detail::apply_ppu_subchunk, out);
+                detail::require_subchunks(payload, "PPU", {"NTAR", "PRAM", "SPRA", "PPUR"});
+                has_ppu = true;
                 break;
             case 16:  // Mapper / cartridge state (WRAM lives here)
                 detail::walk_subchunks(payload, detail::apply_cart_subchunk, out);
@@ -221,6 +247,9 @@ inline void walk_subchunks(std::span<const std::uint8_t> payload,
     }
     if (off != data.size()) {
         throw std::runtime_error("FCS: trailing bytes after last top-level chunk");
+    }
+    if (!has_cpu || !has_ppu) {
+        throw std::runtime_error("FCS: state has no CPU or no PPU section");
     }
     return out;
 }

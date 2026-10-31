@@ -26,7 +26,7 @@ commit a ROM**; `*.nes` is gitignored and should stay that way.
 
 ```sh
 ruff check .                              # CI runs this
-python -m pytest tests/                   # 115 tests; GPU/ROM tests auto-skip
+python -m pytest tests/                   # 153 tests; GPU/ROM tests auto-skip
 sh scripts/run_cpp_tests.sh               # C++ unit tests
 python benchmarks/verify_correctness.py   # batch is N independent emulators
 ```

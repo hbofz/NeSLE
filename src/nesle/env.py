@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-import gzip
+import struct
 import warnings
+import zlib
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, Iterable, Sequence
@@ -93,12 +94,62 @@ def _load_rom(rom_path: str | Path) -> tuple[bytes, INESRom]:
     return data, parse_ines(data)
 
 
+# Far above a real save (about 79 KB for NROM). Save files can come from other people,
+# so this bounds what a small malicious file can make us allocate.
+_MAX_STATE_BYTES = 16 * 1024 * 1024
+
+
+def _inflate_state(payload: bytes, wbits: int) -> bytes:
+    stream = zlib.decompressobj(wbits)
+    try:
+        body = stream.decompress(payload, _MAX_STATE_BYTES + 1)
+    except zlib.error as exc:
+        raise ValueError(f"corrupt compressed data: {exc}") from exc
+    if len(body) > _MAX_STATE_BYTES:
+        raise ValueError(f"inflates to more than {_MAX_STATE_BYTES} bytes")
+    if not stream.eof or stream.unused_data:
+        raise ValueError("compressed data is truncated or has trailing bytes")
+    return body
+
+
+def _unwrap_fcsx(raw: bytes) -> bytes:
+    """Turn an FCEUX "FCSX" save into the "FCS\\xff" file the parser reads.
+
+    Layout (FCEUX src/state.cpp, FCEUSS_SaveMS): magic, uncompressed size, emulator
+    version, compressed size, then a zlib stream, or the raw chunks when the compressed
+    size is ~0.
+    """
+    if len(raw) < 16:
+        raise ValueError("FCSX header is cut short")
+    total, _version, compressed_size = struct.unpack_from("<III", raw, 4)
+    if total > _MAX_STATE_BYTES:
+        raise ValueError(f"FCSX declares {total} bytes, above the {_MAX_STATE_BYTES} limit")
+    payload = raw[16:]
+    if compressed_size == 0xFFFFFFFF:
+        body = payload
+    elif len(payload) != compressed_size:
+        raise ValueError("FCSX compressed size does not match the file")
+    else:
+        body = _inflate_state(payload, zlib.MAX_WBITS)
+    if len(body) != total:
+        raise ValueError("FCSX uncompressed size does not match its contents")
+    return b"FCS\xff" + bytes(12) + body
+
+
 def _load_reset_state(state_path: str | Path) -> bytes:
-    """Read an FCEUX FCS reset state from disk. Transparently gunzips Stable Retro / Gym
-    Retro `.state` files (gzip-wrapped); pass through raw FCS bytes otherwise."""
+    """Read an FCEUX reset state from disk as an "FCS\\xff" file.
+
+    Accepts FCEUX's own "FCSX" saves and gzip-wrapped Stable Retro / Gym Retro `.state`
+    files, and passes anything else through for the parser to judge.
+    """
     raw = Path(state_path).read_bytes()
-    if len(raw) >= 2 and raw[0] == 0x1F and raw[1] == 0x8B:
-        return gzip.decompress(raw)
+    try:
+        if raw[:2] == b"\x1f\x8b":
+            raw = _inflate_state(raw, zlib.MAX_WBITS | 16)
+        if raw[:4] == b"FCSX":
+            raw = _unwrap_fcsx(raw)
+    except ValueError as exc:
+        raise ValueError(f"{state_path}: {exc}") from exc
     return raw
 
 
@@ -503,7 +554,8 @@ class NesleVecEnv(_VecEnvBase):
                     num_envs, frameskip, rom_bytes, snapshot_bytes_list, env_to_level_arr
                 )
             except Exception:
-                if backend.lower() == "cuda":
+                # A fallback backend cannot honor a requested reset state.
+                if backend.lower() == "cuda" or snapshot_bytes_list is not None:
                     raise
         if self._cuda_batch is not None:
             self._backends = []
