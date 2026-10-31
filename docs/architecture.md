@@ -114,8 +114,10 @@ Deferred until needed:
 ## Reset Strategy
 
 Follow CuLE's reset-cache idea, but the practical training path now uses
-Stable Retro/FCEUX `.state` files as reset templates. Python loads raw or
-gzip-wrapped FCS files, `cpp/include/nesle/fcs.hpp` parses CPU RAM, PRG RAM,
+Stable Retro/FCEUX save states as reset templates. Python reads FCEUX's own
+`FCSX` saves and gzip-wrapped `FCS\xff` files, with a 16 MiB limit on what they
+inflate to, and hands the chunks to `cpp/include/nesle/fcs.hpp`, which rejects a
+state with no CPU or PPU section and parses CPU RAM, PRG RAM,
 CPU registers, PPU registers, nametable RAM, palette RAM, and OAM, and the CUDA
 binding uploads one or more snapshot templates to device memory.
 

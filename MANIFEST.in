@@ -6,8 +6,9 @@ include setup.py
 # C++/CUDA extension sources and headers (needed to build from an sdist).
 recursive-include cpp *.cpp *.cu *.h *.hpp *.cuh
 
-# Bundled FCEUX save states used for snapshot reset / curriculum.
-recursive-include docs/data *.state
+# Bundled save states: Stable Retro .state files for snapshot reset / curriculum,
+# and a real FCEUX .fc1 save for the loader and parser tests.
+recursive-include docs/data *.state *.fc1
 
 # Build helper scripts referenced by the docs. The .py build script is the
 # one the README tells users to run, so an sdist without it is unusable.

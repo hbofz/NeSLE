@@ -92,5 +92,28 @@ class FcsParserTests(unittest.TestCase):
             self.parse(bad)
 
 
+class RealFceuxSaveTests(unittest.TestCase):
+    """docs/data/smb_level1_1_fceux.fc1 is a save written by FCEUX 2.6.5."""
+
+    def setUp(self) -> None:
+        try:
+            from nesle._cuda_core import parse_fcs_state  # type: ignore[import-not-found]
+        except ImportError as exc:  # pragma: no cover
+            self.skipTest(f"_cuda_core not built with parse_fcs_state: {exc}")
+        self.parse = parse_fcs_state
+
+    def test_parses_through_the_loader(self) -> None:
+        from nesle.env import _load_reset_state
+
+        snap = self.parse(_load_reset_state(REPO_ROOT / "docs" / "data" / "smb_level1_1_fceux.fc1"))
+        self.assertEqual(snap["pc"], 0x8057)
+        self.assertEqual(snap["cpu_ram"][0x0770], 1, "OperMode should be 1 (main game)")
+        self.assertEqual(snap["cpu_ram"][0x075F], 0, "World index should be 0 (World 1)")
+
+    def test_rejects_a_state_with_no_sections(self) -> None:
+        with self.assertRaises(Exception):
+            self.parse(b"FCS\xff" + bytes(12))
+
+
 if __name__ == "__main__":
     unittest.main()

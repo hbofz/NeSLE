@@ -58,9 +58,8 @@ def build_minimal_state(pc: int) -> bytes:
     legitimate power-on state - the cartridge's own init never runs, because the very
     first instruction is the illegal one.
 
-    Legacy FCS rather than FCSX on purpose. This is the format the snapshot loader
-    already accepts everywhere, so the test does not depend on FCSX parsing - which
-    is a separate change and would make this test a referendum on it.
+    Legacy FCS rather than FCSX on purpose: this is the format the parser reads
+    directly, so the test does not depend on the loader's FCSX handling.
     """
     def sub(body: bytearray, name: bytes, payload: bytes) -> None:
         # A sub-chunk name is exactly four bytes, NUL-padded. "PC" without the

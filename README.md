@@ -204,7 +204,7 @@ Full flag reference and troubleshooting: [docs/training.md](docs/training.md).
 ## Testing and validation
 
 ```sh
-python -m pytest tests/                   # 115 tests; GPU and ROM tests auto-skip when absent
+python -m pytest tests/                   # 153 tests; GPU and ROM tests auto-skip when absent
 python benchmarks/verify_correctness.py   # asserts the batch is N independent emulators
 ```
 
