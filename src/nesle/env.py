@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import gzip
+import warnings
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, Iterable, Sequence
@@ -331,6 +332,36 @@ def _make_backend(
     return _SyntheticBackend(rom, seed=seed, max_episode_steps=max_episode_steps)
 
 
+def _warn_if_cuda_core_stale(extension_path: str) -> None:
+    """Warn when a source checkout's CUDA sources are newer than its built extension.
+
+    An old binary keeps running the old emulator with no error. Only a binary at
+    src/nesle/ can belong to a checkout; other installs are never flagged. This is
+    advisory, so a filesystem error here must not stop the env from being created.
+    """
+    built = Path(extension_path).resolve()
+    if len(built.parents) < 3 or built.parents[1].name != "src":
+        return
+    cpp = built.parents[2] / "cpp"
+    try:
+        sources = [
+            *(path for path in (cpp / "include").rglob("*") if path.is_file()),
+            *(cpp / "src" / "cuda").glob("*"),
+            cpp / "src" / "rom.cpp",
+            cpp / "bindings" / "cuda_module.cu",
+        ]
+        built_at = built.stat().st_mtime
+        stale = any(path.is_file() and path.stat().st_mtime > built_at for path in sources)
+    except OSError:
+        return
+    if stale:
+        warnings.warn(
+            f"{built.name} is stale: sources under {cpp} are newer. "
+            "Rebuild with `python scripts/build_cuda_extension.py`.",
+            stacklevel=3,
+        )
+
+
 def _make_cuda_batch(
     num_envs: int,
     frameskip: int,
@@ -340,6 +371,7 @@ def _make_cuda_batch(
 ) -> Any:
     from . import _cuda_core  # type: ignore[attr-defined]
 
+    _warn_if_cuda_core_stale(_cuda_core.__file__)
     if not hasattr(_cuda_core, "CudaBatch"):
         raise RuntimeError("installed nesle._cuda_core does not expose CudaBatch")
     if snapshot_bytes_list is not None:

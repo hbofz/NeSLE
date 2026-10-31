@@ -39,22 +39,33 @@ CPU.
 
 ## Building the CUDA extension
 
+`pip install` builds `nesle._cuda_core` alongside the CPU core. It detects nvcc,
+MSVC, and the local GPU architecture through `nvidia-smi`. Without nvcc 12.x or
+newer, it builds the CPU core only. pip hides build output, so add `-v` to see
+which happened. Override the architecture when building for a different target:
+
+```sh
+NESLE_CUDA_ARCH=sm_80 python -m pip install -e .   # A100
+NESLE_CUDA_ARCH=sm_90 python -m pip install -e .   # H100
+```
+
+| Variable | Effect |
+|---|---|
+| `NESLE_CUDA_ARCH` | Target architecture. Otherwise `nvidia-smi`, then PyTorch, then `sm_80` |
+| `NVCC` | nvcc path or command name. One that cannot be found, such as `NVCC=none`, skips the CUDA build |
+| `NESLE_REQUIRE_CUDA=1` | Fail the install when no usable nvcc is found instead of skipping |
+
+If a usable nvcc is found and the compile fails, the install fails too, so that
+an old binary cannot stay in use unnoticed. Use `NVCC=none` to build the CPU core
+anyway. A skipped build leaves any `_cuda_core` already in `src/nesle` in place.
+
+A stale `_cuda_core.pyd` or `.so` retains the previous behavior, and creating a
+CUDA env warns when the sources are newer than the binary. After a change under
+`cpp/`, rebuild and smoke-test on the GPU with:
+
 ```sh
 python scripts/build_cuda_extension.py
 ```
-
-The script detects nvcc, MSVC, and the local GPU architecture through PyTorch.
-Override the architecture when building for a different target:
-
-```sh
-NESLE_CUDA_ARCH=sm_80 python scripts/build_cuda_extension.py   # A100
-NESLE_CUDA_ARCH=sm_90 python scripts/build_cuda_extension.py   # H100
-```
-
-`scripts/build_cuda_extension.sh` is retained for POSIX scripting and Docker.
-
-A stale `_cuda_core.pyd` or `.so` fails silently and retains the previous
-behavior. Rebuild after any change under `cpp/`.
 
 ## Windows
 
@@ -67,10 +78,9 @@ python -m venv .venv
 .venv\Scripts\activate
 python -m pip install -e .[dev,rl]
 python -m pip install --force-reinstall torch --index-url https://download.pytorch.org/whl/cu126
-python scripts\build_cuda_extension.py
 ```
 
-If the build script cannot locate the toolchain, use the manual recipe in
+If the build cannot locate the toolchain, use the manual recipe in
 [build-windows.md](build-windows.md).
 
 Windows has a known training-throughput ceiling under the WDDM driver model

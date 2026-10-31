@@ -12,11 +12,12 @@ CUDA Toolkit 12.x, a C++20 toolchain, then
 ```sh
 python -m pip install -e '.[dev,rl]'
 python -m pip install --force-reinstall torch --index-url https://download.pytorch.org/whl/cu126
-python scripts/build_cuda_extension.py
 ```
 
-A stale `_cuda_core` extension fails silently and keeps the old behavior.
-Rebuild after every change under `cpp/`.
+`pip install -e .` builds `_cuda_core` as well as `_core`. A stale `_cuda_core`
+keeps the old behavior, and creating a CUDA env warns when the sources are newer
+than the binary. After a change under `cpp/`, rebuild and smoke-test with
+`python scripts/build_cuda_extension.py`.
 
 You need to supply your own legally obtained Super Mario Bros. ROM. **Never
 commit a ROM**; `*.nes` is gitignored and should stay that way.
@@ -25,7 +26,7 @@ commit a ROM**; `*.nes` is gitignored and should stay that way.
 
 ```sh
 ruff check .                              # CI runs this
-python -m pytest tests/                   # 71 tests; GPU/ROM tests auto-skip
+python -m pytest tests/                   # 115 tests; GPU/ROM tests auto-skip
 sh scripts/run_cpp_tests.sh               # C++ unit tests
 python benchmarks/verify_correctness.py   # batch is N independent emulators
 ```

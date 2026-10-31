@@ -1,8 +1,9 @@
 # Building the CUDA extension on Windows
 
-**Recommended:** use the cross-platform build script, which auto-detects nvcc
-(including sidecar CTK installs), MSVC (via vswhere), your Python's
-`EXT_SUFFIX`, and the GPU architecture:
+**Recommended:** `python -m pip install -e .` builds the extension. It
+auto-detects nvcc (including sidecar CTK installs), MSVC (via vswhere), your
+Python's `EXT_SUFFIX`, and the GPU architecture. To rebuild and smoke-test on the
+GPU without reinstalling:
 
 ```powershell
 .venv\Scripts\python.exe scripts\build_cuda_extension.py
@@ -13,9 +14,7 @@ is the manual recipe behind it — useful if the script cannot find your
 toolchain, or as a reference for what actually happens. Tested with Windows
 11, MSVC 2022 Build Tools, Python 3.14, GTX 1050 Ti.
 
-`scripts/build_cuda_extension.sh` is POSIX-only (it uses `-fPIC --shared`,
-POSIX paths, and `/tmp`); on Windows, `nvcc` must be invoked through the MSVC
-environment as follows.
+On Windows, `nvcc` must be invoked through the MSVC environment as follows.
 
 ## Prerequisites
 
@@ -62,8 +61,8 @@ should print `True`.
   "Access is denied".
 - `vcvarsall.bat` prints a `vswhere.exe` line to stderr that can look like an
   error in PowerShell — harmless unless the exit code is nonzero.
-- Rebuild after **any** change under `cpp/`; a stale `.pyd` fails silently
-  (old behavior, no error).
+- Rebuild after **any** change under `cpp/`; a stale `.pyd` keeps the old
+  behavior, and creating a CUDA env warns when the sources are newer than it.
 - On sm_61, nvcc 12.9 prints a deprecation warning ("support for architectures
   prior to sm_75 will be removed in a future release") — expected, harmless.
 - The link step drops stray `_cuda_core*.lib`/`.exp` files next to the `.pyd`;
