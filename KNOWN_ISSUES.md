@@ -1,7 +1,7 @@
 # Known issues
 
 Honest list of what's broken, deferred, or unverified. Kept current as of
-2026-10-29.
+2026-11-06.
 
 ## Deferred bugs
 
@@ -36,7 +36,8 @@ Honest list of what's broken, deferred, or unverified. Kept current as of
 
 ## Limitations by design
 
-- **NROM (mapper 0) only.** No MMC1/MMC3 etc.
+- **NROM, UxROM, BNROM and UN1ROM only** (mappers 0, 2, 34, 94). No MMC1/MMC3
+  etc. yet ([#5](https://github.com/hbofz/NeSLE/issues/5)).
 - **One CUDA thread per env.** Warp divergence leaves throughput on the table
   at very large batches; a warp-per-env or SoA-wavefront redesign is the known
   next optimization (see `docs/phase6-report.md`).
