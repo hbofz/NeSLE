@@ -329,6 +329,21 @@ void check_bus_conflicts() {
     fixture.write_both(console, 0xC123, 0x00);
     assert(nesle::cuda::read_prg(fixture.buffers, 0, 0x8000) == conflicting.prg_rom[0]);
     fixture.assert_reads_agree(console);
+
+    // The two writes above latch the same bank with or without conflicts. This
+    // one does not: $C121 holds 0x31, so writing 0x02 latches 0x00 (bank 0)
+    // with conflicts and bank 2 without.
+    assert(conflicting.prg_rom[0xC121] == 0x31);
+    fixture.write_both(console, 0xC121, 0x02);
+    assert(nesle::cuda::read_prg(fixture.buffers, 0, 0x8000) == conflicting.prg_rom[0]);
+    fixture.assert_reads_agree(console);
+
+    Fixture plain_fixture;
+    plain_fixture.attach(plain);
+    nesle::Console plain_console(plain);
+    plain_fixture.write_both(plain_console, 0xC121, 0x02);
+    assert(nesle::cuda::read_prg(plain_fixture.buffers, 0, 0x8000) == plain.prg_rom[2 * 0x4000]);
+    plain_fixture.assert_reads_agree(plain_console);
 }
 
 void check_unsupported() {
@@ -395,7 +410,7 @@ void check_reset() {
             rom.prg_rom[window_base + 0x7FFD] = static_cast<std::uint8_t>(target >> 8);
         };
         put_vector(0x0000, 0x8000);
-        put_vector(0x6000, 0xC000);
+        put_vector(0x18000, 0xC000);
 
         const auto layout = nesle::describe_mapper(rom.metadata);
         assert(nesle::reset_vector_base(layout, rom.prg_rom.size()) == 0x7FFC);

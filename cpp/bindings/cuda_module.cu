@@ -261,19 +261,15 @@ std::uint8_t cuda_nametable_arrangement(nesle::NametableArrangement arrangement)
 
 std::uint16_t reset_vector_from_prg(const std::vector<std::uint8_t>& prg_rom,
                                       const nesle::MapperLayout& layout) {
-      if (prg_rom.size() < 4u * 1024u) {
-          throw std::invalid_argument("PRG ROM is too small to contain a reset vector");
-      }
-      const auto base =
-          static_cast<std::size_t>(nesle::reset_vector_base(layout, prg_rom.size()));
-      return static_cast<std::uint16_t>(prg_rom[base] |
+    if (prg_rom.size() < 4u * 1024u) {
+        throw std::invalid_argument("PRG ROM is too small to contain a reset vector");
+    }
+    const auto base = static_cast<std::size_t>(nesle::reset_vector_base(layout, prg_rom.size()));
+    return static_cast<std::uint16_t>(prg_rom[base] |
                                       (static_cast<std::uint16_t>(prg_rom[base + 1]) << 8));
-  }
+}
 
 void validate_cartridge(const nesle::RomImage& rom) {
-    if (rom.metadata.has_trainer) {
-        throw std::invalid_argument("ROM trainers are not supported");
-    }
     if (rom.prg_rom.empty()) {
         throw std::invalid_argument("CUDA console mode requires PRG ROM bytes");
     }
@@ -1261,11 +1257,10 @@ private:
         cudaFree(device_snap_oam_);
         cudaFree(device_snap_nametable_);
         cudaFree(device_snap_palette_);
-    cudaFree(device_prg_rom_);
-    cudaFree(device_chr_rom_);
-    cudaFree(device_chr_ram_);
-    cudaFree(device_prg_bank_);
-
+        cudaFree(device_prg_rom_);
+        cudaFree(device_chr_rom_);
+        cudaFree(device_chr_ram_);
+        cudaFree(device_prg_bank_);
         cudaFree(device_frames_);
         cudaFree(device_reset_mask_);
         cudaFree(device_stat_instructions_);
