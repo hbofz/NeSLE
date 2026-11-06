@@ -16,6 +16,7 @@ inline constexpr std::size_t kPrgRamBytes = 8 * 1024;
 inline constexpr std::size_t kPaletteRamBytes = 32;
 inline constexpr std::size_t kOamBytes = 256;
 inline constexpr std::size_t kNametableRamBytes = 2048;
+inline constexpr std::size_t kChrRamBytes = 8 * 1024;
 
 struct StateSnapshot {
     std::uint16_t pc = 0;
@@ -43,6 +44,19 @@ struct StateSnapshot {
     std::array<std::uint8_t, kNametableRamBytes> nametable_ram{};
     std::array<std::uint8_t, kPaletteRamBytes> palette_ram{};
     std::array<std::uint8_t, kOamBytes> oam{};
+
+    // Cartridge section. CHR RAM boards (every UxROM/BNROM cartridge) put their
+    // 8 KB of pattern tables here: without it a restored env renders from
+    // whatever the previous episode left behind.
+    std::array<std::uint8_t, kChrRamBytes> chr_ram{};
+    bool has_chr_ram = false;
+
+    // Raw mapper latch as the board saw it: "LATC" for mappers 2 and 94, which
+    // still needs the board's shift, and "REGS"[0] for mapper 34, which is the
+    // 32 KB page number already. Converted with the cartridge view's shift and
+    // mask, so both reduce to the same expression.
+    std::uint8_t cart_latch = 0;
+    bool has_cart_latch = false;
 };
 
 namespace detail {
@@ -154,9 +168,32 @@ inline void apply_cart_subchunk(StateSnapshot& out, std::string_view name,
                                 std::span<const std::uint8_t> payload) {
     if (name == "WRAM") {
         // FCEUX always stores 8 KB of WRAM even for cartridges (like SMB / NROM) that don't
-        // have it. Copying it through is harmless — our prg_ram lives at $6000-$7FFF and
+        // have it. Copying it through is harmless - our prg_ram lives at $6000-$7FFF and
         // NROM reads return 0 if not wired.
         copy_fixed(payload, out.prg_ram, "CART.WRAM");
+    } else if (name == "CHRR") {
+        // 8 KB of CHR RAM. Present on every board with CHR RAM (mappers 2/34/94
+        // here); absent on CHR ROM carts, which is why has_chr_ram exists instead
+        // of treating a missing tag as zeroes.
+        copy_fixed(payload, out.chr_ram, "CART.CHRR");
+        out.has_chr_ram = true;
+    } else if (name == "LATC") {
+        // Latch_Init registers the raw value written to the bank register, not
+        // the bank number - mapper 94 needs it shifted. Sizes other than one byte
+        // mean we are parsing something else, so leave it alone rather than
+        // abort: the latch is optional in old saves.
+        if (payload.size() == 1) {
+            out.cart_latch = payload[0];
+            out.has_cart_latch = true;
+        }
+    } else if (name == "REGS") {
+        // Mapper 34 keeps PRG bank in regs[0]; regs[1] and regs[2] are its two
+        // 4 KB CHR banks, which only matter on the NINA-001 board that this
+        // emulator refuses.
+        if (payload.size() >= 1) {
+            out.cart_latch = payload[0];
+            out.has_cart_latch = true;
+        }
     }
 }
 

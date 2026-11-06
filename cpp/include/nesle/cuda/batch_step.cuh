@@ -2,6 +2,7 @@
 
 #include <cstdint>
 
+#include "nesle/cuda/mapper.cuh"
 #include "nesle/cuda/state.cuh"
 
 #ifdef __CUDACC__
@@ -120,10 +121,12 @@ NESLE_CUDA_HD inline void clear_env_fault(BatchBuffers& buffers, std::uint32_t e
 }
 
 NESLE_CUDA_HD inline void cold_reset_console_env(BatchBuffers& buffers, std::uint32_t env) {
-    // Read reset vector from PRG ROM.
+    // Read the reset vector from PRG ROM at the power-on mapping. cart.prg_reset_vector_base
+    // already encodes where $FFFC lands per board: the last four bytes of the image
+    // for NROM and UxROM, or the last four bytes of bank 0's 32 KB window for BNROM.
     std::uint16_t reset_pc = 0;
-    if (buffers.cart.prg_rom != nullptr && buffers.cart.prg_rom_size > 0) {
-        const auto base = buffers.cart.prg_rom_size == 16u * 1024u ? 0x3FFCu : 0x7FFCu;
+    if (buffers.cart.prg_rom != nullptr && buffers.cart.prg_reset_vector_base >= 4u) {
+        const auto base = buffers.cart.prg_reset_vector_base;
         reset_pc = static_cast<std::uint16_t>(
             buffers.cart.prg_rom[base] |
             (static_cast<std::uint16_t>(buffers.cart.prg_rom[base + 1]) << 8));
@@ -152,6 +155,15 @@ NESLE_CUDA_HD inline void cold_reset_console_env(BatchBuffers& buffers, std::uin
     // PRG RAM.
     auto* prg_ram = buffers.cpu.prg_ram + static_cast<std::uint64_t>(env) * kPrgRamBytes;
     zero_bytes_fast(prg_ram, static_cast<std::uint32_t>(kPrgRamBytes));
+
+    // CHR RAM (null on every CHR ROM cartridge).
+    if (buffers.ppu.chr_ram != nullptr) {
+        auto* chr_ram = buffers.ppu.chr_ram + static_cast<std::uint64_t>(env) * kChrRamBytes;
+        zero_bytes_fast(chr_ram, static_cast<std::uint32_t>(kChrRamBytes));
+    }
+
+    // Mapper registers: power-on banks and header mirroring.
+    reset_mapper_state(buffers, env);
 
     // PPU state.
     buffers.ppu.ctrl[env] = 0;
@@ -217,6 +229,25 @@ NESLE_CUDA_HD inline void warm_reset_console_env(BatchBuffers& buffers,
     auto* prg_ram = buffers.cpu.prg_ram + static_cast<std::uint64_t>(env) * kPrgRamBytes;
     copy_bytes_fast(prg_ram, snap.prg_ram + prg_ram_base,
                     static_cast<std::uint32_t>(kPrgRamBytes));
+
+    // Mapper registers. The board's latch comes out of the state file
+    // ("LATC" for mappers 2/94, "REGS"[0] for mapper 34) and needs the same
+    // shift-and-mask the write path applies, because LATC is the raw byte the
+    // game wrote, not a bank number. CHR RAM boards also carry their 8 KB of
+    // pattern tables, which are visible machine state: without them the first
+    // frame after a restore draws whatever the previous episode left there.
+    if (snap.cart_latch != nullptr && buffers.mapper.prg_bank != nullptr) {
+        const std::uint8_t latch = snap.cart_latch[level];
+        buffers.mapper.prg_bank[env] = static_cast<std::uint8_t>(
+            (latch >> buffers.cart.prg_bank_shift) & buffers.cart.prg_bank_mask);
+    } else {
+        reset_mapper_state(buffers, env);
+    }
+    if (snap.chr_ram != nullptr && buffers.ppu.chr_ram != nullptr) {
+        auto* chr_ram = buffers.ppu.chr_ram + static_cast<std::uint64_t>(env) * kChrRamBytes;
+        copy_bytes_fast(chr_ram, snap.chr_ram + static_cast<std::uint64_t>(level) * kChrRamBytes,
+                        static_cast<std::uint32_t>(kChrRamBytes));
+    }
 
     // PPU registers + memory.
     buffers.ppu.ctrl[env] = snap.ppu_ctrl[level];

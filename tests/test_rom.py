@@ -65,5 +65,101 @@ class RomTests(unittest.TestCase):
             parse_ines(make_rom()[:-1])
 
 
+def mapper_header(n):
+    """(flags6, flags7) bytes that declare mapper `n` in a plain iNES header."""
+    return ((n & 0x0F) << 4, (n >> 4) << 4)
+
+
+def make_mapper_rom(n, flags6=0, **kwargs):
+    base6, flags7 = mapper_header(n)
+    return parse_ines(make_rom(flags6=base6 | flags6, flags7=flags7, **kwargs))
+
+
+class MapperSupportTests(unittest.TestCase):
+    def test_nrom_still_supported(self):
+        self.assertTrue(parse_ines(make_rom()).is_supported)
+        self.assertTrue(parse_ines(make_rom(prg_banks=1)).is_supported)
+        self.assertIsNone(parse_ines(make_rom()).unsupported_reason)
+
+    def test_uxrom_family_supported(self):
+        for mapper, name in (
+            (2, "UxROM"),
+            (94, "UN1ROM"),
+        ):
+            rom = make_mapper_rom(mapper)
+            self.assertEqual(rom.mapper, mapper, name)
+            self.assertTrue(rom.is_supported, name)
+            self.assertEqual(rom.mapper_name, name)
+            self.assertTrue(rom.is_uxrom, name)
+            self.assertFalse(rom.is_nrom, name)
+
+    def test_bnrom_needs_chr_ram(self):
+        bnrom = make_mapper_rom(34, chr_banks=0)
+        self.assertEqual(bnrom.mapper, 34)
+        self.assertTrue(bnrom.has_chr_ram)
+        self.assertTrue(bnrom.is_supported)
+
+        # CHR ROM on iNES 34 is NINA-001, which is not supported here.
+        nina = make_mapper_rom(34, chr_banks=4)
+        self.assertEqual(nina.mapper, 34)
+        self.assertFalse(nina.has_chr_ram)
+        self.assertFalse(nina.is_supported)
+
+    def test_unsupported_mappers(self):
+        for mapper in (1, 3, 4, 7, 9, 66, 71, 11, 30, 180):
+            rom = make_mapper_rom(mapper)
+            self.assertFalse(rom.is_supported, mapper)
+            self.assertIn("unsupported mapper", rom.unsupported_reason)
+            self.assertIn(str(mapper), rom.unsupported_reason)
+
+    def test_uxrom_prg_size_rules(self):
+        # Needs at least 32 KB. iNES PRG sizes are always a whole number of
+        # 16 KB banks, so the page-boundary rule can only bite on NES 2.0
+        # exponent sizes, which parse_ines rejects earlier.
+        self.assertFalse(make_mapper_rom(2, prg_banks=1).is_supported)
+        self.assertTrue(make_mapper_rom(2, prg_banks=2).is_supported)
+        self.assertTrue(make_mapper_rom(2, prg_banks=8).is_supported)
+        # BNROM counts 32 KB pages instead.
+        self.assertFalse(make_mapper_rom(34, prg_banks=1, chr_banks=0).is_supported)
+        self.assertTrue(make_mapper_rom(34, prg_banks=2, chr_banks=0).is_supported)
+
+    def test_page_count_must_be_a_power_of_two(self):
+        # The device selects a page with `bank & mask`, so three banks would
+        # make it wrap into padding while the host wraps with `%`. Both sides
+        # have to agree, so the image is refused instead.
+        self.assertFalse(make_mapper_rom(2, prg_banks=3).is_supported)
+        self.assertFalse(make_mapper_rom(2, prg_banks=6).is_supported)
+        self.assertFalse(make_mapper_rom(94, prg_banks=3).is_supported)
+        self.assertFalse(make_mapper_rom(34, prg_banks=6, chr_banks=0).is_supported)
+        self.assertTrue(make_mapper_rom(34, prg_banks=8, chr_banks=0).is_supported)
+
+    def test_bnrom_is_not_uxrom(self):
+        self.assertFalse(make_mapper_rom(34, chr_banks=0).is_uxrom)
+        self.assertTrue(make_mapper_rom(2).is_uxrom)
+        self.assertTrue(make_mapper_rom(94).is_uxrom)
+
+    def test_trainer_image_is_still_supported(self):
+        # A trainer is 512 bytes in front of the PRG data and parse_ines skips
+        # it, so the image runs. Only the SMB reward scraper declines it.
+        rom = parse_ines(make_rom(trainer=True))
+        self.assertTrue(rom.has_trainer)
+        self.assertTrue(rom.is_supported)
+        self.assertIsNone(rom.unsupported_reason)
+        self.assertFalse(rom.is_supported_mario_target)
+
+        mapper_rom = make_mapper_rom(2, trainer=True)
+        self.assertTrue(mapper_rom.is_supported)
+
+    def test_four_screen_bit_falls_back_to_hv(self):
+        # UxROM boards only have H/V solder pads, so a four-screen bit cannot
+        # be honored; fall back to the H/V bit.
+        other = make_mapper_rom(2, flags6=0x08)
+        self.assertEqual(other.mapper, 2)
+        self.assertEqual(other.nametable_arrangement, NametableArrangement.HORIZONTAL)
+
+    def test_mario_target_still_nrom_only(self):
+        self.assertFalse(make_mapper_rom(2).is_supported_mario_target)
+
+
 if __name__ == "__main__":
     unittest.main()
