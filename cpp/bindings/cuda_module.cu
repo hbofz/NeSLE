@@ -443,6 +443,7 @@ public:
         std::vector<std::uint8_t> env_to_level(num_env_, 0);  // all envs use slot 0
         allocate();
         upload_rom();
+        require_cart_latch();
         upload_snapshot_bank(env_to_level);
         reset();
     }
@@ -484,6 +485,7 @@ public:
         }
         allocate();
         upload_rom();
+        require_cart_latch();
         upload_snapshot_bank(env_to_level_host);
         reset();
     }
@@ -1276,6 +1278,8 @@ private:
         cudaFree(device_snapshot_nametable_);
         cudaFree(device_snapshot_palette_);
         cudaFree(device_snapshot_oam_);
+        cudaFree(device_snapshot_chr_ram_);
+        cudaFree(device_snap_cart_latch_);
         cudaFree(device_snap_pc_);
         cudaFree(device_snap_a_);
         cudaFree(device_snap_x_);
@@ -1430,6 +1434,27 @@ private:
         copy_to_device(device_oam_, oam, "reset oam");
     }
 
+
+    // A banked board restored from a save that carries no latch would run bank 0:
+    // the right 16 KB window only by accident. FCEUX writes "LATC" for mappers
+    // 2/94 and "REGS"[0] for mapper 34, so a missing tag means the state did not
+    // come from FCEUX, or came from a build that does not save it.
+    void require_cart_latch() const {
+        const auto layout = nesle::describe_mapper(rom_.metadata);
+        if (layout.window_bytes == 0) {
+            return;  // NROM: no bank register, nothing to restore
+        }
+        for (std::size_t i = 0; i < snapshots_.size(); ++i) {
+            if (!snapshots_[i].has_cart_latch) {
+                throw std::invalid_argument(
+                    "reset state " + std::to_string(i) + " has no mapper register (" +
+                    (rom_.metadata.mapper == 34 ? "REGS" : "LATC") +
+                    "); a banked cartridge cannot resume from it without running the wrong "
+                    "PRG bank");
+            }
+        }
+    }
+
     void upload_snapshot_bank(const std::vector<std::uint8_t>& env_to_level_host) {
         if (snapshots_.empty()) {
             return;
@@ -1447,9 +1472,22 @@ private:
             cuda_alloc<std::uint8_t>(n * nesle::cuda::kPaletteRamBytes, "snap palette");
         device_snapshot_oam_ =
             cuda_alloc<std::uint8_t>(n * nesle::cuda::kOamBytes, "snap oam");
+        // CHR RAM is uploaded only when the cartridge has it; null tells the
+        // device reset to leave the per-env allocation alone.
+        const bool any_chr_ram =
+            std::any_of(snapshots_.begin(), snapshots_.end(),
+                        [](const nesle::fcs::StateSnapshot& s) { return s.has_chr_ram; });
+        if (any_chr_ram) {
+            device_snapshot_chr_ram_ =
+                cuda_alloc<std::uint8_t>(n * nesle::cuda::kChrRamBytes, "snap chr_ram");
+        }
+        const bool any_cart_latch =
+            std::any_of(snapshots_.begin(), snapshots_.end(),
+                        [](const nesle::fcs::StateSnapshot& s) { return s.has_cart_latch; });
 
         // Per-level scalar arrays.
         device_snap_pc_ = cuda_alloc<std::uint16_t>(n, "snap pc");
+        device_snap_cart_latch_ = cuda_alloc<std::uint8_t>(n, "snap cart_latch");
         device_snap_a_ = cuda_alloc<std::uint8_t>(n, "snap a");
         device_snap_x_ = cuda_alloc<std::uint8_t>(n, "snap x");
         device_snap_y_ = cuda_alloc<std::uint8_t>(n, "snap y");
@@ -1478,6 +1516,7 @@ private:
         std::vector<std::uint8_t> h_ppu_oam_addr(n), h_ppu_open_bus(n), h_ppu_read_buffer(n);
         std::vector<std::uint8_t> h_ppu_x(n), h_ppu_w(n);
         std::vector<std::uint16_t> h_ppu_v(n), h_ppu_t(n);
+        std::vector<std::uint8_t> h_cart_latch(n);
 
         for (std::uint32_t i = 0; i < n; ++i) {
             const auto& s = snapshots_[i];
@@ -1501,6 +1540,13 @@ private:
                                   s.oam.data(), nesle::cuda::kOamBytes,
                                   cudaMemcpyHostToDevice),
                        "copy snap oam slot");
+            if (device_snapshot_chr_ram_ != nullptr) {
+                check_cuda(cudaMemcpy(device_snapshot_chr_ram_ + i * nesle::cuda::kChrRamBytes,
+                                      s.chr_ram.data(), nesle::cuda::kChrRamBytes,
+                                      cudaMemcpyHostToDevice),
+                           "copy snap chr_ram slot");
+            }
+            h_cart_latch[i] = s.cart_latch;
             h_pc[i] = s.pc;
             h_a[i] = s.a; h_x[i] = s.x; h_y[i] = s.y; h_sp[i] = s.sp; h_p[i] = s.p;
             h_cycles[i] = s.cycles;
@@ -1529,6 +1575,10 @@ private:
         copy_to_device(device_snap_ppu_v_, h_ppu_v, "snap ppu_v upload");
         copy_to_device(device_snap_ppu_t_, h_ppu_t, "snap ppu_t upload");
         copy_to_device(device_env_to_level_, env_to_level_host, "snap env_to_level upload");
+        copy_to_device(device_snap_cart_latch_, h_cart_latch, "snap cart_latch upload");
+
+        snapshot_template_.chr_ram = device_snapshot_chr_ram_;
+        snapshot_template_.cart_latch = any_cart_latch ? device_snap_cart_latch_ : nullptr;
 
         snapshot_template_.cpu_ram = device_snapshot_cpu_ram_;
         snapshot_template_.prg_ram = device_snapshot_prg_ram_;
@@ -1686,6 +1736,8 @@ private:
     std::uint8_t* device_snapshot_nametable_ = nullptr;
     std::uint8_t* device_snapshot_palette_ = nullptr;
     std::uint8_t* device_snapshot_oam_ = nullptr;
+    std::uint8_t* device_snapshot_chr_ram_ = nullptr;
+    std::uint8_t* device_snap_cart_latch_ = nullptr;
     std::uint16_t* device_snap_pc_ = nullptr;
     std::uint8_t* device_snap_a_ = nullptr;
     std::uint8_t* device_snap_x_ = nullptr;
@@ -1760,6 +1812,12 @@ PYBIND11_MODULE(_cuda_core, m) {
             out["oam"] = py::bytes(
                 reinterpret_cast<const char*>(snapshot.oam.data()),
                 snapshot.oam.size());
+            out["has_chr_ram"] = snapshot.has_chr_ram;
+            out["chr_ram"] = py::bytes(
+                reinterpret_cast<const char*>(snapshot.chr_ram.data()),
+                snapshot.chr_ram.size());
+            out["has_cart_latch"] = snapshot.has_cart_latch;
+            out["cart_latch"] = snapshot.cart_latch;
             return out;
         },
         py::arg("data"),

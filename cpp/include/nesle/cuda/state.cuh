@@ -303,6 +303,13 @@ struct SnapshotTemplate {
     // Per-env level assignment (length = num_envs).
     const std::uint8_t* env_to_level = nullptr;
 
+    // Cartridge section. chr_ram is per-level (length = num_levels * kChrRamBytes)
+    // and null on CHR ROM boards. has_cart_latch/cart_latch carry the board's
+    // bank register: FCEUX saves it as "LATC" (mappers 2/94) or "REGS"[0]
+    // (mapper 34), and without it a restored env runs on the wrong 16/32 KB bank.
+    const std::uint8_t* chr_ram = nullptr;
+    const std::uint8_t* cart_latch = nullptr;
+
     std::uint32_t num_levels = 0;
 };
 

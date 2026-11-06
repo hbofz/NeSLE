@@ -230,11 +230,24 @@ NESLE_CUDA_HD inline void warm_reset_console_env(BatchBuffers& buffers,
     copy_bytes_fast(prg_ram, snap.prg_ram + prg_ram_base,
                     static_cast<std::uint32_t>(kPrgRamBytes));
 
-    // FCEUX save states carry no mapper registers, so a restored environment
-    // starts from power-on banks; the game's own init code reloads them. CHR
-    // RAM is part of the visible machine state and is left as the snapshot
-    // found it.
-    reset_mapper_state(buffers, env);
+    // Mapper registers. The board's latch comes out of the state file
+    // ("LATC" for mappers 2/94, "REGS"[0] for mapper 34) and needs the same
+    // shift-and-mask the write path applies, because LATC is the raw byte the
+    // game wrote, not a bank number. CHR RAM boards also carry their 8 KB of
+    // pattern tables, which are visible machine state: without them the first
+    // frame after a restore draws whatever the previous episode left there.
+    if (snap.cart_latch != nullptr && buffers.mapper.prg_bank != nullptr) {
+        const std::uint8_t latch = snap.cart_latch[level];
+        buffers.mapper.prg_bank[env] = static_cast<std::uint8_t>(
+            (latch >> buffers.cart.prg_bank_shift) & buffers.cart.prg_bank_mask);
+    } else {
+        reset_mapper_state(buffers, env);
+    }
+    if (snap.chr_ram != nullptr && buffers.ppu.chr_ram != nullptr) {
+        auto* chr_ram = buffers.ppu.chr_ram + static_cast<std::uint64_t>(env) * kChrRamBytes;
+        copy_bytes_fast(chr_ram, snap.chr_ram + static_cast<std::uint64_t>(level) * kChrRamBytes,
+                        static_cast<std::uint32_t>(kChrRamBytes));
+    }
 
     // PPU registers + memory.
     buffers.ppu.ctrl[env] = snap.ppu_ctrl[level];
