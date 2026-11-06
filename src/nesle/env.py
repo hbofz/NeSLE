@@ -98,8 +98,11 @@ def _load_rom(rom_path: str | Path) -> tuple[bytes, INESRom]:
 # so this bounds what a small malicious file can make us allocate.
 _MAX_STATE_BYTES = 16 * 1024 * 1024
 
+_GZIP_MAGIC = b"\x1f\x8b"
 
-def _inflate_state(payload: bytes, wbits: int) -> bytes:
+
+def _inflate_fcsx(payload: bytes, wbits: int) -> bytes:
+    """One zlib stream. FCSX carries exactly one payload, so trailing data is an error."""
     stream = zlib.decompressobj(wbits)
     try:
         body = stream.decompress(payload, _MAX_STATE_BYTES + 1)
@@ -110,6 +113,39 @@ def _inflate_state(payload: bytes, wbits: int) -> bytes:
     if not stream.eof or stream.unused_data:
         raise ValueError("compressed data is truncated or has trailing bytes")
     return body
+
+
+def _inflate_gzip(payload: bytes) -> bytes:
+    """Concatenate every gzip member, the way gzip.decompress does.
+
+    A file built by `cat a.gz b.gz` holds several members back to back, and that is a
+    normal way to produce a state file. Trailing NUL bytes are padding that
+    gzip.decompress ignores; anything else after the last member is still an error, so
+    a state with junk appended does not slip through.
+
+    The size cap applies to the total across members rather than to each member:
+    otherwise splitting a bomb into 15 MiB pieces would reopen the bound.
+    """
+    body = bytearray()
+    remaining = payload
+    while True:
+        stream = zlib.decompressobj(zlib.MAX_WBITS | 16)
+        try:
+            # One byte past the budget, so exceeding it is visible rather than silent.
+            chunk = stream.decompress(remaining, _MAX_STATE_BYTES - len(body) + 1)
+        except zlib.error as exc:
+            raise ValueError(f"corrupt compressed data: {exc}") from exc
+        body += chunk
+        if len(body) > _MAX_STATE_BYTES:
+            raise ValueError(f"inflates to more than {_MAX_STATE_BYTES} bytes")
+        if not stream.eof:
+            # Short of the cap and short of the end: the file itself is cut off.
+            raise ValueError("compressed data is truncated")
+        remaining = stream.unused_data
+        if not remaining or not remaining.strip(b"\x00"):
+            return bytes(body)  # nothing left, or only NUL padding
+        if not remaining.startswith(_GZIP_MAGIC):
+            raise ValueError("trailing bytes after the gzip stream")
 
 
 def _unwrap_fcsx(raw: bytes) -> bytes:
@@ -130,7 +166,7 @@ def _unwrap_fcsx(raw: bytes) -> bytes:
     elif len(payload) != compressed_size:
         raise ValueError("FCSX compressed size does not match the file")
     else:
-        body = _inflate_state(payload, zlib.MAX_WBITS)
+        body = _inflate_fcsx(payload, zlib.MAX_WBITS)
     if len(body) != total:
         raise ValueError("FCSX uncompressed size does not match its contents")
     return b"FCS\xff" + bytes(12) + body
@@ -144,8 +180,8 @@ def _load_reset_state(state_path: str | Path) -> bytes:
     """
     raw = Path(state_path).read_bytes()
     try:
-        if raw[:2] == b"\x1f\x8b":
-            raw = _inflate_state(raw, zlib.MAX_WBITS | 16)
+        if raw[:2] == _GZIP_MAGIC:
+            raw = _inflate_gzip(raw)
         if raw[:4] == b"FCSX":
             raw = _unwrap_fcsx(raw)
     except ValueError as exc:
