@@ -168,6 +168,50 @@ def test_rejects_trailing_bytes_after_gzip(tmp_path):
         _load(tmp_path, gzip.compress(LEGACY) + b"junk")
 
 
+def test_accepts_multi_member_gzip(tmp_path):
+    """`cat a.gz b.gz` is a normal way to build a state file, and gzip.decompress
+    concatenates the members, so the loader has to as well."""
+    cut = 1000
+    members = gzip.compress(LEGACY[:cut]) + gzip.compress(LEGACY[cut:])
+    assert _load(tmp_path, members) == LEGACY
+    assert _load(tmp_path, members) == gzip.decompress(members)
+
+
+def test_accepts_nul_padding_after_gzip(tmp_path):
+    padded = gzip.compress(LEGACY) + bytes(64)
+    assert _load(tmp_path, padded) == LEGACY
+    assert _load(tmp_path, padded) == gzip.decompress(padded)
+
+
+def test_nul_padding_before_a_member_is_not_ignored(tmp_path):
+    # Only trailing NULs are padding; anything between members is still junk.
+    data = gzip.compress(LEGACY) + bytes(8) + gzip.compress(LEGACY)
+    with pytest.raises(ValueError):
+        _load(tmp_path, data)
+
+
+def test_a_bomb_split_across_members_is_still_capped(tmp_path):
+    """The cap has to count the total, not each member: fifteen 15 MiB members
+    would otherwise slip past a per-member check."""
+    half = LIMIT // 2 + 1
+    member = gzip.compress(bytes(half), 9)
+    tracemalloc.start()
+    try:
+        with pytest.raises(ValueError, match="inflates to more than"):
+            _load(tmp_path, member + member)
+        _, peak = tracemalloc.get_traced_memory()
+    finally:
+        tracemalloc.stop()
+    assert peak < LIMIT * 3
+
+
+def test_fcsx_still_rejects_trailing_bytes(tmp_path):
+    # A zlib stream has no member concatenation to preserve, so this path keeps
+    # its strict check.
+    with pytest.raises(ValueError):
+        _load(tmp_path, _compressed() + b"junk")
+
+
 def test_error_names_the_file(tmp_path):
     with pytest.raises(ValueError, match="broken.fc1"):
         path = tmp_path / "broken.fc1"
