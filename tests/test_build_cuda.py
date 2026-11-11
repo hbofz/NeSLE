@@ -249,8 +249,93 @@ def _fake_smi(tmp_path: Path, monkeypatch, body: str) -> None:
 
 
 def test_detect_arch_asks_nvidia_smi_without_torch(tmp_path, monkeypatch):
-    _fake_smi(tmp_path, monkeypatch, 'echo "6.1"; echo "8.0"')
-    assert _load_build_script().detect_arch() == "sm_61"
+    _fake_smi(tmp_path, monkeypatch, 'echo "8.6"')
+    assert _load_build_script().detect_arch() == "sm_86"
+
+
+def test_detect_arch_covers_every_gpu_on_a_mixed_machine(tmp_path, monkeypatch):
+    # PCI order, a duplicate, and a two-digit major that sorts after 8.6 numerically.
+    _fake_smi(tmp_path, monkeypatch, 'echo "8.6"; echo "12.0"; echo "6.1"; echo "8.6"')
+    assert _load_build_script().detect_arch() == "sm_61,sm_86,sm_120"
+
+
+def test_detect_arch_ignores_lines_that_are_not_a_capability(tmp_path, monkeypatch):
+    _fake_smi(tmp_path, monkeypatch, 'echo "[N/A]"; echo "7.5"')
+    assert _load_build_script().detect_arch() == "sm_75"
+
+
+def test_detect_arch_falls_back_when_nvidia_smi_lists_nothing(tmp_path, monkeypatch):
+    _fake_smi(tmp_path, monkeypatch, 'echo "[N/A]"')
+    assert _load_build_script().detect_arch() == "sm_80"
+
+
+def _fake_nvcc_targets(tmp_path: Path, targets: str) -> str:
+    nvcc = tmp_path / "nvcc-targets"
+    nvcc.write_text(f'#!/bin/sh\n[ "$1" = "--list-gpu-code" ] && printf "{targets}" && exit 0\nexit 1\n')
+    nvcc.chmod(0o755)
+    return str(nvcc)
+
+
+def test_detect_arch_leaves_out_a_gpu_nvcc_cannot_target(tmp_path, monkeypatch, capsys):
+    _fake_smi(tmp_path, monkeypatch, 'echo "3.7"; echo "8.6"')
+    nvcc = _fake_nvcc_targets(tmp_path, "sm_50\\nsm_86\\n")
+    assert _load_build_script().detect_arch(nvcc) == "sm_86"
+    assert "cannot target sm_37" in capsys.readouterr().out
+
+
+def test_detect_arch_keeps_the_list_when_nvcc_supports_none_of_it(tmp_path, monkeypatch):
+    # nvcc then fails loudly on its own, instead of building for a GPU nobody has.
+    _fake_smi(tmp_path, monkeypatch, 'echo "3.0"; echo "3.7"')
+    nvcc = _fake_nvcc_targets(tmp_path, "sm_86\\n")
+    assert _load_build_script().detect_arch(nvcc) == "sm_30,sm_37"
+
+
+def test_detect_arch_keeps_the_list_when_nvcc_cannot_be_asked(tmp_path, monkeypatch):
+    _fake_smi(tmp_path, monkeypatch, 'echo "3.7"; echo "8.6"')
+    assert _load_build_script().detect_arch(str(tmp_path / "missing-nvcc")) == "sm_37,sm_86"
+
+
+def test_an_override_is_never_filtered(tmp_path, monkeypatch):
+    _fake_smi(tmp_path, monkeypatch, 'echo "8.6"')
+    monkeypatch.setenv("NESLE_CUDA_ARCH", "sm_37,sm_86")
+    nvcc = _fake_nvcc_targets(tmp_path, "sm_86\\n")
+    assert _load_build_script().detect_arch(nvcc) == "sm_37,sm_86"
+
+
+def test_detect_arch_asks_torch_about_every_device(tmp_path, monkeypatch):
+    _fake_smi(tmp_path, monkeypatch, "exit 9")
+    caps = [(8, 6), (6, 1)]
+    cuda = types.SimpleNamespace(
+        is_available=lambda: True, device_count=lambda: len(caps), get_device_capability=caps.__getitem__
+    )
+    monkeypatch.setitem(sys.modules, "torch", types.SimpleNamespace(cuda=cuda))
+    assert _load_build_script().detect_arch() == "sm_61,sm_86"
+
+
+@pytest.mark.parametrize("blank", ["", " ", ",", " , ", "\t", ", ,"])
+def test_a_blank_override_counts_as_unset(tmp_path, monkeypatch, blank):
+    _fake_smi(tmp_path, monkeypatch, 'echo "7.5"')
+    monkeypatch.setenv("NESLE_CUDA_ARCH", blank)
+    assert _load_build_script().detect_arch() == "sm_75"
+
+
+def test_one_arch_passes_through_to_nvcc_unchanged():
+    assert _load_build_script().arch_flags("native") == ["-arch=native"]
+
+
+def test_an_arch_list_builds_a_cubin_and_ptx_for_each():
+    assert _load_build_script().arch_flags("sm_61, sm_86") == [
+        "--generate-code=arch=compute_61,code=[compute_61,sm_61]",
+        "--generate-code=arch=compute_86,code=[compute_86,sm_86]",
+    ]
+
+
+def test_nvcc_gets_every_arch_of_a_list(checkout, nvcc):
+    result = _setup(checkout, NESLE_CUDA_ARCH="sm_61,sm_86", **nvcc)
+    assert result.returncode == 0, result.stdout + result.stderr
+    command = Path(nvcc["NVCC_LOG"]).read_text()
+    assert "code=[compute_61,sm_61]" in command and "code=[compute_86,sm_86]" in command
+    assert "-arch=" not in command
 
 
 def test_detect_arch_falls_back_when_nvidia_smi_fails(tmp_path, monkeypatch):

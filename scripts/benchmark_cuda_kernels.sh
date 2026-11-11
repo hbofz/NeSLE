@@ -17,6 +17,9 @@ if ! command -v "$nvcc_bin" >/dev/null 2>&1; then
 fi
 
 cuda_arch="${NESLE_CUDA_ARCH:-sm_80}"
+# A list such as sm_61,sm_86 is for the extension build. Take its first entry, so
+# put the oldest GPU first: its PTX also runs on the newer ones.
+cuda_arch="${cuda_arch%%,*}"
 output_path="${NESLE_CUDA_KERNEL_BENCH_BIN:-/tmp/nesle_cuda_kernel_benchmark}"
 
 "$nvcc_bin" -std=c++20 "-arch=$cuda_arch" -Icpp/include \

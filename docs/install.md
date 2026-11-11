@@ -49,9 +49,16 @@ NESLE_CUDA_ARCH=sm_80 python -m pip install -e .   # A100
 NESLE_CUDA_ARCH=sm_90 python -m pip install -e .   # H100
 ```
 
+On a machine with different GPU models, the build covers all of them, so the
+extension runs on whichever one CUDA picks as device 0. Each extra architecture
+costs about 20 s of compile time and 1.2 MB of binary size (measured with nvcc
+12.9). A GPU the installed nvcc cannot target is left out with a warning, and
+the build prints its targets on an `arch:` line. pip shows both only with
+`pip install -v`.
+
 | Variable | Effect |
 |---|---|
-| `NESLE_CUDA_ARCH` | Target architecture. Otherwise `nvidia-smi`, then PyTorch, then `sm_80` |
+| `NESLE_CUDA_ARCH` | Target architecture, or a comma-separated list such as `sm_61,sm_86`. Otherwise every GPU `nvidia-smi` lists, then PyTorch, then `sm_80` |
 | `NVCC` | nvcc path or command name. One that cannot be found, such as `NVCC=none`, skips the CUDA build |
 | `NESLE_REQUIRE_CUDA=1` | Fail the install when no usable nvcc is found instead of skipping |
 
