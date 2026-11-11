@@ -11,8 +11,9 @@ Environment overrides:
     NVCC                       nvcc path or command name (else: $PATH, then common
                                install dirs). One that cannot be found, such as
                                NVCC=none, skips the build
-    NESLE_CUDA_ARCH            e.g. sm_61 / sm_80 / sm_90 (else: detected via
-                               nvidia-smi, then torch, falling back to sm_80)
+    NESLE_CUDA_ARCH            e.g. sm_61 / sm_80 / sm_90, or a comma-separated list
+                               such as sm_61,sm_86 (else: every GPU nvidia-smi
+                               lists, then torch, falling back to sm_80)
     NESLE_CUDA_EXTENSION_PATH  output path (else: src/nesle/_cuda_core<EXT_SUFFIX>)
     NESLE_REQUIRE_CUDA=1       exit non-zero when nvcc/pybind11 are missing instead
                                of skipping quietly (CI-friendly default: skip with
@@ -133,8 +134,15 @@ def _nvidia_smi_arch() -> str | None:
         ).stdout
     except (subprocess.CalledProcessError, OSError, subprocess.TimeoutExpired):
         return None
-    match = re.match(r"\s*(\d+)\.(\d+)", out)
-    return f"sm_{match.group(1)}{match.group(2)}" if match else None
+    # One line per GPU. Keep every distinct one: nvidia-smi lists GPUs in PCI order
+    # and ignores CUDA_VISIBLE_DEVICES, so its first line need not be CUDA's device 0.
+    caps = {(int(major), int(minor)) for major, minor in re.findall(r"^\s*(\d+)\.(\d+)", out, re.M)}
+    return _arch_list(caps)
+
+
+def _arch_list(caps) -> str | None:
+    """'sm_61,sm_86' for {(6, 1), (8, 6)}, oldest first; None for no GPUs."""
+    return ",".join(f"sm_{major}{minor}" for major, minor in sorted(caps)) or None
 
 
 def nvcc_too_old(nvcc: str) -> bool:
@@ -142,20 +150,73 @@ def nvcc_too_old(nvcc: str) -> bool:
     return (0, 0) < _nvcc_release(nvcc) < _MIN_NVCC_RELEASE
 
 
-def detect_arch() -> str:
-    override = os.environ.get("NESLE_CUDA_ARCH")
+def arch_flags(arch: str) -> list[str]:
+    """nvcc flags for one architecture, or for a comma-separated list of them.
+
+    A single value goes through -arch unchanged, so overrides such as `native` keep
+    working. A list builds one binary that runs on every GPU in it: each plain sm_XY
+    entry gets what -arch=sm_XY gives, its cubin plus PTX. List entries must be real
+    targets; nvcc rejects `native` or `all` inside one.
+    """
+    archs = [a.strip() for a in arch.split(",") if a.strip()]
+    if len(archs) == 1:
+        return [f"-arch={archs[0]}"]
+    flags = []
+    for sm in archs:
+        compute = sm.replace("sm_", "compute_", 1)
+        flags.append(f"--generate-code=arch={compute},code=[{compute},{sm}]")
+    return flags
+
+
+def _drop_unsupported(arch: str, nvcc: str | None) -> str:
+    """Leave out detected GPUs this nvcc cannot target, so an old display card does not fail the build.
+
+    A dropped GPU newer than the rest still runs the build through the newest PTX; an
+    older one cannot run it, and the warning says so. pip shows the warning only with -v.
+
+    The list stays whole when nvcc cannot be asked or nothing would be left, so nvcc
+    reports the problem itself.
+    """
+    archs = arch.split(",")
+    if nvcc is None or len(archs) == 1:
+        return arch
+    try:
+        out = subprocess.run(
+            [nvcc, "--list-gpu-code"], capture_output=True, text=True, check=True, timeout=10
+        ).stdout
+    except (subprocess.CalledProcessError, OSError, subprocess.TimeoutExpired):
+        return arch
+    kept = [a for a in archs if a in out.split()]
+    if not kept or len(kept) == len(archs):
+        return arch
+    dropped = ",".join(a for a in archs if a not in kept)
+    print(
+        f"warning: this nvcc cannot target {dropped}; building for {','.join(kept)} only. "
+        "A left-out GPU older than these cannot run this build."
+    )
+    return ",".join(kept)
+
+
+def detect_arch(nvcc: str | None = None) -> str:
+    """Target architecture(s) for nvcc, comma-separated on a machine with mixed GPUs."""
+    # Whitespace is dropped, and blank (or only commas) counts as unset, never an empty -arch.
+    override = "".join(os.environ.get("NESLE_CUDA_ARCH", "").split()).strip(",")
     if override:
         return override
     # nvidia-smi first: pip builds in an isolated env where torch is not importable.
     from_smi = _nvidia_smi_arch()
     if from_smi:
-        return from_smi
+        return _drop_unsupported(from_smi, nvcc)
     try:
         import torch
 
         if torch.cuda.is_available():
-            major, minor = torch.cuda.get_device_capability(0)
-            return f"sm_{major}{minor}"
+            return _drop_unsupported(
+                _arch_list(
+                    {torch.cuda.get_device_capability(i) for i in range(torch.cuda.device_count())}
+                ),
+                nvcc,
+            )
     except Exception:
         pass
     return "sm_80"
@@ -193,7 +254,7 @@ def compile_extension(nvcc: str, arch: str, output: str) -> int:
     import pybind11
 
     cmd = [
-        nvcc, "-std=c++20", f"-arch={arch}",
+        nvcc, "-std=c++20", *arch_flags(arch),
         # Static cudart (nvcc default) on purpose: --cudart=shared makes the
         # extension require cudart64_*.dll on the DLL search path, so plain
         # `import nesle` breaks unless torch happens to be imported first.
@@ -246,7 +307,7 @@ def main() -> int:
     ext_suffix = sysconfig.get_config_var("EXT_SUFFIX") or (".pyd" if os.name == "nt" else ".so")
     output = os.environ.get("NESLE_CUDA_EXTENSION_PATH") or str(REPO / "src" / "nesle" / f"_cuda_core{ext_suffix}")
 
-    returncode = compile_extension(nvcc, detect_arch(), output)
+    returncode = compile_extension(nvcc, detect_arch(nvcc), output)
     if returncode != 0:
         print(f"nvcc failed with exit code {returncode}")
         return returncode

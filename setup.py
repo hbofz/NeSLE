@@ -50,7 +50,7 @@ class BuildExt(build_ext):
     def _build_cuda_core(self, ext):
         # Absolute because vcvarsall can change directory before nvcc runs.
         output = os.path.abspath(self.get_ext_fullpath(ext.name))
-        arch = detect_arch()
+        arch = detect_arch(self.nvcc)
         # build_temp outlives the binary's inputs, so remember what it was built with.
         toolchain = f"{arch} {self.nvcc}"
         stamp = Path(self.build_temp) / "_cuda_core.toolchain"
@@ -71,8 +71,9 @@ class BuildExt(build_ext):
         returncode = compile_extension(self.nvcc, arch, output)
         if returncode != 0:
             raise CompileError(
-                f"nvcc failed with exit code {returncode}. Fix the toolchain, or set "
-                "NVCC=none to install the CPU core only."
+                f"nvcc failed with exit code {returncode}. Fix the toolchain, set "
+                "NESLE_CUDA_ARCH to the GPU you will run on, or set NVCC=none to "
+                "install the CPU core only."
             )
         stamp.write_text(toolchain)
         # MSVC linker droppings; they do not belong in a wheel.
